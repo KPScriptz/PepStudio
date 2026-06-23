@@ -14,13 +14,23 @@
   </header>
 
   <section id="importBar" class="card">
-    <label>Path to your gameplay file</label>
+    <label>Paste a YouTube or Twitch VOD link</label>
+    <div class="row">
+      <input id="urlInput" type="text" spellcheck="false"
+             placeholder="https://www.twitch.tv/videos/…   or   https://youtu.be/…" />
+      <button id="importBtn" class="primary">Import VOD</button>
+    </div>
+    <div id="urlProgress" class="urlProgress hidden">
+      <div class="bar"><div id="urlBarFill"></div></div>
+      <span id="urlProgressText" class="muted"></span>
+    </div>
+    <div class="orDivider"><span>or use a local file</span></div>
     <div class="row">
       <input id="pathInput" type="text" spellcheck="false"
              placeholder="/Users/you/Movies/raw-gameplay.mp4  (or ~/Movies/…)" />
-      <button id="analyzeBtn" class="primary">Analyze</button>
+      <button id="analyzeBtn">Analyze</button>
     </div>
-    <div id="importHint" class="hint">Tip: paste an absolute path — nothing gets uploaded, the file is read in place.</div>
+    <div id="importHint" class="hint">Clip your own streams/VODs. Nothing is uploaded — files are processed locally.</div>
   </section>
 
   <div id="progress" class="card hidden">
@@ -75,26 +85,41 @@
       </div>
 
       <div class="card exportPanel">
-        <div class="panelHead"><strong>Export</strong></div>
+        <div class="panelHead"><strong>Publish</strong></div>
 
+        <div class="publishRow">
+          <button id="tiktokBtn" class="big">🎵 TikTok pack<small>vertical + burned captions</small></button>
+          <button id="youtubeBtn" class="big">▶ YouTube cut<small>hook + tight edit</small></button>
+        </div>
+        <label class="check"><input type="checkbox" id="capPublish" checked /> Captions on publish exports</label>
         <div class="field">
-          <label>Long-form cut source</label>
-          <select id="longMode">
-            <option value="phantasm">Phantasm cut — keep green, banish red</option>
-            <option value="highlights">Highlights reel (kept highlights only)</option>
+          <label>TikTok clips</label>
+          <select id="tiktokCount">
+            <option value="3">Top 3 moments</option>
+            <option value="5" selected>Top 5 moments</option>
+            <option value="8">Top 8 moments</option>
           </select>
         </div>
-
-        <label class="check"><input type="checkbox" id="capLong" /> Burn captions into long cut</label>
-        <label class="check"><input type="checkbox" id="capShort" checked /> Burn captions into shorts</label>
-
-        <div class="btnRow">
-          <button id="captionsBtn">1 · Generate captions</button>
-          <button id="longBtn" class="primary">2 · Export long cut</button>
-          <button id="shortsBtn" class="primary">3 · Export shorts</button>
-          <button id="thumbsBtn">4 · Grab thumbnails</button>
-        </div>
         <div id="exportHint" class="hint"></div>
+
+        <details class="advanced">
+          <summary>Manual exports</summary>
+          <div class="field">
+            <label>Long-form cut source</label>
+            <select id="longMode">
+              <option value="phantasm">Phantasm cut — keep green, banish red</option>
+              <option value="highlights">Highlights reel (kept highlights only)</option>
+            </select>
+          </div>
+          <label class="check"><input type="checkbox" id="capLong" /> Burn captions into long cut</label>
+          <label class="check"><input type="checkbox" id="capShort" checked /> Burn captions into shorts</label>
+          <div class="btnRow">
+            <button id="captionsBtn">Generate captions</button>
+            <button id="longBtn">Export long cut</button>
+            <button id="shortsBtn">Export shorts</button>
+            <button id="thumbsBtn">Grab thumbnails</button>
+          </div>
+        </details>
 
         <div id="outputs"></div>
       </div>

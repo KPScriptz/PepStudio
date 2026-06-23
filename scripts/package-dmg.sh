@@ -59,6 +59,7 @@ BREW="$(command -v brew || true)"
 need_brew() { [ -z "$BREW" ] && { echo "  ✗ Homebrew needed → https://brew.sh"; open "https://brew.sh"; read -r -p "  Install brew, re-open ClipForge. Return." _; exit 1; }; }
 if [ ! -x /opt/homebrew/opt/ffmpeg-full/bin/ffmpeg ] && ! command -v ffmpeg >/dev/null 2>&1; then need_brew; echo "  • Installing FFmpeg (caption burn-in)…"; "$BREW" install ffmpeg-full; else echo "  ✓ FFmpeg"; fi
 if ! command -v whisper-cli >/dev/null 2>&1; then need_brew; echo "  • Installing whisper.cpp…"; "$BREW" install whisper-cpp; else echo "  ✓ whisper.cpp"; fi
+if ! command -v yt-dlp >/dev/null 2>&1; then need_brew; echo "  • Installing yt-dlp (VOD downloader)…"; "$BREW" install yt-dlp; else echo "  ✓ yt-dlp"; fi
 mkdir -p "$DATA"; rsync -a --exclude 'renders/' "$RES/app/" "$DATA/app/"; cd "$DATA/app"
 if [ ! -f "models/ggml-base.en.bin" ]; then echo "  • Downloading speech model (~141 MB, one time)…"; mkdir -p models; curl -L --fail -o "models/ggml-base.en.bin" "$MODEL_URL" || { echo "  ✗ model download failed"; read -r -p "  Return." _; exit 1; }; else echo "  ✓ Speech model"; fi
 echo; echo "  ▶ Starting ClipForge at http://localhost:4178"; echo "    (keep this window open; Ctrl-C to quit)"; echo

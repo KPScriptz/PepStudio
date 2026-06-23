@@ -1,6 +1,7 @@
 node_modules/
 renders/
 models/
+downloads/
 build/
 sample/
 *.dmg

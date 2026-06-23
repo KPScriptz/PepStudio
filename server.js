@@ -8,14 +8,17 @@ import { fileURLToPath } from 'node:url';
 import { exec } from 'node:child_process';
 
 import { analyze } from './lib/analyze.js';
-import { exportLongCut, exportShort, grabFrame, canBurnCaptions } from './lib/exporter.js';
+import { exportLongCut, exportShort, grabFrame, burnSubs, canBurnCaptions } from './lib/exporter.js';
 import { generateCaptions, captionsReady } from './lib/captions.js';
+import { downloadUrl, probeUrl, ytdlpBin, SUPPORTED_URL } from './lib/fetch.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA = path.join(__dirname, 'data');
 const RENDERS = path.join(__dirname, 'renders');
+const DOWNLOADS = path.join(__dirname, 'downloads');
 await fsp.mkdir(DATA, { recursive: true });
 await fsp.mkdir(RENDERS, { recursive: true });
+await fsp.mkdir(DOWNLOADS, { recursive: true });
 
 const app = express();
 app.use(express.json({ limit: '8mb' }));
@@ -47,7 +50,53 @@ app.get('/api/status', async (req, res) => {
   res.json({
     captions: { ready: !!(cap.bin && cap.model), bin: cap.bin, model: cap.model },
     canBurn: await canBurnCaptions(),
+    canDownload: !!ytdlpBin(),
   });
+});
+
+// ---- Import a VOD from a URL (YouTube / Twitch). Long-running → job + polling. ----
+const jobs = new Map(); // jobId -> { status, progress, stage, error, project }
+
+app.post('/api/import-url', async (req, res) => {
+  const url = (req.body.url || '').trim();
+  if (!url) return res.status(400).json({ error: 'Paste a YouTube or Twitch link.' });
+  if (!ytdlpBin()) return res.status(500).json({ error: 'yt-dlp not installed. Run: brew install yt-dlp' });
+  if (!SUPPORTED_URL.test(url)) return res.status(400).json({ error: 'Only YouTube and Twitch links are supported.' });
+
+  const jobId = crypto.randomBytes(6).toString('hex');
+  jobs.set(jobId, { status: 'downloading', progress: 0, stage: 'starting' });
+  res.json({ jobId });
+
+  (async () => {
+    const job = jobs.get(jobId);
+    try {
+      const meta = await probeUrl(url).catch(() => null);
+      if (meta?.title) job.title = meta.title;
+      const file = await downloadUrl(url, DOWNLOADS, {
+        base: jobId,
+        onProgress: (p) => { job.progress = p; },
+        onStage: (s) => { job.stage = s; },
+      });
+      job.status = 'analyzing'; job.stage = 'analyzing'; job.progress = 100;
+      const id = idFor(file);
+      await rememberSource(id, file);
+      const result = await analyze(file, req.body.opts || {});
+      result.id = id;
+      result.name = meta?.title ? meta.title : path.basename(file);
+      result.sourceUrl = url;
+      await fsp.writeFile(path.join(DATA, id, 'analysis.json'), JSON.stringify(result), 'utf8');
+      job.status = 'done'; job.project = result;
+    } catch (e) {
+      job.status = 'error'; job.error = String(e.message || e);
+    }
+  })();
+});
+
+app.get('/api/import-url/:jobId', (req, res) => {
+  const job = jobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Unknown job' });
+  const { project, ...rest } = job;
+  res.json(job.status === 'done' ? { ...rest, project } : rest);
 });
 
 app.post('/api/analyze', async (req, res) => {
@@ -153,6 +202,73 @@ app.post('/api/export/shorts', async (req, res) => {
       results.push({ file: out, url: `/renders/${req.body.id}/short-${i + 1}.mp4` });
     }
     res.json({ shorts: results, captionsBurned: !!(subs && fs.existsSync(subs)) && await canBurnCaptions() });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
+// ---- TikTok pack: top moments as vertical 1080x1920 clips, each with aligned captions. ----
+app.post('/api/export/tiktok', async (req, res) => {
+  try {
+    const file = await sourceFor(req.body.id);
+    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const clips = req.body.clips || [];
+    if (!clips.length) return res.status(400).json({ error: 'No clips selected' });
+    const wantCaps = req.body.captions !== false && captionsReady().bin && captionsReady().model;
+    const burn = wantCaps && await canBurnCaptions();
+    const dir = path.join(RENDERS, req.body.id);
+    const results = [];
+    for (let i = 0; i < clips.length; i++) {
+      const { start, end } = clips[i];
+      let subs;
+      if (wantCaps) {
+        const ass = path.join(dir, `tiktok-${i + 1}.ass`);
+        // clip-relative timestamps so captions line up with the -ss-trimmed vertical clip
+        await generateCaptions(file, ass, { range: [start, end], clipRelative: true });
+        if (burn) subs = ass;
+      }
+      const out = path.join(dir, `tiktok-${i + 1}.mp4`);
+      await exportShort(file, start, end, out, { subs });
+      results.push({
+        file: out, url: `/renders/${req.body.id}/tiktok-${i + 1}.mp4`,
+        srtUrl: wantCaps ? `/renders/${req.body.id}/tiktok-${i + 1}.srt` : null,
+      });
+    }
+    res.json({ clips: results, captionsBurned: burn });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
+// ---- YouTube cut: cold-open hook + tight (dead-air-removed) body, captions aligned to the cut. ----
+app.post('/api/export/youtube', async (req, res) => {
+  try {
+    const file = await sourceFor(req.body.id);
+    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const keep = (req.body.segments || []).map((s) => [s.start, s.end]);
+    if (!keep.length) return res.status(400).json({ error: 'No segments to export' });
+    const hook = req.body.hook && req.body.hook.length === 2 ? [req.body.hook[0], req.body.hook[1]] : null;
+    const segs = hook ? [hook, ...keep] : keep;
+    const dir = path.join(RENDERS, req.body.id);
+
+    const raw = path.join(dir, 'youtube_raw.mp4');
+    await exportLongCut(file, segs, raw); // render first, no captions
+
+    let outUrl = `/renders/${req.body.id}/youtube_raw.mp4`;
+    let outFile = raw;
+    let captionsBurned = false;
+    let srtUrl = null;
+    if (req.body.captions !== false && captionsReady().bin && captionsReady().model) {
+      const ass = path.join(dir, 'youtube.ass');
+      await generateCaptions(raw, ass); // transcribe the RENDERED cut → perfectly aligned
+      srtUrl = `/renders/${req.body.id}/youtube.srt`;
+      if (await canBurnCaptions()) {
+        const burned = path.join(dir, 'youtube.mp4');
+        await burnSubs(raw, ass, burned);
+        outFile = burned; outUrl = `/renders/${req.body.id}/youtube.mp4`; captionsBurned = true;
+      }
+    }
+    res.json({ file: outFile, url: outUrl, captionsBurned, srtUrl, hook: !!hook });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }

@@ -7,6 +7,18 @@ then exports a long-form cut, vertical shorts, captions, and thumbnails.
 No cloud, no uploads, no watermarks, no monthly limits. Everything runs on your machine
 with **FFmpeg** + **whisper.cpp**.
 
+## Paste a link → publish-ready clips
+
+Drop in a **YouTube or Twitch VOD link** (or a local file) and ClipForge downloads it with
+`yt-dlp`, analyzes it, then gives you two one-click exports:
+
+- **🎵 TikTok pack** — your top moments as vertical 1080×1920 clips with burned-in,
+  Hormozi-style captions (each clip transcribed and perfectly aligned).
+- **▶ YouTube cut** — a **cold-open hook** (your single best moment up front for
+  retention) + a tight, dead-air-removed edit, with captions aligned to the final cut.
+
+> Clip your own streams/VODs. Nothing is uploaded — every step runs locally.
+
 ## 👻 Phantasm — tag, don't delete
 
 ClipForge doesn't blindly throw footage away. Dead space stays on the timeline as
@@ -32,9 +44,9 @@ from everything still green. Keys: `G` toggle keep/ghost, `V` verify (play 2 s),
 4. A Terminal window sets up anything missing, then your browser opens
    `http://localhost:4178`. Keep that window open; `Ctrl-C` quits.
 
-First launch installs, if needed: **FFmpeg with libass** (caption burn-in) and
-**whisper.cpp** via [Homebrew](https://brew.sh), plus a ~141 MB speech model. Requires
-[Node.js](https://nodejs.org) on the machine.
+First launch installs, if needed: **FFmpeg with libass** (caption burn-in), **whisper.cpp**,
+and **yt-dlp** (VOD downloader) via [Homebrew](https://brew.sh), plus a ~141 MB speech
+model. Requires [Node.js](https://nodejs.org) on the machine.
 
 ## Run from source (devs)
 
@@ -44,8 +56,9 @@ npm start            # then open http://localhost:4178
 # or: node bin/clipforge.js   (starts + opens the browser for you)
 ```
 
-Paste the **absolute path** to your gameplay file (e.g. `~/Movies/raw-gameplay.mp4`).
-Nothing is uploaded — the file is read in place.
+Paste the **absolute path** to your gameplay file (e.g. `~/Movies/raw-gameplay.mp4`),
+or a YouTube/Twitch URL. Needs `ffmpeg`, `whisper-cli`, and `yt-dlp` on PATH. Nothing is
+uploaded — files are processed in place.
 
 ## Captions: burn-in is on by default
 

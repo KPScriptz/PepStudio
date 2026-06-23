@@ -42,6 +42,49 @@ fetch('/api/status').then((r) => r.json()).then((s) => {
 $('#analyzeBtn').addEventListener('click', analyze);
 $('#pathInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') analyze(); });
 
+// ---- Import a VOD from a YouTube/Twitch URL ----
+$('#importBtn').addEventListener('click', importUrl);
+$('#urlInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') importUrl(); });
+
+async function importUrl() {
+  const url = $('#urlInput').value.trim();
+  if (!url) return toast('Paste a YouTube or Twitch link first.', true);
+  const fill = $('#urlBarFill'); const txt = $('#urlProgressText');
+  $('#importBtn').disabled = true;
+  $('#urlProgress').classList.remove('hidden');
+  fill.style.width = '0%'; txt.textContent = 'Starting…';
+  $('#editor').classList.add('hidden');
+  try {
+    const res = await fetch('/api/import-url', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'import failed');
+    const jobId = data.jobId;
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 800));
+      const jr = await fetch(`/api/import-url/${jobId}`);
+      const j = await jr.json();
+      if (!jr.ok) throw new Error(j.error || 'job failed');
+      if (j.status === 'downloading') {
+        fill.style.width = `${j.progress || 0}%`;
+        txt.textContent = `Downloading ${j.title ? `“${j.title}” ` : ''}${j.progress || 0}%`;
+      } else if (j.status === 'analyzing') {
+        fill.style.width = '100%';
+        txt.textContent = 'Analyzing — silence, static screens, highlights…';
+      } else if (j.status === 'done') {
+        txt.textContent = 'Done ✓'; loadProject(j.project); break;
+      } else if (j.status === 'error') { throw new Error(j.error); }
+    }
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    $('#importBtn').disabled = false;
+    setTimeout(() => $('#urlProgress').classList.add('hidden'), 1500);
+  }
+}
+
 async function analyze() {
   const path = $('#pathInput').value.trim();
   if (!path) return toast('Paste a path to a video file first.', true);
@@ -343,6 +386,63 @@ $('#banishBtn').addEventListener('click', () => {
   if (!window.confirm(msg)) return;
   $('#longMode').value = 'phantasm';
   renderLongCut('Phantasm cut');
+});
+
+// ---- Publish: TikTok pack + YouTube cut ----
+function topClips(n) {
+  return [...state.highlights]
+    .filter((h) => h.keep)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, n)
+    .sort((a, b) => a.start - b.start)
+    .map((h) => ({ start: h.start, end: h.end }));
+}
+// Cold-open hook = ~5s around the single highest-scoring moment.
+function hookRange() {
+  const top = [...state.highlights].sort((a, b) => b.score - a.score)[0];
+  if (!top) return null;
+  const d = state.proj.duration;
+  return [Math.max(0, +(top.t - 2).toFixed(2)), Math.min(d, +(top.t + 3).toFixed(2))];
+}
+
+$('#tiktokBtn').addEventListener('click', async () => {
+  if (!state.proj) return;
+  const n = parseInt($('#tiktokCount').value, 10) || 5;
+  const clips = topClips(n);
+  if (!clips.length) return toast('No highlights to clip — keep at least one.', true);
+  const caps = $('#capPublish').checked;
+  $('#tiktokBtn').disabled = true;
+  showProgress(`Rendering ${clips.length} TikTok clips — vertical${caps ? ' + transcribing captions' : ''}…`);
+  try {
+    const res = await fetch('/api/export/tiktok', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: state.proj.id, clips, captions: caps }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    data.clips.forEach((c, i) => addOutput(`TikTok ${i + 1}`, c, 'tiktok'));
+    toast(`${data.clips.length} TikTok clips ready${data.captionsBurned ? ' with burned captions' : ''} ✓`);
+  } catch (e) { toast(e.message, true); } finally { hideProgress(); $('#tiktokBtn').disabled = false; }
+});
+
+$('#youtubeBtn').addEventListener('click', async () => {
+  if (!state.proj) return;
+  const segments = keepSegments();
+  if (!segments.length) return toast('Nothing to cut — all segments are red.', true);
+  const hook = hookRange();
+  const caps = $('#capPublish').checked;
+  $('#youtubeBtn').disabled = true;
+  showProgress(`Building YouTube cut — cold-open hook + tight edit${caps ? ' + captions' : ''}…`);
+  try {
+    const res = await fetch('/api/export/youtube', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: state.proj.id, segments, hook, captions: caps }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    addOutput('YouTube cut', data, 'youtube');
+    toast(`YouTube cut ready${data.hook ? ' (hooked)' : ''}${data.captionsBurned ? ' + captions' : ''} ✓`);
+  } catch (e) { toast(e.message, true); } finally { hideProgress(); $('#youtubeBtn').disabled = false; }
 });
 
 $('#shortsBtn').addEventListener('click', async () => {
