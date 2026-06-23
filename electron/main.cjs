@@ -74,8 +74,16 @@ async function ensureDeps(ud) {
   const model = path.join(ud, 'models', 'ggml-base.en.bin');
   process.env.WHISPER_MODEL = model;
   if (!fs.existsSync(model)) {
-    status('Downloading the speech model (~141 MB, one time)…');
-    await download('https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin', model, (p) => status(`Downloading speech model… ${p}%`));
+    // Reuse a model from a prior install (e.g. the old ClipForge name) before downloading.
+    const legacy = path.join(path.dirname(ud), 'ClipForge', 'models', 'ggml-base.en.bin');
+    if (fs.existsSync(legacy)) {
+      status('Reusing existing speech model…');
+      fs.mkdirSync(path.dirname(model), { recursive: true });
+      fs.copyFileSync(legacy, model);
+    } else {
+      status('Downloading the speech model (~141 MB, one time)…');
+      await download('https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin', model, (p) => status(`Downloading speech model… ${p}%`));
+    }
   }
 
   // FFmpeg (with libass) + whisper.cpp — prefer what's installed; fall back to Homebrew if present.
@@ -101,7 +109,7 @@ async function boot() {
   if (!TEST) {
     win = new BrowserWindow({
       width: 1320, height: 880, minWidth: 1000, minHeight: 640,
-      backgroundColor: '#0b0f17', title: 'ClipForge', show: false,
+      backgroundColor: '#0b0f17', title: 'PepStudio', show: false,
       icon: path.join(__dirname, 'icon.png'),
       webPreferences: { contextIsolation: true },
     });
@@ -117,14 +125,18 @@ async function boot() {
     process.env.CLIPFORGE_DOWNLOADS = path.join(ud, 'downloads');
     await ensureDeps(ud);
 
-    status('Starting ClipForge…');
-    const port = await freePort(4178);
-    process.env.PORT = String(port);
+    status('Starting PepStudio…');
     // Run the server in its own Node process (Electron's bundled node via
     // ELECTRON_RUN_AS_NODE) — avoids ESM-in-main-process issues and isolates crashes.
+    // PORT=0 → the OS picks a free port; the server reports the real one over IPC.
     serverProc = fork(path.join(ROOT, 'server.js'), [], {
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', PORT: String(port) },
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', PORT: '0' },
       stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+    });
+    const port = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('server did not report a port in time')), 30000);
+      serverProc.on('message', (m) => { if (m && m.type === 'pepstudio-port') { clearTimeout(timer); resolve(m.port); } });
+      serverProc.on('exit', (code) => { clearTimeout(timer); reject(new Error(`server process exited (code ${code})`)); });
     });
     await waitForServer(port);
 
@@ -134,12 +146,19 @@ async function boot() {
     if (TEST) { console.error('ELECTRON_BOOT_FAIL', e.message); app.exit(1); return; }
     await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(
       `<body style="background:#0b0f17;color:#e6edf3;font:15px -apple-system;padding:40px">
-       <h2>ClipForge couldn't start</h2><pre style="color:#ff8a8a;white-space:pre-wrap">${String(e.stack || e)}</pre></body>`));
+       <h2>PepStudio couldn't start</h2><pre style="color:#ff8a8a;white-space:pre-wrap">${String(e.stack || e)}</pre></body>`));
   }
 }
 
-app.setName('ClipForge');
-app.whenReady().then(boot);
+app.setName('PepStudio');
+// Single instance — a second launch focuses the existing window instead of starting
+// another embedded server (which is what produced the EADDRINUSE crash).
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
+  app.whenReady().then(boot);
+}
 app.on('window-all-closed', () => app.quit());
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) boot(); });
 app.on('before-quit', () => { try { serverProc && serverProc.kill(); } catch {} });

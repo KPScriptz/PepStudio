@@ -303,11 +303,15 @@ app.post('/api/reveal', async (req, res) => {
   res.json({ ok: true });
 });
 
-// Start listening. Returns the http.Server once it's up (used by the Electron shell).
+// Start listening. Returns the http.Server once it's up (used by the desktop shell).
+// PORT=0 lets the OS pick a guaranteed-free port; the actual port is reported back
+// to the Electron parent over IPC so there's never an EADDRINUSE race.
 export function start(port = process.env.PORT || 4178) {
   return new Promise((resolve) => {
-    const server = app.listen(port, () => {
-      console.log(`ClipForge running -> http://localhost:${port}`);
+    const server = app.listen(Number(port), () => {
+      const actual = server.address().port;
+      console.log(`PepStudio running -> http://localhost:${actual}`);
+      if (process.send) { try { process.send({ type: 'pepstudio-port', port: actual }); } catch {} }
       resolve(server);
     });
   });

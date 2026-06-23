@@ -1,6 +1,6 @@
 {
-  "name": "clipforge",
-  "version": "0.3.0",
+  "name": "pepstudio",
+  "version": "0.3.1",
   "private": true,
   "description": "Local, free, AI-assisted gameplay editor: paste a VOD -> TikTok clips + YouTube cut, long cut, captions, thumbnails",
   "type": "module",
@@ -22,8 +22,8 @@
     "electron-builder": "^25.1.8"
   },
   "build": {
-    "appId": "com.kpscriptz.clipforge",
-    "productName": "ClipForge",
+    "appId": "com.kpscriptz.pepstudio",
+    "productName": "PepStudio",
     "asar": false,
     "directories": { "output": "dist" },
     "files": [

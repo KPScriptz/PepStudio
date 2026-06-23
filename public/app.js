@@ -1,4 +1,4 @@
-// ClipForge editor — analyze, curate highlights on a timeline, export.
+// PepStudio editor — analyze, curate highlights on a timeline, export.
 const $ = (s) => document.querySelector(s);
 const fmt = (t) => {
   t = Math.max(0, t || 0);
