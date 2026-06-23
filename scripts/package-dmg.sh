@@ -1,17 +1,21 @@
 #!/bin/bash
 # Build ClipForge.app and package it into build/ClipForge.dmg.
-# The DMG is an installer-style launcher: the 141 MB speech model and the
-# Homebrew deps (ffmpeg-full, whisper-cpp) are set up on first run, not bundled.
+# Installer-style launcher: the 141 MB speech model and Homebrew deps (ffmpeg-full,
+# whisper-cpp, yt-dlp) are set up on first run, not bundled.
+#
+# Gatekeeper note: the app is ad-hoc code-signed and NEVER modifies its own bundle at
+# runtime. The launcher is written fresh into ~/Library/Application Support at launch, so
+# it carries no "quarantine" flag and never triggers a second Gatekeeper prompt. Without
+# Apple notarization (paid Developer ID), the FIRST open of a downloaded copy still needs
+# a one-time right-click -> Open.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-ROOT="$(pwd)"
 APP="build/ClipForge.app/Contents"
-VERSION="${1:-0.1.0}"
+VERSION="${1:-0.2.1}"
 
 rm -rf build/ClipForge.app build/dmg build/AppIcon.iconset
 mkdir -p "$APP/MacOS" "$APP/Resources"
 
-# --- Info.plist ---
 cat > "$APP/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -31,25 +35,31 @@ cat > "$APP/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# --- bundle the JS app (model/renders excluded; node_modules included) ---
+# Bundle the JS app (model/renders excluded; node_modules included).
 rsync -a ./server.js ./lib ./public ./package.json ./bin "$APP/Resources/app/"
 [ -d node_modules ] && rsync -a ./node_modules "$APP/Resources/app/"
 
-# --- entry point: open Terminal running the setup/launch script ---
+# Entry point: sync app to a writable home, materialize the launcher fresh (no quarantine),
+# and run it in a visible Terminal. Touches NOTHING inside the signed bundle.
 cat > "$APP/MacOS/ClipForge" <<'ENTRY'
 #!/bin/bash
 RES="$(cd "$(dirname "$0")/../Resources" && pwd)"
-chmod +x "$RES/launch.command" 2>/dev/null
-xattr -dr com.apple.quarantine "$RES/launch.command" 2>/dev/null
-open -a Terminal "$RES/launch.command"
+DATA="$HOME/Library/Application Support/ClipForge"
+mkdir -p "$DATA"
+/usr/bin/rsync -a --exclude 'renders/' "$RES/app/" "$DATA/app/" 2>/dev/null
+cat "$RES/launcher.sh" > "$DATA/run.sh"
+xattr -d com.apple.quarantine "$DATA/run.sh" 2>/dev/null || true
+chmod +x "$DATA/run.sh"
+osascript -e 'tell application "Terminal" to activate' \
+          -e "tell application \"Terminal\" to do script \"bash '$DATA/run.sh'\""
 ENTRY
 
-# --- first-run setup + launch ---
-cat > "$APP/Resources/launch.command" <<'LAUNCH'
+# The launcher template (run from Application Support, never executed in place).
+cat > "$APP/Resources/launcher.sh" <<'LAUNCH'
 #!/bin/bash
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
-RES="$(cd "$(dirname "$0")" && pwd)"
 DATA="$HOME/Library/Application Support/ClipForge"
+APP="$DATA/app"
 MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin"
 printf '\n  \033[1;33m⚡ ClipForge\033[0m — local gameplay editor\n  ────────────────────────────────────\n\n'
 NODE=""; for c in /opt/homebrew/bin/node /usr/local/bin/node "$(command -v node)"; do [ -n "$c" ] && [ -x "$c" ] && NODE="$c" && break; done
@@ -60,15 +70,15 @@ need_brew() { [ -z "$BREW" ] && { echo "  ✗ Homebrew needed → https://brew.s
 if [ ! -x /opt/homebrew/opt/ffmpeg-full/bin/ffmpeg ] && ! command -v ffmpeg >/dev/null 2>&1; then need_brew; echo "  • Installing FFmpeg (caption burn-in)…"; "$BREW" install ffmpeg-full; else echo "  ✓ FFmpeg"; fi
 if ! command -v whisper-cli >/dev/null 2>&1; then need_brew; echo "  • Installing whisper.cpp…"; "$BREW" install whisper-cpp; else echo "  ✓ whisper.cpp"; fi
 if ! command -v yt-dlp >/dev/null 2>&1; then need_brew; echo "  • Installing yt-dlp (VOD downloader)…"; "$BREW" install yt-dlp; else echo "  ✓ yt-dlp"; fi
-mkdir -p "$DATA"; rsync -a --exclude 'renders/' "$RES/app/" "$DATA/app/"; cd "$DATA/app"
+cd "$APP" || { echo "  ✗ app missing at $APP"; read -r -p "  Return." _; exit 1; }
 if [ ! -f "models/ggml-base.en.bin" ]; then echo "  • Downloading speech model (~141 MB, one time)…"; mkdir -p models; curl -L --fail -o "models/ggml-base.en.bin" "$MODEL_URL" || { echo "  ✗ model download failed"; read -r -p "  Return." _; exit 1; }; else echo "  ✓ Speech model"; fi
 echo; echo "  ▶ Starting ClipForge at http://localhost:4178"; echo "    (keep this window open; Ctrl-C to quit)"; echo
 ( for i in $(seq 1 60); do curl -s http://localhost:4178/api/status >/dev/null 2>&1 && break; sleep 0.5; done; open "http://localhost:4178" ) &
 exec "$NODE" server.js
 LAUNCH
-chmod +x "$APP/MacOS/ClipForge" "$APP/Resources/launch.command"
+chmod +x "$APP/MacOS/ClipForge"
 
-# --- icon (rendered with ffmpeg if available, else skipped) ---
+# Icon (rendered with ffmpeg if available).
 FF="/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg"; [ -x "$FF" ] || FF="$(command -v ffmpeg || true)"
 FONT=""; for f in "/System/Library/Fonts/Supplemental/Arial Bold.ttf" "/System/Library/Fonts/Helvetica.ttc"; do [ -f "$f" ] && FONT="$f" && break; done
 if [ -n "$FF" ] && [ -n "$FONT" ]; then
@@ -81,16 +91,24 @@ if [ -n "$FF" ] && [ -n "$FONT" ]; then
   fi
 fi
 
-# --- stage + build dmg ---
+# Ad-hoc code-sign LAST (after all bundle contents exist). Keeps the bundle's signature
+# valid because nothing inside it changes at runtime.
+codesign --force --deep --sign - build/ClipForge.app 2>/dev/null && echo "✓ ad-hoc signed" || echo "(codesign skipped)"
+
+# Stage + build DMG.
 STAGE=build/dmg; rm -rf "$STAGE"; mkdir -p "$STAGE"
 cp -R build/ClipForge.app "$STAGE/"; ln -s /Applications "$STAGE/Applications"
 cat > "$STAGE/READ ME FIRST.txt" <<'TXT'
 ClipForge — local, free AI gameplay editor
 
 1. Drag ClipForge.app onto the Applications folder.
-2. First launch: RIGHT-CLICK ClipForge -> Open -> Open (not Apple-notarized).
-3. A Terminal sets up FFmpeg + whisper (via Homebrew) and a ~141 MB model,
-   then opens http://localhost:4178. Keep it open; Ctrl-C quits.
+2. First launch only: RIGHT-CLICK ClipForge -> Open -> Open.
+   (It isn't Apple-notarized, so a plain double-click is blocked the first time.)
+   If macOS still blocks it, open Terminal and run:
+       xattr -dr com.apple.quarantine /Applications/ClipForge.app
+   then double-click normally.
+3. A Terminal window sets up FFmpeg + whisper + yt-dlp (via Homebrew) and a
+   ~141 MB model, then opens http://localhost:4178. Keep it open; Ctrl-C quits.
 
 Requirements: macOS 12+, Node.js (nodejs.org), Homebrew (brew.sh).
 Nothing is uploaded — footage is read in place, all processing is local.
