@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { exec } from 'node:child_process';
 
 import { analyze } from './lib/analyze.js';
@@ -13,9 +13,11 @@ import { generateCaptions, captionsReady } from './lib/captions.js';
 import { downloadUrl, probeUrl, ytdlpBin, SUPPORTED_URL } from './lib/fetch.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA = path.join(__dirname, 'data');
-const RENDERS = path.join(__dirname, 'renders');
-const DOWNLOADS = path.join(__dirname, 'downloads');
+// Writable dirs — overridable so the Electron app can point them at userData
+// (the app bundle itself is read-only when packaged).
+const DATA = process.env.CLIPFORGE_DATA || path.join(__dirname, 'data');
+const RENDERS = process.env.CLIPFORGE_RENDERS || path.join(__dirname, 'renders');
+const DOWNLOADS = process.env.CLIPFORGE_DOWNLOADS || path.join(__dirname, 'downloads');
 await fsp.mkdir(DATA, { recursive: true });
 await fsp.mkdir(RENDERS, { recursive: true });
 await fsp.mkdir(DOWNLOADS, { recursive: true });
@@ -301,5 +303,16 @@ app.post('/api/reveal', async (req, res) => {
   res.json({ ok: true });
 });
 
-const PORT = process.env.PORT || 4178;
-app.listen(PORT, () => console.log(`ClipForge running -> http://localhost:${PORT}`));
+// Start listening. Returns the http.Server once it's up (used by the Electron shell).
+export function start(port = process.env.PORT || 4178) {
+  return new Promise((resolve) => {
+    const server = app.listen(port, () => {
+      console.log(`ClipForge running -> http://localhost:${port}`);
+      resolve(server);
+    });
+  });
+}
+
+// Auto-start when run directly (node server.js / npm start), but NOT when imported (Electron embeds it).
+const isMain = import.meta.url === pathToFileURL(process.argv[1] || '').href;
+if (isMain) start();

@@ -1,16 +1,44 @@
 {
   "name": "clipforge",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
-  "description": "Local, free, AI-assisted gameplay editor: 60min raw -> long cut + shorts + captions + thumbnails",
+  "description": "Local, free, AI-assisted gameplay editor: paste a VOD -> TikTok clips + YouTube cut, long cut, captions, thumbnails",
   "type": "module",
+  "main": "electron/main.cjs",
   "bin": {
     "clipforge": "./bin/clipforge.js"
   },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "electron": "electron .",
+    "dist": "electron-builder --mac dmg",
+    "dist:dir": "electron-builder --dir"
   },
   "dependencies": {
     "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.kpscriptz.clipforge",
+    "productName": "ClipForge",
+    "asar": false,
+    "directories": { "output": "dist" },
+    "files": [
+      "server.js",
+      "lib/**/*",
+      "public/**/*",
+      "electron/**/*",
+      "bin/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.video",
+      "icon": "electron/icon.png",
+      "identity": null
+    }
   }
 }

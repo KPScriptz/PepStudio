@@ -36,29 +36,33 @@ before cutting). Adjacent ghosts are split by reason, so a loading screen and a 
 play stay independently keepable. Hit **Banish all red** (or press `B`) to export the cut
 from everything still green. Keys: `G` toggle keep/ghost, `V` verify (play 2 s), `B` banish.
 
-## Install (the easy way)
+## Install (desktop app)
 
-1. Download `ClipForge.dmg` from the [Releases](../../releases) page.
-2. Open it and drag **ClipForge.app** onto **Applications**.
+ClipForge is a **native macOS app** (Electron) — its own window and dock icon, no
+Terminal, no browser. The Node server runs embedded inside it.
+
+1. Download `ClipForge-<version>-arm64.dmg` from the [Releases](../../releases) page.
+2. Open it and drag **ClipForge** onto **Applications**.
 3. **Right-click ClipForge → Open → Open** the first time (it isn't Apple-notarized).
-4. A Terminal window sets up anything missing, then your browser opens
-   `http://localhost:4178`. Keep that window open; `Ctrl-C` quits.
+4. It opens its own window with a setup splash, then the editor.
 
-First launch installs, if needed: **FFmpeg with libass** (caption burn-in), **whisper.cpp**,
-and **yt-dlp** (VOD downloader) via [Homebrew](https://brew.sh), plus a ~141 MB speech
-model. Requires [Node.js](https://nodejs.org) on the machine.
+On first launch it pulls what it needs from the internet: **yt-dlp** (downloaded directly,
+no Homebrew) and the **~141 MB speech model**. **FFmpeg with libass** and **whisper.cpp**
+are used from your system if present, else installed via [Homebrew](https://brew.sh).
+Electron bundles Node, so no separate Node install is required. Everything mutable
+(downloads, renders, model) lives in `~/Library/Application Support/ClipForge`.
 
 ## Run from source (devs)
 
 ```bash
 npm install
-npm start            # then open http://localhost:4178
-# or: node bin/clipforge.js   (starts + opens the browser for you)
+npm run electron     # the desktop app (embedded server + native window)
+npm start            # or just the server → open http://localhost:4178 in a browser
 ```
 
-Paste the **absolute path** to your gameplay file (e.g. `~/Movies/raw-gameplay.mp4`),
-or a YouTube/Twitch URL. Needs `ffmpeg`, `whisper-cli`, and `yt-dlp` on PATH. Nothing is
-uploaded — files are processed in place.
+Paste a **YouTube/Twitch URL** or the absolute path to a local file. Needs `ffmpeg` and
+`whisper-cli` available (yt-dlp is auto-fetched). Nothing is uploaded — files are
+processed in place.
 
 ## Captions: burn-in is on by default
 
@@ -75,10 +79,10 @@ ClipForge's `lib/ff.js` auto-detects `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg`,
 `FFMPEG_PATH` to override. Without libass, ClipForge degrades gracefully and exports a
 `captions.srt` for YouTube Studio / CapCut instead.
 
-## Build the DMG
+## Build the app
 
 ```bash
-scripts/package-dmg.sh       # → build/ClipForge.dmg
+npm run dist                 # → dist/ClipForge-<version>-arm64.dmg (Electron desktop app)
 ```
 
 ## Tuning
@@ -105,6 +109,7 @@ lib/analyze.js     loudness, silence, scene cuts, freeze detection, Phantasm seg
 lib/exporter.js    long cut / vertical shorts / thumbnail rendering
 lib/captions.js    whisper.cpp transcription -> .ass (animated) + .srt
 public/            the editor UI (vanilla JS, no build step)
-scripts/           DMG packaging
+electron/          desktop shell — embeds the server, native window, first-run setup
+scripts/           legacy launcher packaging
 renders/<id>/      exported mp4s, captions, thumbnails
 ```

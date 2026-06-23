@@ -3,6 +3,7 @@ renders/
 models/
 downloads/
 build/
+dist/
 sample/
 *.dmg
 *.log
