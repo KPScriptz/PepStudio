@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ClipForge — local gameplay editor</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">⚡ ClipForge</div>
+    <div class="sub">60-min raw → long cut · shorts · captions — local & free</div>
+    <div id="capStatus" class="badge muted">captions: checking…</div>
+  </header>
+
+  <section id="importBar" class="card">
+    <label>Path to your gameplay file</label>
+    <div class="row">
+      <input id="pathInput" type="text" spellcheck="false"
+             placeholder="/Users/you/Movies/raw-gameplay.mp4  (or ~/Movies/…)" />
+      <button id="analyzeBtn" class="primary">Analyze</button>
+    </div>
+    <div id="importHint" class="hint">Tip: paste an absolute path — nothing gets uploaded, the file is read in place.</div>
+  </section>
+
+  <div id="progress" class="card hidden">
+    <div class="spinner"></div>
+    <span id="progressText">Working…</span>
+  </div>
+
+  <main id="editor" class="hidden">
+    <div class="stage">
+      <video id="player" controls preload="metadata"></video>
+      <div class="playerMeta">
+        <span id="metaName">—</span>
+        <span id="metaInfo" class="muted"></span>
+      </div>
+    </div>
+
+    <div class="timelineWrap card">
+      <div class="tlHead">
+        <strong>👻 Phantasm Timeline</strong>
+        <span class="legend"><i class="sw keep"></i>keep</span>
+        <span class="legend"><i class="sw silence"></i>silence</span>
+        <span class="legend"><i class="sw static"></i>static screen</span>
+        <span class="legend"><i class="sw risky"></i>⚠ check</span>
+        <span class="legend"><i class="sw scene"></i>cut</span>
+        <span class="legend"><i class="sw hl"></i>highlight</span>
+        <span id="tlTime" class="muted right">0:00 / 0:00</span>
+      </div>
+      <canvas id="timeline" height="160"></canvas>
+      <div class="phantasmBar">
+        <span id="phantasmSummary" class="muted">—</span>
+        <button id="banishBtn" class="danger right">🔥 Banish all red → export cut</button>
+      </div>
+      <div class="tlTip muted">Click a block to seek. Press <kbd>G</kbd> to toggle the selected block keep↔ghost, <kbd>V</kbd> to verify (play 2s), <kbd>B</kbd> to banish.</div>
+    </div>
+
+    <div class="panels">
+      <div class="card ghostPanel">
+        <div class="panelHead">
+          <strong>👻 Ghost clips</strong>
+          <span id="ghostCount" class="muted"></span>
+        </div>
+        <div class="ghostHint muted">Red = cut candidates, kept on the timeline so nothing is lost. Verify, then banish. <b>⚠ = silent but moving</b> (possible stealth play) — check before cutting.</div>
+        <div id="ghostList"></div>
+      </div>
+
+      <div class="card hlPanel">
+        <div class="panelHead">
+          <strong>Highlights</strong>
+          <span id="hlCount" class="muted"></span>
+        </div>
+        <div id="hlList"></div>
+      </div>
+
+      <div class="card exportPanel">
+        <div class="panelHead"><strong>Export</strong></div>
+
+        <div class="field">
+          <label>Long-form cut source</label>
+          <select id="longMode">
+            <option value="phantasm">Phantasm cut — keep green, banish red</option>
+            <option value="highlights">Highlights reel (kept highlights only)</option>
+          </select>
+        </div>
+
+        <label class="check"><input type="checkbox" id="capLong" /> Burn captions into long cut</label>
+        <label class="check"><input type="checkbox" id="capShort" checked /> Burn captions into shorts</label>
+
+        <div class="btnRow">
+          <button id="captionsBtn">1 · Generate captions</button>
+          <button id="longBtn" class="primary">2 · Export long cut</button>
+          <button id="shortsBtn" class="primary">3 · Export shorts</button>
+          <button id="thumbsBtn">4 · Grab thumbnails</button>
+        </div>
+        <div id="exportHint" class="hint"></div>
+
+        <div id="outputs"></div>
+      </div>
+    </div>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="app.js"></script>
+</body>
+</html>

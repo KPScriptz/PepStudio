@@ -1,0 +1,9 @@
+node_modules/
+renders/
+models/
+build/
+sample/
+*.dmg
+*.log
+.DS_Store
+tmp/

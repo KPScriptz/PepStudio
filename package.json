@@ -1,0 +1,16 @@
+{
+  "name": "clipforge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local, free, AI-assisted gameplay editor: 60min raw -> long cut + shorts + captions + thumbnails",
+  "type": "module",
+  "bin": {
+    "clipforge": "./bin/clipforge.js"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
