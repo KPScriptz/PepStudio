@@ -1,4 +1,4 @@
-// PepStudio editor — analyze, curate highlights on a timeline, export.
+// ClipForge editor — analyze, curate highlights on a timeline, export.
 const $ = (s) => document.querySelector(s);
 const fmt = (t) => {
   t = Math.max(0, t || 0);
@@ -10,6 +10,8 @@ const toast = (msg, isErr) => {
   el.textContent = msg; el.classList.toggle('err', !!isErr); el.classList.remove('hidden');
   clearTimeout(toast._t); toast._t = setTimeout(() => el.classList.add('hidden'), isErr ? 6000 : 3500);
 };
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const showProgress = (txt) => { $('#progressText').textContent = txt; $('#progress').classList.remove('hidden'); };
 const hideProgress = () => $('#progress').classList.add('hidden');
 
@@ -18,10 +20,105 @@ const player = $('#player');
 const canvas = $('#timeline');
 const ctx = canvas.getContext('2d');
 
+// ---- Theme (Liquid Glass light/dark) ----
+(() => {
+  const saved = localStorage.getItem('pepstudio-theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+  $('#themeToggle')?.addEventListener('click', () => {
+    const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('pepstudio-theme', next);
+    if (state.proj) draw();   // canvas stays dark, but redraw to be safe
+  });
+})();
+
+// ---- Project picker (launch overlay) + recents ----
+const RECENTS_KEY = 'pep_recents';
+function loadRecents() { try { return JSON.parse(localStorage.getItem(RECENTS_KEY) || '[]'); } catch { return []; } }
+function pushRecent(id, name) {
+  if (!id) return;
+  const list = loadRecents().filter((r) => r.id !== id);
+  list.unshift({ id, name: name || id, ts: Date.now() });
+  localStorage.setItem(RECENTS_KEY, JSON.stringify(list.slice(0, 12)));
+}
+function renderRecents() {
+  const list = loadRecents();
+  $('#recentsGrid').innerHTML = list.length
+    ? list.map((r) => `<div class="recent-card" data-id="${r.id}">
+         <div class="recent-thumb" style="background-image:url('/api/thumb?id=${encodeURIComponent(r.id)}&t=1')">
+           <div class="recent-acts">
+             <button class="recent-rename" title="Rename">✏️</button>
+             <button class="recent-del" title="Remove from recents">🗑️</button>
+           </div>
+         </div>
+         <div class="recent-name">${escapeHtml(r.name)}</div>
+         <div class="recent-date">${new Date(r.ts).toLocaleDateString()}</div>
+       </div>`).join('')
+    : '<div class="recents-empty">No recent projects yet — hit “➕ New Project” to start.</div>';
+}
+// One delegated handler: rename / delete (recents-only) / open.
+$('#recentsGrid').addEventListener('click', (e) => {
+  const card = e.target.closest('.recent-card');
+  if (!card) return;
+  const id = card.dataset.id;
+  if (e.target.closest('.recent-rename')) {
+    const list = loadRecents(); const i = list.findIndex((r) => r.id === id);
+    if (i < 0) return;
+    const name = prompt('Rename project:', list[i].name);
+    if (name && name.trim()) { list[i].name = name.trim(); localStorage.setItem(RECENTS_KEY, JSON.stringify(list)); renderRecents(); }
+    return;
+  }
+  if (e.target.closest('.recent-del')) {
+    if (confirm('Remove this project from recents? (the rendered files are kept)')) {
+      localStorage.setItem(RECENTS_KEY, JSON.stringify(loadRecents().filter((r) => r.id !== id)));
+      renderRecents();
+    }
+    return;
+  }
+  openRecent(id);
+});
+const showPicker = () => { renderRecents(); $('#view-project-picker').classList.remove('hidden'); };
+const hidePicker = () => $('#view-project-picker').classList.add('hidden');
+async function openRecent(id) {
+  try {
+    showProgress('Opening project…');
+    const r = await fetch(`/api/analysis/${id}`);
+    if (!r.ok) throw new Error('Project not found (it may have been cleared).');
+    loadProject(await r.json());
+    hidePicker();
+  } catch (e) { toast(e.message, true); } finally { hideProgress(); }
+}
+// New Project → reveal the (empty) workspace shell: monitor placeholder + empty sequence,
+// ready for ingest. Source state is cleared, but no project is loaded yet.
+function newProject() {
+  hidePicker();
+  state.proj = null; state.highlights = []; state.segments = []; state.selected = null;
+  try { player.removeAttribute('src'); player.load(); } catch {}
+  $('#editor').classList.remove('hidden');
+  $('#monitorPlaceholder')?.classList.remove('hidden');
+  $('#metaName').textContent = 'Untitled Project *';
+  $('#metaInfo').textContent = '';
+  renderHighlights();
+  $('#pathInput').focus();
+}
+$('#btnNewProject')?.addEventListener('click', newProject);
+$('#backToProjects')?.addEventListener('click', showPicker);
+// Native file dialog (Step 2) routes the chosen absolute path here, same as drag-drop.
+window.pepResolveNativeFilePath = (p) => { hidePicker(); window.pepHandleDroppedPath(p); };
+renderRecents();
+
 // ---- Status ----
 state.canBurn = false;
+state.pepaiReady = false;
 fetch('/api/status').then((r) => r.json()).then((s) => {
   state.canBurn = !!s.canBurn;
+  state.pepaiReady = !!(s.pepai && s.pepai.ready);
+  // PepAI is an optional upgrade — only reveal the button when a local model is detected.
+  const pb = $('#pepaiBtn');
+  if (pb) {
+    pb.classList.toggle('hidden', !state.pepaiReady);
+    if (state.pepaiReady) pb.title = `Upgrade titles/tags with local PepAI (${s.pepai.model})`;
+  }
   const b = $('#capStatus');
   if (!s.captions.ready) {
     b.textContent = 'captions: not set up'; b.className = 'badge muted';
@@ -41,6 +138,45 @@ fetch('/api/status').then((r) => r.json()).then((s) => {
 // ---- Analyze ----
 $('#analyzeBtn').addEventListener('click', analyze);
 $('#pathInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') analyze(); });
+
+// "Choose file…" → native OS dialog in the Electron build; prompt fallback in a plain browser.
+$('#btn-import-file')?.addEventListener('click', async () => {
+  if (window.electron && typeof window.electron.showOpenDialog === 'function') {
+    try {
+      const p = await window.electron.showOpenDialog();
+      if (p) window.pepResolveNativeFilePath(p);
+    } catch (e) { toast(`File dialog failed: ${e.message}`, true); }
+  } else {
+    const p = prompt('Enter the absolute path to a video file:');
+    if (p && p.trim()) window.pepResolveNativeFilePath(p.trim());
+  }
+});
+
+// ---- Drag & drop a local video onto the import card ----
+// Single entry point for a resolved absolute path. Electron exposes file.path on the drop;
+// the native WKWebView host can call this directly via a Swift drag bridge. Plain browsers
+// can't read local paths, so they fall back to the graceful hint below.
+window.pepHandleDroppedPath = (p) => {
+  if (!p) return;
+  $('#pathInput').value = p;
+  analyze();
+};
+// Stop the browser from navigating to a file dropped anywhere in the window.
+['dragover', 'drop'].forEach((ev) => window.addEventListener(ev, (e) => e.preventDefault()));
+(() => {
+  const zone = $('#importBar');
+  if (!zone) return;
+  const stop = (e) => { e.preventDefault(); e.stopPropagation(); };
+  ['dragenter', 'dragover'].forEach((ev) => zone.addEventListener(ev, (e) => { stop(e); zone.classList.add('dropping'); }));
+  ['dragleave', 'dragend'].forEach((ev) => zone.addEventListener(ev, (e) => { stop(e); zone.classList.remove('dropping'); }));
+  zone.addEventListener('drop', (e) => {
+    stop(e); zone.classList.remove('dropping');
+    const f = e.dataTransfer?.files?.[0];
+    if (!f) return;
+    if (f.path) window.pepHandleDroppedPath(f.path);   // Electron / native bridge expose the path
+    else toast('Drag-drop needs the PepStudio desktop app — paste the file path here instead.', true);
+  });
+})();
 
 // ---- Import a VOD from a YouTube/Twitch URL ----
 $('#importBtn').addEventListener('click', importUrl);
@@ -107,23 +243,81 @@ async function analyze() {
 
 function loadProject(data) {
   state.proj = data;
+  pushRecent(data.id, data.name);   // remember for the project picker
   state.highlights = (data.highlights || []).map((h) => ({ ...h }));
   state.segments = (data.phantasm || []).map((s) => ({ ...s }));
   state.selSeg = null;
   state.selected = state.highlights[0] ? state.highlights[0].id : null;
   player.src = `/api/video?id=${data.id}`;
+  $('#monitorPlaceholder')?.classList.add('hidden');
   $('#metaName').textContent = data.name;
-  const m = data.meta || {};
-  $('#metaInfo').textContent = `${m.width}×${m.height} · ${m.fps}fps · ${fmt(data.duration)} · ${data.sceneCuts.length} scene cuts · ${(data.freezes || []).length} static screens · ${state.highlights.length} highlights`;
   $('#editor').classList.remove('hidden');
   $('#outputs').innerHTML = '';
+  renderMeta();
   renderHighlights();
   renderGhosts();
   updatePhantasmSummary();
   resizeCanvas();
   draw();
-  const st = data.phantasmStats || {};
-  toast(`Phantasm: ${st.ghostCount || 0} ghosts (${fmt(st.ghostDuration || 0)} dead air) → cut ≈ ${fmt(st.cutDuration || 0)}.`);
+  if (data.videoReady) {
+    const st = data.phantasmStats || {};
+    toast(`Phantasm: ${st.ghostCount || 0} ghosts (${fmt(st.ghostDuration || 0)} dead air) → cut ≈ ${fmt(st.cutDuration || 0)}.`);
+  } else {
+    toast('Audio ready — curate now. Scanning video for dead air in the background…');
+    pollVideoPass();
+  }
+}
+
+function renderMeta() {
+  const d = state.proj; if (!d) return;
+  const m = d.meta || {};
+  const tail = d.videoReady
+    ? `${(d.sceneCuts || []).length} scene cuts · ${(d.freezes || []).length} static screens`
+    : '⏳ analyzing video…';
+  $('#metaInfo').textContent =
+    `${m.width}×${m.height} · ${m.fps}fps · ${fmt(d.duration)} · ${tail} · ${state.highlights.length} highlights`;
+}
+
+// Poll the persisted analysis until the background video pass (Phantasm / scene cuts) lands.
+function pollVideoPass() {
+  const id = state.proj && state.proj.id;
+  if (!id || state.proj.videoReady) return;
+  clearTimeout(state._vpTimer);
+  const tick = async () => {
+    if (!state.proj || state.proj.id !== id || state.proj.videoReady) return;
+    try {
+      const r = await fetch(`/api/analysis/${id}`);
+      if (r.ok) {
+        const d = await r.json();
+        if (d.videoReady) return applyVideoPass(d);
+        if (d.videoFailed) { renderMeta(); return toast('Video analysis failed — audio curation still works.', true); }
+      }
+    } catch {}
+    state._vpTimer = setTimeout(tick, 1500);
+  };
+  state._vpTimer = setTimeout(tick, 1500);
+}
+
+// Patch phase-2 results into the live project. We deliberately do NOT overwrite
+// state.highlights — the user may have already hit "Rank funny moments" — only the
+// Phantasm band / scene cuts / freezes get added. Ghost curation can't have started yet
+// (phantasm was empty at phase 1), so adopting the fresh segments is safe.
+function applyVideoPass(d) {
+  if (!state.proj || state.proj.id !== d.id) return;
+  Object.assign(state.proj, {
+    sceneCuts: d.sceneCuts || [],
+    freezes: d.freezes || [],
+    phantasm: d.phantasm || [],
+    phantasmStats: d.phantasmStats || state.proj.phantasmStats,
+    videoReady: true,
+  });
+  state.segments = (d.phantasm || []).map((s) => ({ ...s }));
+  renderMeta();
+  renderGhosts();
+  updatePhantasmSummary();
+  draw();
+  const st = d.phantasmStats || {};
+  toast(`Phantasm ready: ${st.ghostCount || 0} ghosts (${fmt(st.ghostDuration || 0)} dead air) → cut ≈ ${fmt(st.cutDuration || 0)}.`);
 }
 
 // ---- Phantasm: ghost clips ----
@@ -181,16 +375,58 @@ function toggleSeg(s) {
 
 // ---- Highlights list ----
 function renderHighlights() {
+  if (!state.highlights.length) {
+    $('#hlCount').textContent = '0 / 0';
+    $('#hlList').innerHTML = '<div class="hlEmpty">Sequence empty — analyze a file, then press 🎭 Rank funny moments to begin.</div>';
+    renderTracks();
+    return;
+  }
   $('#hlCount').textContent = `${state.highlights.filter((h) => h.keep).length} kept / ${state.highlights.length}`;
   const list = $('#hlList');
   list.innerHTML = '';
-  state.highlights.forEach((h) => {
+  state.highlights.forEach((h, i) => {
     const row = document.createElement('div');
     row.className = 'hlRow' + (h.keep ? '' : ' dropped');
+    row.dataset.id = h.id;
+    const reactBadge = (h.reactionScore != null)
+      ? `<span class="react" title="reaction score">🎭 ${h.reactionScore}</span>`
+      : '';
+    const hitTags = (h.hits && h.hits.length)
+      ? `<span class="hitTags">${h.hits.map((t) => `<span class="tag ${t}">${t}</span>`).join('')}</span>`
+      : '';
+    const snip = h.snippet ? `<div class="snip">“${escapeHtml(h.snippet)}”</div>` : '';
+    const titleLine = h.title
+      ? `<div class="clipTitle">${escapeHtml(h.title)}${h.titleSource === 'pepai' ? '<span class="pepBadge">PepAI</span>' : ''}</div>`
+      : '';
+    const tagLine = (h.tags && h.tags.length)
+      ? `<div class="ctags">${h.tags.map((t) => `<span class="ctag">#${escapeHtml(t)}</span>`).join('')}</div>`
+      : '';
+    const trimmed = (h.snapped && h.originalStart != null)
+      ? Math.max(0, (h.originalEnd - h.originalStart) - (h.end - h.start)) : 0;
+    const snapChip = trimmed >= 1
+      ? `<span class="snapChip" title="snapped to the reaction — trimmed ${trimmed.toFixed(1)}s of dead air">✂ snapped</span>` : '';
+    // Overlay drawer: text overlays in the server's shape {type,content,startTime,endTime}.
+    const overlays = h.overlays || (h.overlays = []);
+    const ovItems = overlays.map((ov, oi) => `
+      <div class="ovItem" data-oi="${oi}">
+        <select class="ovType" title="overlay type">
+          <option value="text" ${ov.type === 'broll' ? '' : 'selected'}>📝</option>
+          <option value="broll" ${ov.type === 'broll' ? 'selected' : ''}>🖼</option>
+        </select>
+        <input type="text" class="ovText" value="${escapeHtml(ov.content || '')}" placeholder="${ov.type === 'broll' ? '/path/to/image.png' : 'on-screen text…'}">
+        <input type="number" step="0.1" class="ovStart" value="${ov.startTime ?? 0}" title="start (s into clip)">
+        <input type="number" step="0.1" class="ovEnd" value="${ov.endTime ?? 2}" title="end (s into clip)">
+        <button class="ovDel" title="remove">✕</button>
+      </div>`).join('');
+    const ovDrawer = `<div class="ovDrawer" data-id="${h.id}">${ovItems}<button class="ovAdd" data-id="${h.id}">＋ Text overlay</button></div>`;
     row.innerHTML = `
       <div class="meta">
-        <div>${h.id.toUpperCase()} · <span class="score">score ${h.score}</span></div>
-        <div class="muted">${fmt(h.start)}–${fmt(h.end)} (${Math.round(h.end - h.start)}s)</div>
+        <div class="seqLine"><span class="dragHandle" title="Drag to reorder the sequence">⠿</span><span class="seqNum">#${i + 1}</span></div>
+        ${titleLine}
+        <div>${h.id.toUpperCase()} · <span class="score">score ${h.score}</span> ${reactBadge} ${hitTags}</div>
+        <div class="muted">${fmt(h.start)}–${fmt(h.end)} (${Math.round(h.end - h.start)}s) ${snapChip}</div>
+        ${snip}
+        ${tagLine}
       </div>
       <div class="trim">
         start <input type="number" step="0.5" value="${h.start.toFixed(1)}" data-k="start">
@@ -199,7 +435,8 @@ function renderHighlights() {
       <div class="acts">
         <button data-act="preview">▶</button>
         <button data-act="keep">${h.keep ? 'Drop' : 'Keep'}</button>
-      </div>`;
+      </div>
+      ${ovDrawer}`;
     row.querySelectorAll('input').forEach((inp) => {
       inp.addEventListener('change', () => {
         const v = parseFloat(inp.value);
@@ -216,9 +453,185 @@ function renderHighlights() {
     row.querySelector('[data-act=keep]').addEventListener('click', () => {
       h.keep = !h.keep; renderHighlights(); draw();
     });
+    row.querySelector('.dragHandle').addEventListener('mousedown', (e) => {
+      e.preventDefault(); startReorder(h.id);
+    });
     list.appendChild(row);
   });
+  renderTracks();
 }
+
+// ---- Premiere-style multi-track sequence timeline (output-time view of the real layers) ----
+function renderTracks() {
+  const lanes = $('#trackLanes');
+  if (!lanes) return;
+  const kept = (state.proj ? state.highlights : []).filter((h) => h.keep);
+  if (!kept.length) { lanes.innerHTML = ''; $('#seqDur').textContent = '0:00'; return; }
+  // Lay kept clips back-to-back in OUTPUT order (sequence time), tracking each clip's span.
+  let acc = 0;
+  const seq = kept.map((h) => { const d = Math.max(0.01, h.end - h.start); const s = acc; acc += d; return { h, s, d }; });
+  const total = acc || 1;
+  $('#seqDur').textContent = fmt(total);
+  const pct = (t) => (t / total) * 100;
+  const blk = (cls, left, width, label, title) =>
+    `<div class="tblk ${cls}" style="left:${left}%;width:${Math.max(0.6, width)}%"${title ? ` title="${title}"` : ''}>${label ? `<span>${label}</span>` : ''}</div>`;
+
+  const vOv = [], vClip = [], aSpeech = [], aMusic = [], aSfx = [];
+  for (const { h, s, d } of seq) {
+    vClip.push(blk('clip', pct(s), pct(d), escapeHtml((h.title || h.id || '').slice(0, 24))));
+    aSpeech.push(blk('speech', pct(s), pct(d), ''));
+    const auto = h.automation || {};
+    if (auto.bgMusic && auto.bgMusic.path) aMusic.push(blk('music', pct(s), pct(d), '🎵 music'));
+    (auto.sfxTrack || []).forEach((sfx) => aSfx.push(blk('sfx', pct(s + (sfx.time || 0)), 1.2, '◆', `SFX @ ${(sfx.time || 0)}s`)));
+    (h.overlays || []).forEach((ov) => {
+      const os = s + (ov.startTime ?? 0); const oe = s + (ov.endTime ?? d);
+      vOv.push(blk(ov.type === 'broll' ? 'broll' : 'text', pct(os), pct(oe - os),
+        ov.type === 'broll' ? '🖼 b-roll' : escapeHtml((ov.content || 'text').slice(0, 16))));
+    });
+  }
+  lanes.innerHTML = [vOv, vClip, aSpeech, aMusic, aSfx].map((a) => `<div class="lane">${a.join('')}</div>`).join('');
+}
+
+// ---- Sequence reorder: drag a card's handle to change OUTPUT order (array order). This
+// changes which order clips concat in exports — it NEVER touches a clip's source start/end.
+let _reorderId = null;
+function startReorder(id) { _reorderId = id; document.body.classList.add('reordering'); }
+function reorderMove(clientY) {
+  if (_reorderId == null) return;
+  const rows = [...document.querySelectorAll('#hlList .hlRow')];
+  let target = rows.findIndex((r) => { const b = r.getBoundingClientRect(); return clientY < b.top + b.height / 2; });
+  if (target === -1) target = rows.length;                 // past the last row → end
+  const from = state.highlights.findIndex((h) => h.id === _reorderId);
+  if (from === -1) return;
+  const to = target > from ? target - 1 : target;          // adjust for the pending removal
+  if (to === from || to < 0 || to >= state.highlights.length) return;
+  const [m] = state.highlights.splice(from, 1);
+  state.highlights.splice(to, 0, m);
+  renderHighlights(); draw();
+}
+document.addEventListener('mousemove', (e) => { if (_reorderId != null) reorderMove(e.clientY); });
+document.addEventListener('mouseup', () => {
+  if (_reorderId == null) return;
+  _reorderId = null; document.body.classList.remove('reordering');
+});
+
+// Transcribe candidate windows and re-rank by reaction (laughter / hype / big moments).
+async function rankFunny() {
+  if (!state.proj) return toast('Analyze a video first.', true);
+  const btn = $('#funnyBtn');
+  btn.disabled = true;
+  showProgress('Listening for your reactions — laughter, hype, big moments…');
+  try {
+    const res = await fetch('/api/highlights/funny', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: state.proj.id }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Could not rank funny moments.');
+    if (!data.highlights || !data.highlights.length) return toast('No standout reactions found in the candidates.', true);
+    state.highlights = data.highlights.map((h) => ({ ...h }));
+    state.selected = state.highlights[0].id;
+    renderHighlights();
+    draw();
+    toast(`Ranked ${data.highlights.length} moments by reaction (from ${data.scoredCount} candidates).`);
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    btn.disabled = false;
+    hideProgress();
+  }
+}
+$('#funnyBtn')?.addEventListener('click', rankFunny);
+
+// Optional: upgrade the kept clips' titles/tags via local PepAI (Ollama). On-demand,
+// off the funny hot path; patches titles in place and leaves heuristics on failed ones.
+async function rankPepAI() {
+  if (!state.proj) return;
+  const kept = state.highlights.filter((h) => h.keep && h.snippet);
+  if (!kept.length) return toast('Keep at least one clip with speech to upgrade.', true);
+  const btn = $('#pepaiBtn');
+  btn.disabled = true;
+  showProgress(`PepAI is writing titles for ${kept.length} clip${kept.length > 1 ? 's' : ''}…`);
+  try {
+    const res = await fetch('/api/pepai/enhance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clips: kept.map((h) => ({ id: h.id, transcript: h.snippet })) }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'PepAI upgrade failed.');
+    let upgraded = 0;
+    for (const r of data.results || []) {
+      if (!r.ok || !r.title) continue;
+      const h = state.highlights.find((x) => x.id === r.id);
+      if (h) { h.title = r.title; h.tags = r.tags || h.tags; h.titleSource = 'pepai'; upgraded++; }
+    }
+    renderHighlights();
+    toast(upgraded ? `PepAI upgraded ${upgraded} title${upgraded > 1 ? 's' : ''} (${data.model}).` : 'PepAI returned nothing usable — heuristics kept.', !upgraded);
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    btn.disabled = false;
+    hideProgress();
+  }
+}
+$('#pepaiBtn')?.addEventListener('click', rankPepAI);
+
+// ---- Overlay drawer: author per-clip text overlays (→ multi-track sequence export) ----
+// Delegated on #hlList so it survives card re-renders. Edits update state without a
+// re-render (no focus loss); add/remove re-render. Overlays stay in the server's shape.
+$('#hlList').addEventListener('click', (e) => {
+  const add = e.target.closest('.ovAdd');
+  if (add) {
+    const h = state.highlights.find((c) => c.id === add.dataset.id);
+    if (!h) return;
+    (h.overlays || (h.overlays = [])).push({
+      type: 'text', content: 'NEW TEXT',
+      startTime: 0, endTime: Math.min(2, +(h.end - h.start).toFixed(1)),
+    });
+    renderHighlights();
+    return;
+  }
+  const del = e.target.closest('.ovDel');
+  if (del) {
+    const h = state.highlights.find((c) => c.id === del.closest('.ovDrawer').dataset.id);
+    if (h && h.overlays) { h.overlays.splice(+del.closest('.ovItem').dataset.oi, 1); renderHighlights(); }
+  }
+});
+$('#hlList').addEventListener('input', (e) => {
+  const item = e.target.closest('.ovItem');
+  if (!item) return;
+  const h = state.highlights.find((c) => c.id === e.target.closest('.ovDrawer').dataset.id);
+  const ov = h && h.overlays && h.overlays[+item.dataset.oi];
+  if (!ov) return;
+  if (e.target.classList.contains('ovText')) ov.content = e.target.value;
+  else if (e.target.classList.contains('ovStart')) ov.startTime = +parseFloat(e.target.value || 0).toFixed(1);
+  else if (e.target.classList.contains('ovEnd')) ov.endTime = +parseFloat(e.target.value || 0).toFixed(1);
+  else if (e.target.classList.contains('ovType')) { ov.type = e.target.value; renderHighlights(); } // re-render → updated placeholder
+});
+
+// Export the kept clips (in sequence order) with their text overlays burned in.
+$('#seqExportBtn')?.addEventListener('click', async () => {
+  if (!state.proj) return;
+  const clips = state.highlights.filter((h) => h.keep).map((h) => ({
+    start: h.start, end: h.end,
+    overlays: (h.overlays || []).filter((o) => o.content && o.content.trim()),
+  }));
+  if (!clips.length) return toast('Keep at least one clip to export the sequence.', true);
+  $('#seqExportBtn').disabled = true;
+  showProgress('Rendering sequence — clips in order, text overlays burned…');
+  try {
+    const res = await fetch('/api/export/sequence', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: state.proj.id, clips, vertical: true }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    addOutput('Sequence', data, 'sequence');
+    toast(`Sequence rendered (${data.clips} clip${data.clips > 1 ? 's' : ''}) ✓`);
+  } catch (e) { toast(e.message, true); } finally { hideProgress(); $('#seqExportBtn').disabled = false; }
+});
 
 // stop preview/verify playback at the marked end time (highlight or ghost segment)
 player.addEventListener('timeupdate', () => {
@@ -230,7 +643,8 @@ player.addEventListener('timeupdate', () => {
 });
 
 // ---- Timeline canvas (Phantasm green/red band) ----
-const TOP = 15; // top strip height (scene cuts + highlight markers)
+const TOP = 26;       // clip lane height (scene-cut ticks + draggable highlight blocks)
+const EDGE_PX = 6;    // grab tolerance for a clip's trim edges
 function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth || canvas.parentElement.clientWidth;
@@ -281,15 +695,21 @@ function draw() {
     ctx.strokeStyle = 'rgba(110,231,255,0.45)'; ctx.lineWidth = 1; ctx.stroke();
   }
 
-  // top strip: scene cuts + highlight markers (used for shorts)
+  // clip lane: scene-cut ticks + draggable highlight blocks with trim handles
   ctx.fillStyle = '#0a0c11'; ctx.fillRect(0, 0, W, TOP);
-  ctx.strokeStyle = 'rgba(167,139,250,0.7)'; ctx.lineWidth = 1;
-  for (const c of state.proj.sceneCuts) { ctx.beginPath(); ctx.moveTo(X(c), 0); ctx.lineTo(X(c), TOP); ctx.stroke(); }
+  ctx.strokeStyle = 'rgba(167,139,250,0.5)'; ctx.lineWidth = 1;
+  for (const c of (state.proj.sceneCuts || [])) { ctx.beginPath(); ctx.moveTo(X(c), 0); ctx.lineTo(X(c), TOP); ctx.stroke(); }
   for (const h of state.highlights) {
     if (!h.keep) continue;
-    const x = X(h.start), w = Math.max(2, X(h.end) - X(h.start));
-    ctx.fillStyle = h.id === state.selected ? '#fbbf24' : 'rgba(251,191,36,0.7)';
+    const x = X(h.start), w = Math.max(3, X(h.end) - X(h.start));
+    const sel = h.id === state.selected;
+    ctx.fillStyle = sel ? 'rgba(251,191,36,0.85)' : 'rgba(251,191,36,0.5)';
     ctx.fillRect(x, 2, w, TOP - 4);
+    // trim handles (left/right edges)
+    ctx.fillStyle = sel ? '#fde68a' : '#fbbf24';
+    ctx.fillRect(x, 2, 2, TOP - 4);
+    ctx.fillRect(x + w - 2, 2, 2, TOP - 4);
+    if (sel) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, 2.5, w - 1, TOP - 5); }
   }
 
   // playhead
@@ -298,20 +718,121 @@ function draw() {
   ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, H); ctx.stroke();
 }
 
-// click: seek to point, select the phantasm segment under it (and highlight if in top strip)
+// ---- Interactive clip lane: drag an edge to trim, drag the body to shift, else seek ----
+// Hit-test the clip lane (y < TOP). Returns the clip + which zone (left/right edge or body).
+function clipLaneAt(x, y) {
+  if (y >= TOP) return null;                 // below the lane = Phantasm band (seek/select)
+  for (const h of state.highlights) {
+    if (!h.keep) continue;
+    const sx = X(h.start), ex = X(h.end);
+    if (x < sx - EDGE_PX || x > ex + EDGE_PX) continue;
+    if (Math.abs(x - sx) <= EDGE_PX) return { clip: h, zone: 'left' };
+    if (Math.abs(x - ex) <= EDGE_PX) return { clip: h, zone: 'right' };
+    if (x > sx && x < ex) return { clip: h, zone: 'body' };
+  }
+  return null;
+}
+
+// Live-update one clip row's trim inputs mid-drag (no full re-render → no input focus loss).
+function syncRowInputs(h) {
+  const row = document.querySelector(`#hlList .hlRow[data-id="${h.id}"]`);
+  if (!row) return;
+  const si = row.querySelector('input[data-k=start]'); if (si) si.value = h.start.toFixed(1);
+  const ei = row.querySelector('input[data-k=end]'); if (ei) ei.value = h.end.toFixed(1);
+}
+
 canvas.addEventListener('mousedown', (e) => {
   if (!state.proj) return;
   const rect = canvas.getBoundingClientRect();
   const x = e.clientX - rect.left, y = e.clientY - rect.top;
+
+  // On a clip in the lane? Start a trim/shift drag instead of seeking.
+  const hit = clipLaneAt(x, y);
+  if (hit) {
+    e.preventDefault();
+    state.selected = hit.clip.id;
+    state.drag = {
+      id: hit.clip.id, zone: hit.zone, anchorT: T(x),
+      startStart: hit.clip.start, startEnd: hit.clip.end,
+    };
+    canvas.style.cursor = hit.zone === 'body' ? 'grabbing' : 'ew-resize';
+    renderHighlights(); draw();
+    return;
+  }
+
+  // Otherwise: seek + select the Phantasm segment under the cursor (original behavior).
   const t = Math.max(0, Math.min(state.proj.duration, T(x)));
   player.currentTime = t;
   const seg = (state.segments || []).find((s) => t >= s.start && t <= s.end);
   state.selSeg = seg ? seg.id : null;
-  if (y < TOP) {
-    const h = state.highlights.find((hh) => hh.keep && t >= hh.start && t <= hh.end);
-    if (h) state.selected = h.id;
-  }
   renderGhosts(); draw();
+});
+
+// Move/up on window so a fast drag keeps working even if the cursor leaves the canvas.
+window.addEventListener('mousemove', (e) => {
+  if (!state.proj) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left, y = e.clientY - rect.top;
+
+  if (state.drag) {
+    if (!canvas.clientWidth) return;   // guard: a 0-width canvas would make T(x) NaN
+    const d = state.drag;
+    const h = state.highlights.find((c) => c.id === d.id);
+    if (!h) return;
+    const dt = T(x) - d.anchorT;
+    const dur = state.proj.duration, MIN = 0.3;
+    if (d.zone === 'left') {
+      h.start = +Math.max(0, Math.min(d.startStart + dt, h.end - MIN)).toFixed(3);
+    } else if (d.zone === 'right') {
+      h.end = +Math.min(dur, Math.max(d.startEnd + dt, h.start + MIN)).toFixed(3);
+    } else { // body: shift, preserving length
+      const len = d.startEnd - d.startStart;
+      const ns = Math.max(0, Math.min(d.startStart + dt, dur - len));
+      h.start = +ns.toFixed(3); h.end = +(ns + len).toFixed(3);
+    }
+    h.snapped = false;                  // manual edit → no longer an auto-snap
+    syncRowInputs(h);
+    requestAnimationFrame(draw);
+    return;
+  }
+
+  // Hover feedback, only while over the canvas.
+  if (x < 0 || x > canvas.clientWidth || y < 0 || y > 160) return;
+  const hit = clipLaneAt(x, y);
+  canvas.style.cursor = hit ? (hit.zone === 'body' ? 'grab' : 'ew-resize') : 'default';
+});
+
+window.addEventListener('mouseup', () => {
+  if (!state.drag) return;
+  const h = state.highlights.find((c) => c.id === state.drag.id);
+  state.drag = null;
+  canvas.style.cursor = 'default';
+  if (h) { renderHighlights(); draw(); }   // commit: refresh duration line + ✂ chip + inputs
+});
+
+// Razor: double-click a clip to split it in two — at the playhead if it's inside the clip,
+// otherwise at the click point. Both halves inherit the parent's title/tags and stay kept.
+let _splitSeq = 0;
+canvas.addEventListener('dblclick', (e) => {
+  if (!state.proj) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left, y = e.clientY - rect.top;
+  if (y >= TOP) return;
+  const t = T(x);
+  const clip = state.highlights.find((h) => h.keep && t > h.start && t < h.end);
+  if (!clip) return;
+  e.preventDefault();
+  const MIN = 0.4;
+  const pt = player.currentTime;
+  let cut = +(pt > clip.start && pt < clip.end ? pt : t).toFixed(3);
+  if (cut - clip.start < MIN || clip.end - cut < MIN) return toast('Too close to an edge to split.', true);
+  const idx = state.highlights.indexOf(clip);
+  const right = { ...clip, id: `m${++_splitSeq}`, start: cut, snapped: false };
+  clip.end = cut; clip.snapped = false;
+  state.highlights.splice(idx + 1, 0, right);
+  state.selected = right.id;
+  renderHighlights(); draw();
+  toast(`Split into 2 clips at ${fmt(cut)}.`);
 });
 
 // keyboard: G toggle keep/ghost, V verify (play 2s), B banish-export
@@ -443,6 +964,32 @@ $('#youtubeBtn').addEventListener('click', async () => {
     addOutput('YouTube cut', data, 'youtube');
     toast(`YouTube cut ready${data.hook ? ' (hooked)' : ''}${data.captionsBurned ? ' + captions' : ''} ✓`);
   } catch (e) { toast(e.message, true); } finally { hideProgress(); $('#youtubeBtn').disabled = false; }
+});
+
+// Hand the Phantasm cut to Premiere/Resolve/FCP as an EDL + FCP7 XML.
+$('#premiereBtn').addEventListener('click', async () => {
+  if (!state.proj) return;
+  const segments = keepSegments();
+  if (!segments.length) return toast('Nothing to hand off — all segments are red.', true);
+  const markers = (state.highlights || []).map((h) => ({ t: h.t, name: `Highlight ${String(h.id || '').toUpperCase()}` }));
+  $('#premiereBtn').disabled = true;
+  showProgress('Building Premiere handoff (EDL + FCP7 XML)…');
+  try {
+    const res = await fetch('/api/export/premiere', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: state.proj.id, segments, markers }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    const el = document.createElement('div');
+    el.className = 'outItem';
+    el.innerHTML = `<span class="tag">premiere</span><strong>Premiere handoff</strong>
+      <a href="${data.xmlUrl}" download>XML (auto-relink)</a>
+      <a href="${data.edlUrl}" download>EDL</a>
+      ${data.srtUrl ? `<a href="${data.srtUrl}" download>captions.srt</a>` : ''}`;
+    $('#outputs').prepend(el);
+    toast(`Premiere handoff ready: ${data.segments} segments @ ${data.fps}fps. In Premiere: File → Import the XML.`);
+  } catch (e) { toast(e.message, true); } finally { hideProgress(); $('#premiereBtn').disabled = false; }
 });
 
 $('#shortsBtn').addEventListener('click', async () => {

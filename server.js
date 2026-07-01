@@ -7,10 +7,18 @@ import crypto from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { exec } from 'node:child_process';
 
-import { analyze } from './lib/analyze.js';
-import { exportLongCut, exportShort, grabFrame, burnSubs, canBurnCaptions } from './lib/exporter.js';
-import { generateCaptions, captionsReady } from './lib/captions.js';
+import { analyze, analyzeAudio, analyzeVideo } from './lib/analyze.js';
+import { exportLongCut, exportShort, grabFrame, burnSubs, canBurnCaptions, exportSequence } from './lib/exporter.js';
+import { generateCaptions, captionsReady, transcribeRange, transcribeWindows, emphasisChunks } from './lib/captions.js';
+import { scoreWindow } from './lib/reactions.js';
+import { heuristicMeta } from './lib/titles.js';
+import { pepaiReady, generateClipMeta } from './lib/pepai.js';
+import { tightBounds } from './lib/trim.js';
+import { buildTimelineZoomExpression } from './lib/zooms.js';
+import { hookPenalty, pacingTag } from './lib/retention.js';
 import { downloadUrl, probeUrl, ytdlpBin, SUPPORTED_URL } from './lib/fetch.js';
+import { buildEDL, buildFcp7Xml } from './lib/interchange.js';
+import { probe } from './lib/ff.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Writable dirs — overridable so the Electron app can point them at userData
@@ -49,10 +57,12 @@ const tildeExpand = (p) => (p && p.startsWith('~') ? path.join(process.env.HOME,
 
 app.get('/api/status', async (req, res) => {
   const cap = captionsReady();
+  const pep = await pepaiReady();
   res.json({
     captions: { ready: !!(cap.bin && cap.model), bin: cap.bin, model: cap.model },
     canBurn: await canBurnCaptions(),
     canDownload: !!ytdlpBin(),
+    pepai: { ready: pep.ready, model: pep.model || null },
   });
 });
 
@@ -108,13 +118,41 @@ app.post('/api/analyze', async (req, res) => {
     if (!fs.existsSync(file)) return res.status(404).json({ error: `File not found: ${file}` });
     const id = idFor(file);
     await rememberSource(id, file);
-    const result = await analyze(file, req.body.opts || {});
-    result.id = id;
-    result.name = path.basename(file);
-    await fsp.writeFile(path.join(DATA, id, 'analysis.json'), JSON.stringify(result), 'utf8');
-    res.json(result);
+    const opts = req.body.opts || {};
+    const analysisPath = path.join(DATA, id, 'analysis.json');
+
+    // PHASE 1 — audio-only structure. Fast: respond immediately so the timeline renders
+    // and "Rank funny moments" is interactive while phase 2 is still decoding frames.
+    const a = await analyzeAudio(file, opts);
+    const env = a._env; delete a._env;
+    a.id = id;
+    a.name = path.basename(file);
+    await fsp.writeFile(analysisPath, JSON.stringify(a), 'utf8');
+    res.json(a);
+
+    // PHASE 2 — video + Phantasm. Un-awaited: decodes frames in the background, then merges
+    // scene cuts / freezes / phantasm into the persisted analysis. The UI polls
+    // GET /api/analysis/:id and patches the canvas in when videoReady flips true.
+    analyzeVideo(file, a.duration, env, a.silences, opts)
+      .then((v) => fsp.writeFile(analysisPath, JSON.stringify({ ...a, ...v }), 'utf8'))
+      .catch((err) => fsp.writeFile(
+        analysisPath,
+        JSON.stringify({ ...a, videoReady: false, videoFailed: String(err?.message || err) }),
+        'utf8',
+      ).catch(() => {}));
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
+// Poll the persisted analysis — phase-2 (Phantasm / scene cuts) lands here when the
+// background video pass finishes. Returns the raw JSON as-is.
+app.get('/api/analysis/:id', async (req, res) => {
+  try {
+    const json = await fsp.readFile(path.join(DATA, req.params.id, 'analysis.json'), 'utf8');
+    res.type('application/json').send(json);
+  } catch {
+    res.status(404).json({ error: 'No analysis for that id' });
   }
 });
 
@@ -172,6 +210,151 @@ app.post('/api/captions', async (req, res) => {
   }
 });
 
+// ---- Funny moments: transcribe candidate windows, score reactions, re-rank. ----
+// Only the candidate windows are transcribed (not the whole VOD), so this stays fast.
+app.post('/api/highlights/funny', async (req, res) => {
+  try {
+    const id = req.body.id;
+    const file = await sourceFor(id);
+    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const cap = captionsReady();
+    if (!cap.bin || !cap.model) {
+      return res.status(400).json({ error: 'Reaction ranking needs whisper.cpp. Install it: brew install whisper-cpp' });
+    }
+
+    // Candidate windows: prefer the broad analyze pool, fall back to highlights.
+    let analysis = {};
+    try { analysis = JSON.parse(await fsp.readFile(path.join(DATA, id, 'analysis.json'), 'utf8')); } catch {}
+    let pool = (analysis.candidates?.length ? analysis.candidates : analysis.highlights) || [];
+    if (Array.isArray(req.body.candidates) && req.body.candidates.length) pool = req.body.candidates;
+    if (!pool.length) return res.status(400).json({ error: 'No candidate moments — run Analyze first.' });
+
+    const duration = analysis.duration || (await probe(file)).duration || 0;
+    const keepN = req.body.keep || 8;
+    const pad = 1.5;
+    const minScore = req.body.minScore ?? 0.5;     // energy gate: skip flat/quiet candidates (candidates are already peaks)
+    const budgetSec = req.body.budgetSec ?? 540;   // hard cap on audio sent to whisper (~9 min)
+    const tighten = req.body.tighten !== false;    // snap clips to the reaction beat (default on)
+
+    // Energy gate + budget — this is what keeps a 2-hour VOD fast: rank candidates by
+    // audio score, drop anything below the gate, and keep only the hottest windows until
+    // the budget fills. Whisper never sees more than ~9 min of the loudest audio.
+    const padded = (c) => ({
+      ...c,
+      start: Math.max(0, c.start - pad),
+      end: duration ? Math.min(duration, c.end + pad) : c.end + pad,
+    });
+    const gated = [];
+    let budget = 0;
+    for (const c of [...pool].sort((a, b) => (b.score || 0) - (a.score || 0))) {
+      if ((Number(c.score) || 0) < minScore) continue;
+      const w = padded(c);
+      const dur = w.end - w.start;
+      if (budget + dur > budgetSec) continue;
+      gated.push(w);
+      budget += dur;
+    }
+    if (!gated.length) {
+      return res.json({ highlights: [], scoredCount: 0, note: 'No candidates above the energy gate.' });
+    }
+
+    // ONE ffmpeg concat + ONE whisper pass across every gated window (model loads once).
+    const transcribed = await transcribeWindows(file, gated);
+    const scored = transcribed.map((w) => {
+      const r = scoreWindow(w.words || []);
+      const audioScore = Number(w.score) || 0;
+      // Fuse: audio peak + reaction signal (reaction weighted higher — it's the funny part),
+      // minus a weak-hook penalty so boring "hey guys" intros don't rank at the top.
+      const hook = hookPenalty(r.snippet);
+      const total = +(audioScore + 1.5 * r.reactionScore + hook).toFixed(2);
+      // Zero-dep heuristic title/tags (instant). PepAI can upgrade these on demand later.
+      const meta = heuristicMeta(w.words || [], r.hits);
+      // Snap to the reaction beat — trim dead air before the setup and silence after the
+      // payoff. `tighten:false` (or `trim:{leadIn,tailOut}`) overrides.
+      const tb = tighten
+        ? tightBounds(w.words || [], { start: w.start, end: w.end, t: w.t },
+            { ...(req.body.trim || {}), active: analysis.active || [] })   // snap cuts to silence gaps
+        : { start: w.start, end: w.end, snapped: false };
+      return {
+        id: w.id, t: w.t,
+        start: +tb.start.toFixed(2), end: +tb.end.toFixed(2),
+        originalStart: +(+w.start).toFixed(2), originalEnd: +(+w.end).toFixed(2),
+        snapped: tb.snapped,
+        audioScore: +audioScore.toFixed(2),
+        reactionScore: r.reactionScore,
+        score: total,
+        snippet: r.snippet,
+        hits: [...new Set(r.hits.map((h) => h.tag))],
+        title: meta.title,
+        tags: meta.tags,
+        titleSource: meta.titleSource,
+        pacing: pacingTag(w.words),
+        keep: true,
+      };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+    const top = scored.slice(0, keepN).sort((a, b) => a.start - b.start);
+    res.json({ highlights: top, scoredCount: scored.length, audioSentSec: +budget.toFixed(1) });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
+// ---- PepAI (optional): upgrade specific clips' titles/tags via a local Ollama model. ----
+// On-demand only, off the funny hot path. 400s cleanly if Ollama isn't running so the UI
+// can keep the heuristic titles. Body: { clips: [{ id, transcript }] }.
+app.post('/api/pepai/enhance', async (req, res) => {
+  try {
+    const status = await pepaiReady();
+    if (!status.ready) {
+      return res.status(400).json({ error: 'PepAI not detected. Start Ollama and pull a model, e.g. `ollama pull llama3.2`.' });
+    }
+    const clips = Array.isArray(req.body.clips) ? req.body.clips.slice(0, 12) : [];
+    const results = [];
+    for (const c of clips) {
+      const meta = await generateClipMeta(c.transcript || '', { model: status.model });
+      results.push({ id: c.id, ok: !!meta, ...(meta || {}) });
+    }
+    res.json({ model: status.model, results });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
+// Multi-track sequence export: clips in OUTPUT (array) order, each with optional text
+// overlays, composited + concatenated in ONE filter_complex pass. Body:
+//   { id, clips: [{ start, end, overlays?: [...] }], vertical?: true }
+app.post('/api/export/sequence', async (req, res) => {
+  try {
+    const file = await sourceFor(req.body.id);
+    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const clips = Array.isArray(req.body.clips) ? req.body.clips : [];
+    if (!clips.length) return res.status(400).json({ error: 'No clips in the sequence.' });
+
+    // Zoom parity with the TikTok pack: ONE batched whisper pass over the clips → per-clip
+    // emphasis chunks → punch-in zoom filter, attached to each segment. Off the hot path.
+    let segs = clips;
+    let zoomed = false;
+    const cap = captionsReady();
+    if (req.body.zoom !== false && cap.bin && cap.model) {
+      const transcribed = await transcribeWindows(file, clips);
+      segs = clips.map((c, i) => {
+        const z = buildTimelineZoomExpression(emphasisChunks(transcribed[i]?.words || [], c.start), 0);
+        if (z.hasZoom) { zoomed = true; return { ...c, zoomFilter: z.filter }; }
+        return c;
+      });
+    }
+
+    const out = path.join(RENDERS, req.body.id, 'sequence.mp4');
+    await fsp.mkdir(path.dirname(out), { recursive: true });
+    await exportSequence(file, segs, out, { vertical: req.body.vertical !== false });
+    res.json({ url: `/renders/${req.body.id}/sequence.mp4`, file: out, clips: clips.length, zoomed });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
 app.post('/api/export/longcut', async (req, res) => {
   try {
     const file = await sourceFor(req.body.id);
@@ -218,25 +401,29 @@ app.post('/api/export/tiktok', async (req, res) => {
     if (!clips.length) return res.status(400).json({ error: 'No clips selected' });
     const wantCaps = req.body.captions !== false && captionsReady().bin && captionsReady().model;
     const burn = wantCaps && await canBurnCaptions();
+    const zoomOn = req.body.zoom !== false;   // beat-synced punch-ins on emphasis words
     const dir = path.join(RENDERS, req.body.id);
     const results = [];
+    let zoomed = false;
     for (let i = 0; i < clips.length; i++) {
       const { start, end } = clips[i];
-      let subs;
+      let subs; let zoomFilter = null;
       if (wantCaps) {
         const ass = path.join(dir, `tiktok-${i + 1}.ass`);
         // clip-relative timestamps so captions line up with the -ss-trimmed vertical clip
-        await generateCaptions(file, ass, { range: [start, end], clipRelative: true });
+        const { chunks } = await generateCaptions(file, ass, { range: [start, end], clipRelative: true, punchy: req.body.punchy !== false });
         if (burn) subs = ass;
+        // Punch-in zooms keyed to the emphasis caption blocks (already clip-relative → clipStart 0).
+        if (zoomOn) { const z = buildTimelineZoomExpression(chunks || [], 0); zoomFilter = z.filter; if (z.hasZoom) zoomed = true; }
       }
       const out = path.join(dir, `tiktok-${i + 1}.mp4`);
-      await exportShort(file, start, end, out, { subs });
+      await exportShort(file, start, end, out, { subs, zoomFilter });
       results.push({
         file: out, url: `/renders/${req.body.id}/tiktok-${i + 1}.mp4`,
         srtUrl: wantCaps ? `/renders/${req.body.id}/tiktok-${i + 1}.srt` : null,
       });
     }
-    res.json({ clips: results, captionsBurned: burn });
+    res.json({ clips: results, captionsBurned: burn, zoomed });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }
@@ -271,6 +458,40 @@ app.post('/api/export/youtube', async (req, res) => {
       }
     }
     res.json({ file: outFile, url: outUrl, captionsBurned, srtUrl, hook: !!hook });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
+// ---- Premiere / NLE handoff: EDL + FCP7 XML of the Phantasm cut (relinks to source). ----
+app.post('/api/export/premiere', async (req, res) => {
+  try {
+    const file = await sourceFor(req.body.id);
+    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const segments = (req.body.segments || []).filter((s) => s && s.end > s.start);
+    if (!segments.length) return res.status(400).json({ error: 'No segments to hand off' });
+
+    // Meta (fps/dims) from cached analysis if present, else probe.
+    let meta;
+    try { meta = JSON.parse(await fsp.readFile(path.join(DATA, req.body.id, 'analysis.json'), 'utf8')).meta; } catch {}
+    if (!meta || !meta.fps) meta = await probe(file);
+    const fps = meta.fps || 30;
+    const name = path.basename(file);
+
+    const dir = path.join(RENDERS, req.body.id);
+    await fsp.mkdir(dir, { recursive: true });
+    const edl = buildEDL(segments, fps, { clipName: name });
+    const xml = buildFcp7Xml(file, meta, segments, req.body.markers || [], { title: `${name} — PepStudio cut` });
+    await fsp.writeFile(path.join(dir, 'premiere.edl'), edl, 'utf8');
+    await fsp.writeFile(path.join(dir, 'premiere.xml'), xml, 'utf8');
+
+    const srt = path.join(dir, 'captions.srt');
+    res.json({
+      edl: path.join(dir, 'premiere.edl'), edlUrl: `/renders/${req.body.id}/premiere.edl`,
+      xml: path.join(dir, 'premiere.xml'), xmlUrl: `/renders/${req.body.id}/premiere.xml`,
+      srtUrl: fs.existsSync(srt) ? `/renders/${req.body.id}/captions.srt` : null,
+      segments: segments.length, fps,
+    });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }

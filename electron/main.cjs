@@ -1,5 +1,5 @@
 // ClipForge desktop shell: embeds the Express server and shows it in a native window.
-const { app, BrowserWindow, shell } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const net = require('node:net');
@@ -111,10 +111,20 @@ async function boot() {
       width: 1320, height: 880, minWidth: 1000, minHeight: 640,
       backgroundColor: '#0b0f17', title: 'PepStudio', show: false,
       icon: path.join(__dirname, 'icon.png'),
-      webPreferences: { contextIsolation: true },
+      webPreferences: { contextIsolation: true, preload: path.join(__dirname, 'preload.cjs') },
     });
     win.once('ready-to-show', () => win.show());
     win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
+    // Native file-open dialog for the renderer's "Choose file…" button (preload → window.electron).
+    ipcMain.handle('dialog:openVideo', async () => {
+      const r = await dialog.showOpenDialog(win, {
+        title: 'PepStudio — choose source footage',
+        buttonLabel: 'Import',
+        properties: ['openFile'],
+        filters: [{ name: 'Video', extensions: ['mp4', 'mov', 'mkv', 'avi', 'webm', 'm4v'] }],
+      });
+      return (r.canceled || !r.filePaths.length) ? null : r.filePaths[0];
+    });
     await win.loadFile(path.join(__dirname, 'splash.html'));
   }
 

@@ -7,10 +7,28 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <!-- Project picker: a full-screen overlay shown on load. The whole editor lives untouched
+       underneath; "New Project" / opening a recent just hides this. No existing node moves. -->
+  <div id="view-project-picker" class="view-picker">
+    <aside class="picker-side">
+      <div class="picker-logo">⚡ PepStudio</div>
+      <nav class="picker-nav"><div class="pnav active">🏠 Projects</div></nav>
+    </aside>
+    <main class="picker-main">
+      <div class="picker-head">
+        <h1>Projects</h1>
+        <button id="btnNewProject" class="picker-new">➕ New Project</button>
+      </div>
+      <div id="recentsGrid" class="recents-grid"></div>
+    </main>
+  </div>
+
   <header>
+    <button id="backToProjects" class="backBtn" title="Back to projects">◀ Projects</button>
     <div class="brand">⚡ PepStudio</div>
     <div class="sub">VOD → TikTok clips · YouTube cut · captions — local & free</div>
     <div id="capStatus" class="badge muted">captions: checking…</div>
+    <button id="themeToggle" class="themeToggle" title="Toggle light / dark">🌗</button>
   </header>
 
   <section id="importBar" class="card">
@@ -27,7 +45,8 @@
     <div class="orDivider"><span>or use a local file</span></div>
     <div class="row">
       <input id="pathInput" type="text" spellcheck="false"
-             placeholder="/Users/you/Movies/raw-gameplay.mp4  (or ~/Movies/…)" />
+             placeholder="/Users/you/Movies/raw-gameplay.mp4  (or ~/Movies/… — or drop a file here)" />
+      <button id="btn-import-file" class="filePickBtn" title="Choose a video file…">📁 Choose…</button>
       <button id="analyzeBtn">Analyze</button>
     </div>
     <div id="importHint" class="hint">Clip your own streams/VODs. Nothing is uploaded — files are processed locally.</div>
@@ -40,7 +59,10 @@
 
   <main id="editor" class="hidden">
     <div class="stage">
-      <video id="player" controls preload="metadata"></video>
+      <div class="monitor">
+        <video id="player" controls preload="metadata"></video>
+        <div id="monitorPlaceholder" class="monitorPlaceholder">No Media Loaded</div>
+      </div>
       <div class="playerMeta">
         <span id="metaName">—</span>
         <span id="metaInfo" class="muted"></span>
@@ -66,6 +88,21 @@
       <div class="tlTip muted">Click a block to seek. Press <kbd>G</kbd> to toggle the selected block keep↔ghost, <kbd>V</kbd> to verify (play 2s), <kbd>B</kbd> to banish.</div>
     </div>
 
+    <!-- Premiere-style multi-track sequence timeline: clips/overlays/audio laid out in OUTPUT order. -->
+    <div class="trackPanel card">
+      <div class="trackTabs"><span class="ttab active">⏱ Sequence</span><span id="seqDur" class="muted right">0:00</span></div>
+      <div class="trackBody">
+        <div class="trackHeaders">
+          <div class="trk vid">V2 · Overlay</div>
+          <div class="trk vid">V1 · Clips</div>
+          <div class="trk aud">A1 · Speech</div>
+          <div class="trk aud">A2 · Music</div>
+          <div class="trk aud">A3 · SFX</div>
+        </div>
+        <div class="trackLanes" id="trackLanes"></div>
+      </div>
+    </div>
+
     <div class="panels">
       <div class="card ghostPanel">
         <div class="panelHead">
@@ -80,6 +117,8 @@
         <div class="panelHead">
           <strong>Highlights</strong>
           <span id="hlCount" class="muted"></span>
+          <button id="funnyBtn" class="funnyBtn" title="Transcribe the candidate moments and rank them by your reactions — laughter, hype, big moments">🎭 Rank funny moments</button>
+          <button id="pepaiBtn" class="pepaiBtn hidden" title="Upgrade titles/tags with local PepAI">✨ Upgrade titles</button>
         </div>
         <div id="hlList"></div>
       </div>
@@ -91,6 +130,7 @@
           <button id="tiktokBtn" class="big">🎵 TikTok pack<small>vertical + burned captions</small></button>
           <button id="youtubeBtn" class="big">▶ YouTube cut<small>hook + tight edit</small></button>
         </div>
+        <button id="seqExportBtn" class="big seqBtn">🎬 Export sequence<small>kept clips in order + text overlays</small></button>
         <label class="check"><input type="checkbox" id="capPublish" checked /> Captions on publish exports</label>
         <div class="field">
           <label>TikTok clips</label>
@@ -99,6 +139,12 @@
             <option value="5" selected>Top 5 moments</option>
             <option value="8">Top 8 moments</option>
           </select>
+        </div>
+
+        <div class="field">
+          <label>Finish in your editor</label>
+          <button id="premiereBtn" style="width:100%">🎬 Send to Premiere (EDL + XML)</button>
+          <div class="hint">Rebuilds the Phantasm cut on your original footage in Premiere / Resolve / Final Cut — auto-relinked, highlights as markers.</div>
         </div>
         <div id="exportHint" class="hint"></div>
 

@@ -10,6 +10,7 @@
   },
   "scripts": {
     "start": "node server.js",
+    "test": "node test/zooms.test.js",
     "electron": "electron .",
     "dist": "electron-builder --mac dmg",
     "dist:dir": "electron-builder --dir"

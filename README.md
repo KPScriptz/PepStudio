@@ -1,4 +1,4 @@
-# ⚡ PepStudio
+# ⚡ ClipForge
 
 A **local, free, AI-assisted gameplay editor** for the Mac. Drop in an hour of raw
 gameplay; it auto-finds the action and gives you a Premiere-style timeline to curate,
@@ -9,7 +9,7 @@ with **FFmpeg** + **whisper.cpp**.
 
 ## Paste a link → publish-ready clips
 
-Drop in a **YouTube or Twitch VOD link** (or a local file) and PepStudio downloads it with
+Drop in a **YouTube or Twitch VOD link** (or a local file) and ClipForge downloads it with
 `yt-dlp`, analyzes it, then gives you two one-click exports:
 
 - **🎵 TikTok pack** — your top moments as vertical 1080×1920 clips with burned-in,
@@ -21,7 +21,7 @@ Drop in a **YouTube or Twitch VOD link** (or a local file) and PepStudio downloa
 
 ## 👻 Phantasm — tag, don't delete
 
-PepStudio doesn't blindly throw footage away. Dead space stays on the timeline as
+ClipForge doesn't blindly throw footage away. Dead space stays on the timeline as
 **red "ghost" clips** until you decide to banish them — so a silent-but-epic stealth
 play never gets auto-trashed.
 
@@ -38,19 +38,19 @@ from everything still green. Keys: `G` toggle keep/ghost, `V` verify (play 2 s),
 
 ## Install (desktop app)
 
-PepStudio is a **native macOS app** (Electron) — its own window and dock icon, no
+ClipForge is a **native macOS app** (Electron) — its own window and dock icon, no
 Terminal, no browser. The Node server runs embedded inside it.
 
-1. Download `PepStudio-<version>-arm64.dmg` from the [Releases](../../releases) page.
-2. Open it and drag **PepStudio** onto **Applications**.
-3. **Right-click PepStudio → Open → Open** the first time (it isn't Apple-notarized).
+1. Download `ClipForge-<version>-arm64.dmg` from the [Releases](../../releases) page.
+2. Open it and drag **ClipForge** onto **Applications**.
+3. **Right-click ClipForge → Open → Open** the first time (it isn't Apple-notarized).
 4. It opens its own window with a setup splash, then the editor.
 
 On first launch it pulls what it needs from the internet: **yt-dlp** (downloaded directly,
 no Homebrew) and the **~141 MB speech model**. **FFmpeg with libass** and **whisper.cpp**
 are used from your system if present, else installed via [Homebrew](https://brew.sh).
 Electron bundles Node, so no separate Node install is required. Everything mutable
-(downloads, renders, model) lives in `~/Library/Application Support/PepStudio`.
+(downloads, renders, model) lives in `~/Library/Application Support/ClipForge`.
 
 ## Run from source (devs)
 
@@ -74,15 +74,15 @@ separate formula), so:
 brew install ffmpeg-full     # bottled, keg-only — does NOT touch your core ffmpeg
 ```
 
-PepStudio's `lib/ff.js` auto-detects `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg`, so the
+ClipForge's `lib/ff.js` auto-detects `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg`, so the
 `subtitles`/`drawtext` filters light up and exports burn the animated captions in. Set
-`FFMPEG_PATH` to override. Without libass, PepStudio degrades gracefully and exports a
+`FFMPEG_PATH` to override. Without libass, ClipForge degrades gracefully and exports a
 `captions.srt` for YouTube Studio / CapCut instead.
 
 ## Build the app
 
 ```bash
-npm run dist                 # → dist/PepStudio-<version>-arm64.dmg (Electron desktop app)
+npm run dist                 # → dist/ClipForge-<version>-arm64.dmg (Electron desktop app)
 ```
 
 ## Tuning
