@@ -17,6 +17,21 @@
   --glass-shadow: rgba(0, 0, 0, 0.5);
   --glass-blur: blur(22px) saturate(180%);
   --body-glow: radial-gradient(1200px 600px at 70% -10%, #1a2030, var(--bg));
+  /* Liquid Glass 2.0 (theme-scoped) */
+  --lg-body:
+    radial-gradient(900px 520px at 82% -8%, rgba(59,130,246,.16), transparent 60%),
+    radial-gradient(760px 520px at -6% 108%, rgba(167,139,250,.12), transparent 60%),
+    radial-gradient(600px 420px at 50% 118%, rgba(110,231,255,.06), transparent 60%),
+    #0a0a0e;
+  --lg-fill: rgba(255,255,255,.035);
+  --lg-fill-2: rgba(255,255,255,.05);
+  --lg-fill-hover: rgba(255,255,255,.09);
+  --lg-border-hover: rgba(255,255,255,.22);
+  --lg-input-bg: rgba(0,0,0,.32);
+  --lg-inner-spec: rgba(255,255,255,.06);
+  --lg-scroll: rgba(255,255,255,.13);
+  --lg-scroll-hover: rgba(255,255,255,.24);
+  --lg-track-bg: #0a0c11;
 }
 [data-theme="light"] {
   --bg: #eef0f5;
@@ -36,6 +51,20 @@
   --glass-shadow: rgba(0, 0, 0, 0.14);
   --glass-blur: blur(22px) saturate(180%);
   --body-glow: radial-gradient(1200px 600px at 70% -10%, #dde3ee, var(--bg));
+  /* Liquid Glass 2.0 (light) */
+  --lg-body:
+    radial-gradient(900px 520px at 82% -8%, rgba(59,130,246,.10), transparent 60%),
+    radial-gradient(760px 520px at -6% 108%, rgba(167,139,250,.10), transparent 60%),
+    #eef0f5;
+  --lg-fill: rgba(0,0,0,.035);
+  --lg-fill-2: rgba(0,0,0,.05);
+  --lg-fill-hover: rgba(0,0,0,.08);
+  --lg-border-hover: rgba(0,0,0,.25);
+  --lg-input-bg: rgba(255,255,255,.8);
+  --lg-inner-spec: rgba(255,255,255,.65);
+  --lg-scroll: rgba(0,0,0,.2);
+  --lg-scroll-hover: rgba(0,0,0,.34);
+  --lg-track-bg: #e8ebf2;
 }
 * { box-sizing: border-box; }
 body {
@@ -244,7 +273,7 @@ body.reordering .hlRow, body.reordering .card { transition: none; }
 .trackTabs { display: flex; align-items: center; gap: 10px; padding: 7px 12px; background: rgba(0,0,0,0.28); border-bottom: 1px solid var(--line); }
 .ttab { font-size: 12px; font-weight: 700; color: var(--text); }
 .trackTabs .right { margin-left: auto; font-family: ui-monospace, monospace; color: var(--muted); }
-.trackBody { display: flex; background: #0a0c11; }
+.trackBody { display: flex; background: var(--lg-track-bg, #0a0c11); }
 .trackHeaders { width: 122px; flex: none; border-right: 1px solid var(--line); }
 .trk { height: 30px; display: flex; align-items: center; padding: 0 10px; font-size: 10px; font-weight: 700; letter-spacing: .3px; color: var(--muted); border-bottom: 1px solid rgba(255,255,255,0.05); }
 .trk.vid { background: rgba(110,231,255,0.05); }
@@ -490,13 +519,9 @@ body.reordering .hlRow, body.reordering .card { transition: none; }
    on the already-blurred parent — same look, far cheaper to composite.
    ====================================================================== */
 
-/* Ambient obsidian backdrop with soft color fields for the glass to refract */
+/* Ambient backdrop with soft color fields for the glass to refract (theme-scoped) */
 body{
-  background:
-    radial-gradient(900px 520px at 82% -8%, rgba(59,130,246,.16), transparent 60%),
-    radial-gradient(760px 520px at -6% 108%, rgba(167,139,250,.12), transparent 60%),
-    radial-gradient(600px 420px at 50% 118%, rgba(110,231,255,.06), transparent 60%),
-    #0a0a0e;
+  background: var(--lg-body);
   background-attachment: fixed;
 }
 
@@ -509,7 +534,7 @@ header{
 }
 header .sub{ display:none; }
 .brand{ font-size:17px; }
-.window-title-tab{ background:rgba(255,255,255,.04); }
+.window-title-tab{ background:var(--lg-fill); }
 
 /* Top-level glass surfaces (blur lives here and only here) */
 .nle-pane,.nle-center,.nle-right,.nle-bottom>.card,.view-picker .picker-side{
@@ -521,16 +546,16 @@ header .sub{ display:none; }
 
 /* Inner cards: translucent fill, NO nested blur (perf) */
 .card,.nle-right .panels>.card{
-  background:rgba(255,255,255,.035);
+  background:var(--lg-fill);
   border:1px solid var(--glass-border); border-radius:10px;
   backdrop-filter:none; -webkit-backdrop-filter:none;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+  box-shadow:inset 0 1px 0 var(--lg-inner-spec);
 }
 .nle-left #importBar{ background:transparent; border:0; box-shadow:none; }
 
 /* Pane tabs: quieter, airier */
 .paneTab{
-  background:rgba(255,255,255,.03); border-bottom:1px solid var(--glass-border);
+  background:var(--lg-fill); border-bottom:1px solid var(--glass-border);
   color:var(--muted); font-size:9.5px; letter-spacing:.9px; padding:8px 14px;
   position:relative;
 }
@@ -542,48 +567,62 @@ header .sub{ display:none; }
 
 /* Controls: glass pills + focus rings */
 button{
-  background:rgba(255,255,255,.05); border:1px solid var(--glass-border);
+  background:var(--lg-fill-2); border:1px solid var(--glass-border);
   border-radius:9px; transition:border-color .15s, background .15s, transform .06s;
 }
-button:hover{ background:rgba(255,255,255,.09); border-color:rgba(255,255,255,.22); }
+button:hover{ background:var(--lg-fill-hover); border-color:var(--lg-border-hover); }
 button:active{ transform:translateY(1px); }
 button.primary{ background:linear-gradient(180deg, rgba(59,130,246,.28), rgba(59,130,246,.14)); border-color:rgba(59,130,246,.5); }
 button.danger{ background:linear-gradient(180deg, rgba(248,113,113,.2), rgba(248,113,113,.08)); }
 input[type=text],select{
-  background:rgba(0,0,0,.32); border:1px solid var(--glass-border); border-radius:9px;
-  box-shadow:inset 0 1px 3px rgba(0,0,0,.4);
+  background:var(--lg-input-bg); border:1px solid var(--glass-border); border-radius:9px;
+  box-shadow:inset 0 1px 3px rgba(0,0,0,.12); color:var(--text);
 }
 input[type=text]:focus,select:focus{ border-color:var(--premiere-blue); box-shadow:inset 0 1px 3px rgba(0,0,0,.4), 0 0 0 3px rgba(59,130,246,.18); outline:none; }
-.badge{ background:rgba(255,255,255,.05); border:1px solid var(--glass-border); border-radius:999px; backdrop-filter:none; }
+.badge{ background:var(--lg-fill-2); border:1px solid var(--glass-border); border-radius:999px; backdrop-filter:none; }
 
 /* Transport → floating glass pill */
 .transport{
-  background:rgba(255,255,255,.05); border:1px solid var(--glass-border);
+  background:var(--lg-fill-2); border:1px solid var(--glass-border);
   border-radius:999px; padding:5px 10px; box-shadow:inset 0 1px 0 var(--glass-specular);
 }
-.tpBtn{ border-radius:999px; background:rgba(255,255,255,.05); }
+.tpBtn{ border-radius:999px; background:var(--lg-fill-2); }
 .tpPlay{ background:linear-gradient(180deg, rgba(59,130,246,.32), rgba(59,130,246,.16)); border-color:rgba(59,130,246,.5); }
 
 /* Monitor: pure black stage inside the glass frame */
-.nle-center .monitor{ border:1px solid rgba(255,255,255,.06); box-shadow:inset 0 0 40px rgba(0,0,0,.6); }
+.nle-center .monitor{ border:1px solid var(--lg-inner-spec); box-shadow:inset 0 0 40px rgba(0,0,0,.6); }
 
 /* Thin, quiet scrollbars everywhere */
 ::-webkit-scrollbar{ width:9px; height:9px; }
 ::-webkit-scrollbar-track{ background:transparent; }
-::-webkit-scrollbar-thumb{ background:rgba(255,255,255,.13); border-radius:99px; border:2px solid transparent; background-clip:content-box; }
-::-webkit-scrollbar-thumb:hover{ background:rgba(255,255,255,.24); border:2px solid transparent; background-clip:content-box; }
+::-webkit-scrollbar-thumb{ background:var(--lg-scroll); border-radius:99px; border:2px solid transparent; background-clip:content-box; }
+::-webkit-scrollbar-thumb:hover{ background:var(--lg-scroll-hover); border:2px solid transparent; background-clip:content-box; }
 
 /* Project picker: glass cards with hover lift */
-.view-picker{ background:
-    radial-gradient(900px 520px at 82% -8%, rgba(59,130,246,.14), transparent 60%),
-    radial-gradient(760px 520px at -6% 108%, rgba(167,139,250,.1), transparent 60%),
-    #0a0a0e; }
+.view-picker{ background: var(--lg-body); }
 .recents-grid .recent-card,.recentCard{
-  background:rgba(255,255,255,.04); border:1px solid var(--glass-border); border-radius:12px;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+  background:var(--lg-fill); border:1px solid var(--glass-border); border-radius:12px;
+  box-shadow:inset 0 1px 0 var(--lg-inner-spec);
   transition:transform .12s, border-color .12s, background .12s;
 }
 .recents-grid .recent-card:hover,.recentCard:hover{
-  transform:translateY(-2px); border-color:rgba(59,130,246,.45); background:rgba(255,255,255,.07);
+  transform:translateY(-2px); border-color:rgba(59,130,246,.45); background:var(--lg-fill-hover);
 }
 .picker-new{ background:linear-gradient(180deg, rgba(167,139,250,.4), rgba(167,139,250,.2)); border:1px solid rgba(167,139,250,.55); border-radius:10px; }
+
+/* ===== Selection hygiene + light-theme correctness ===== */
+/* NLE chrome is not selectable text — dragging the window must never blue-select the UI.
+   Real text entry/output stays selectable. */
+body{ -webkit-user-select:none; user-select:none; cursor:default; }
+input, textarea, [contenteditable="true"], #outputs, #outputs *, code, kbd{
+  -webkit-user-select:text; user-select:text; cursor:auto;
+}
+
+/* Light theme: surfaces that were hardcoded dark */
+[data-theme="light"] .lane{ border-bottom-color: rgba(0,0,0,.07); }
+[data-theme="light"] .trackHeaders{ background: rgba(0,0,0,.045); border-right-color: rgba(0,0,0,.1); }
+[data-theme="light"] .trk{ border-bottom-color: rgba(0,0,0,.05); }
+[data-theme="light"] .tblk{ color:#fff; }                    /* clip blocks keep white labels on their colored fills */
+[data-theme="light"] .nle-center .monitor{ border-color: rgba(0,0,0,.15); }
+[data-theme="light"] .seqPlayhead{ box-shadow:0 0 6px rgba(0,0,0,.35); }
+[data-theme="light"] .monitorPlaceholder{ color:#8a8f9c; }
