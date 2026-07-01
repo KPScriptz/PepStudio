@@ -15,7 +15,7 @@ import { heuristicMeta } from './lib/titles.js';
 import { pepaiReady, generateClipMeta } from './lib/pepai.js';
 import { tightBounds } from './lib/trim.js';
 import { buildTimelineZoomExpression } from './lib/zooms.js';
-import { hookPenalty, pacingTag } from './lib/retention.js';
+import { hookPenalty, pacingTag, triggerBoost } from './lib/retention.js';
 import { downloadUrl, probeUrl, ytdlpBin, SUPPORTED_URL } from './lib/fetch.js';
 import { buildEDL, buildFcp7Xml } from './lib/interchange.js';
 import { probe } from './lib/ff.js';
@@ -266,7 +266,8 @@ app.post('/api/highlights/funny', async (req, res) => {
       // Fuse: audio peak + reaction signal (reaction weighted higher — it's the funny part),
       // minus a weak-hook penalty so boring "hey guys" intros don't rank at the top.
       const hook = hookPenalty(r.snippet);
-      const total = +(audioScore + 1.5 * r.reactionScore + hook).toFixed(2);
+      const boost = triggerBoost(r.snippet);   // daily-trained retention-trigger lexicon
+      const total = +(audioScore + 1.5 * r.reactionScore + hook + boost).toFixed(2);
       // Zero-dep heuristic title/tags (instant). PepAI can upgrade these on demand later.
       const meta = heuristicMeta(w.words || [], r.hits);
       // Snap to the reaction beat — trim dead air before the setup and silence after the
