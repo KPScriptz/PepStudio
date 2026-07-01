@@ -626,3 +626,23 @@ input, textarea, [contenteditable="true"], #outputs, #outputs *, code, kbd{
 [data-theme="light"] .nle-center .monitor{ border-color: rgba(0,0,0,.15); }
 [data-theme="light"] .seqPlayhead{ box-shadow:0 0 6px rgba(0,0,0,.35); }
 [data-theme="light"] .monitorPlaceholder{ color:#8a8f9c; }
+
+/* ===== Native shell integration: logo banner + traffic lights baked in ===== */
+.brand{ display:flex; align-items:center; }
+.brandLogo{ height:30px; width:30px; border-radius:7px; display:block;
+  box-shadow:0 1px 4px rgba(0,0,0,.35); }
+
+/* Inside the macOS app the title bar is gone and content extends to the very top —
+   give the banner room so the red/yellow/green lights sit INSIDE it, and pin it
+   to the top edge so there is no strip above. */
+.native-shell body{ padding-top:0; }
+.native-shell header{
+  margin-top:8px;
+  padding-left:86px;              /* traffic-light well */
+  -webkit-app-region: drag;       /* banner drags the window */
+}
+.native-shell header button, .native-shell header .badge, .native-shell header .window-title-tab{
+  -webkit-app-region: no-drag;
+}
+/* Project picker: keep the sidebar logo clear of the lights too */
+.native-shell .picker-side{ padding-top:40px; }
