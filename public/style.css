@@ -637,8 +637,12 @@ input, textarea, [contenteditable="true"], #outputs, #outputs *, code, kbd{
    to the top edge so there is no strip above. */
 .native-shell body{ padding-top:0; }
 .native-shell header{
-  margin-top:8px;
-  padding-left:86px;              /* traffic-light well */
+  /* Full-bleed titlebar-banner: hugs the very top edge so the traffic lights
+     (centered ~26px down in the unified title zone) sit vertically centered in it. */
+  margin:0 -22px 12px;
+  border-radius:0; border-top:0; border-left:0; border-right:0;
+  min-height:52px; align-items:center;
+  padding:0 16px 0 92px;          /* left well for the lights */
   -webkit-app-region: drag;       /* banner drags the window */
 }
 .native-shell header button, .native-shell header .badge, .native-shell header .window-title-tab{
