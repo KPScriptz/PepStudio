@@ -482,3 +482,108 @@ body.reordering .hlRow, body.reordering .card { transition: none; }
 .tblk.clip.hot{  background:linear-gradient(180deg,#f0a24b,#c8761d); border-color:var(--hl); }
 .tblk.clip.warm{ background:linear-gradient(180deg,#7a86e6,#4756c8); border-color:#8b97ff; }
 .tblk.clip.cool{ background:linear-gradient(180deg,#5563b0,#3a4691); border-color:#6b78c8; }
+
+/* ======================================================================
+   LIQUID GLASS 2.0 — clean-pass overhaul (additive layer; no IDs touched)
+   Optimization rule: backdrop-filter ONLY on top-level surfaces (header,
+   the four quadrant panes, bottom bars). Inner cards are translucent fills
+   on the already-blurred parent — same look, far cheaper to composite.
+   ====================================================================== */
+
+/* Ambient obsidian backdrop with soft color fields for the glass to refract */
+body{
+  background:
+    radial-gradient(900px 520px at 82% -8%, rgba(59,130,246,.16), transparent 60%),
+    radial-gradient(760px 520px at -6% 108%, rgba(167,139,250,.12), transparent 60%),
+    radial-gradient(600px 420px at 50% 118%, rgba(110,231,255,.06), transparent 60%),
+    #0a0a0e;
+  background-attachment: fixed;
+}
+
+/* Header → slim floating glass ribbon; hide the marketing tagline for a clean cockpit */
+header{
+  align-items:center; gap:12px; margin:0 0 10px 0; padding:8px 14px;
+  background:var(--glass-bg); backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
+  border:1px solid var(--glass-border); border-radius:12px;
+  box-shadow:inset 0 1px 0 var(--glass-specular), 0 8px 24px rgba(0,0,0,.35);
+}
+header .sub{ display:none; }
+.brand{ font-size:17px; }
+.window-title-tab{ background:rgba(255,255,255,.04); }
+
+/* Top-level glass surfaces (blur lives here and only here) */
+.nle-pane,.nle-center,.nle-right,.nle-bottom>.card,.view-picker .picker-side{
+  background:var(--glass-bg);
+  backdrop-filter:var(--glass-blur); -webkit-backdrop-filter:var(--glass-blur);
+  border:1px solid var(--glass-border); border-radius:12px;
+  box-shadow:inset 0 1px 0 var(--glass-specular), 0 10px 30px rgba(0,0,0,.35);
+}
+
+/* Inner cards: translucent fill, NO nested blur (perf) */
+.card,.nle-right .panels>.card{
+  background:rgba(255,255,255,.035);
+  border:1px solid var(--glass-border); border-radius:10px;
+  backdrop-filter:none; -webkit-backdrop-filter:none;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+}
+.nle-left #importBar{ background:transparent; border:0; box-shadow:none; }
+
+/* Pane tabs: quieter, airier */
+.paneTab{
+  background:rgba(255,255,255,.03); border-bottom:1px solid var(--glass-border);
+  color:var(--muted); font-size:9.5px; letter-spacing:.9px; padding:8px 14px;
+  position:relative;
+}
+.paneTab::after{
+  content:''; position:absolute; left:14px; bottom:-1px; width:34px; height:2px;
+  border-radius:2px; background:var(--premiere-blue);
+}
+.paneTab{ border-bottom-width:1px; }   /* replace the heavy full-width blue rule */
+
+/* Controls: glass pills + focus rings */
+button{
+  background:rgba(255,255,255,.05); border:1px solid var(--glass-border);
+  border-radius:9px; transition:border-color .15s, background .15s, transform .06s;
+}
+button:hover{ background:rgba(255,255,255,.09); border-color:rgba(255,255,255,.22); }
+button:active{ transform:translateY(1px); }
+button.primary{ background:linear-gradient(180deg, rgba(59,130,246,.28), rgba(59,130,246,.14)); border-color:rgba(59,130,246,.5); }
+button.danger{ background:linear-gradient(180deg, rgba(248,113,113,.2), rgba(248,113,113,.08)); }
+input[type=text],select{
+  background:rgba(0,0,0,.32); border:1px solid var(--glass-border); border-radius:9px;
+  box-shadow:inset 0 1px 3px rgba(0,0,0,.4);
+}
+input[type=text]:focus,select:focus{ border-color:var(--premiere-blue); box-shadow:inset 0 1px 3px rgba(0,0,0,.4), 0 0 0 3px rgba(59,130,246,.18); outline:none; }
+.badge{ background:rgba(255,255,255,.05); border:1px solid var(--glass-border); border-radius:999px; backdrop-filter:none; }
+
+/* Transport → floating glass pill */
+.transport{
+  background:rgba(255,255,255,.05); border:1px solid var(--glass-border);
+  border-radius:999px; padding:5px 10px; box-shadow:inset 0 1px 0 var(--glass-specular);
+}
+.tpBtn{ border-radius:999px; background:rgba(255,255,255,.05); }
+.tpPlay{ background:linear-gradient(180deg, rgba(59,130,246,.32), rgba(59,130,246,.16)); border-color:rgba(59,130,246,.5); }
+
+/* Monitor: pure black stage inside the glass frame */
+.nle-center .monitor{ border:1px solid rgba(255,255,255,.06); box-shadow:inset 0 0 40px rgba(0,0,0,.6); }
+
+/* Thin, quiet scrollbars everywhere */
+::-webkit-scrollbar{ width:9px; height:9px; }
+::-webkit-scrollbar-track{ background:transparent; }
+::-webkit-scrollbar-thumb{ background:rgba(255,255,255,.13); border-radius:99px; border:2px solid transparent; background-clip:content-box; }
+::-webkit-scrollbar-thumb:hover{ background:rgba(255,255,255,.24); border:2px solid transparent; background-clip:content-box; }
+
+/* Project picker: glass cards with hover lift */
+.view-picker{ background:
+    radial-gradient(900px 520px at 82% -8%, rgba(59,130,246,.14), transparent 60%),
+    radial-gradient(760px 520px at -6% 108%, rgba(167,139,250,.1), transparent 60%),
+    #0a0a0e; }
+.recents-grid .recent-card,.recentCard{
+  background:rgba(255,255,255,.04); border:1px solid var(--glass-border); border-radius:12px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+  transition:transform .12s, border-color .12s, background .12s;
+}
+.recents-grid .recent-card:hover,.recentCard:hover{
+  transform:translateY(-2px); border-color:rgba(59,130,246,.45); background:rgba(255,255,255,.07);
+}
+.picker-new{ background:linear-gradient(180deg, rgba(167,139,250,.4), rgba(167,139,250,.2)); border:1px solid rgba(167,139,250,.55); border-radius:10px; }
