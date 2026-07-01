@@ -98,6 +98,7 @@ function newProject() {
   $('#monitorPlaceholder')?.classList.remove('hidden');
   $('#metaName').textContent = 'Untitled Project *';
   $('#metaInfo').textContent = '';
+  { const t = $('#activeProjectTitle'); if (t) t.textContent = 'Untitled Sequence *'; }
   renderHighlights();
   $('#pathInput').focus();
 }
@@ -189,7 +190,7 @@ async function importUrl() {
   $('#importBtn').disabled = true;
   $('#urlProgress').classList.remove('hidden');
   fill.style.width = '0%'; txt.textContent = 'Starting…';
-  $('#editor').classList.add('hidden');
+  // NLE: keep the 4-pane workspace visible during import (progress shows in the media bin).
   try {
     const res = await fetch('/api/import-url', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -225,7 +226,7 @@ async function analyze() {
   const path = $('#pathInput').value.trim();
   if (!path) return toast('Paste a path to a video file first.', true);
   showProgress('Analyzing — audio silence + video freeze (Phantasm), scene cuts & highlights…');
-  $('#editor').classList.add('hidden');
+  // NLE: keep the workspace persistent during analyze (the spinner overlay handles feedback).
   try {
     const res = await fetch('/api/analyze', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -251,6 +252,7 @@ function loadProject(data) {
   player.src = `/api/video?id=${data.id}`;
   $('#monitorPlaceholder')?.classList.add('hidden');
   $('#metaName').textContent = data.name;
+  { const t = $('#activeProjectTitle'); if (t) t.textContent = data.name; }
   $('#editor').classList.remove('hidden');
   $('#outputs').innerHTML = '';
   renderMeta();

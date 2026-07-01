@@ -379,3 +379,85 @@ body.reordering .hlRow, body.reordering .card { transition: none; }
   max-width: 80vw;
 }
 .toast.err { border-color: var(--danger); color: #ffd6d6; }
+
+/* ==================================================================
+   Track 2 — 4-pane NLE workspace (additive; relocates existing nodes
+   into quadrants via layout only — no IDs renamed/removed).
+   ================================================================== */
+:root { --premiere-blue: #3b82f6; }
+
+#editor.nleGrid:not(.hidden){
+  display:flex; flex-direction:column; gap:6px;
+  height: calc(100vh - 62px);         /* fill below the header ribbon */
+  max-width:none; width:100%; margin:0;
+  padding:6px; box-sizing:border-box; overflow:hidden;
+}
+.nle-body{ flex:1 1 auto; display:flex; gap:6px; min-height:0; }
+.nle-left{ flex:0 0 340px; display:flex; flex-direction:column; gap:6px; min-height:0; }
+.nle-center{ flex:2 1 0; min-width:0; }
+.nle-right{ flex:0 0 400px; min-height:0; }
+
+/* pane frames + tabs */
+.nle-pane,.nle-center,.nle-right{
+  background:var(--glass-bg); border:1px solid var(--glass-border);
+  border-radius:10px; overflow:hidden; backdrop-filter:var(--glass-blur);
+  display:flex; flex-direction:column; min-height:0;
+}
+.nle-pane.grow{ flex:1 1 auto; }
+.nle-pane.fxPane{ flex:0 0 auto; }
+.paneTab{
+  flex:0 0 auto; font-size:10px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.6px; padding:7px 12px; color:var(--muted);
+  background:rgba(0,0,0,.25); border-bottom:2px solid var(--premiere-blue); user-select:none;
+}
+
+/* Effect Controls inspector */
+.fxInspector{ padding:12px; display:flex; flex-direction:column; gap:7px; overflow:auto; }
+.fxGroup{ font-size:11px; font-weight:700; color:var(--muted); }
+.fxRow{ display:flex; justify-content:space-between; font-size:11px; padding-left:10px; }
+.fxVal{ color:var(--premiere-blue); font-family:ui-monospace,monospace; }
+
+/* Media Bin: relocated #importBar fills the pane, flat (its card chrome removed here) */
+.nle-left #importBar{ margin:0; border:0; border-radius:0; background:transparent;
+  box-shadow:none; flex:1 1 auto; overflow:auto; padding:12px; }
+
+/* Center monitor */
+.nle-center .stage{ flex:1 1 auto; display:flex; flex-direction:column; min-height:0; padding:8px; gap:8px; }
+.nle-center .monitor{ flex:1 1 auto; min-height:0; position:relative; display:flex;
+  align-items:center; justify-content:center; background:#000; border-radius:8px; overflow:hidden; }
+.nle-center #player{ max-width:100%; max-height:100%; width:auto; height:auto; }
+.nle-center .playerMeta{ flex:0 0 auto; }
+
+/* Right column: stack ghost/highlights/publish, scroll — nothing orphaned */
+.nle-right .panels{ flex:1 1 auto; display:block; overflow-y:auto; padding:8px; }
+.nle-right .panels > .card{ margin:0 0 8px 0; width:auto; }
+
+/* Bottom: phantasm timeline + master track lanes */
+.nle-bottom{ flex:0 0 214px; display:flex; gap:6px; min-height:0; }
+.nle-bottom > .card{ margin:0; overflow:auto; }
+.nle-bottom .timelineWrap{ flex:2 1 0; }
+.nle-bottom .trackPanel{ flex:1 1 0; }
+.nle-bottom #timeline{ width:100%; }
+
+/* header title chip */
+.window-title-tab{ font-size:12px; color:var(--muted); padding:3px 10px;
+  border:1px solid var(--glass-border); border-radius:6px; background:rgba(0,0,0,.2); }
+
+/* Track2 responsive correction: fluid, shrinkable columns so the grid fits any
+   width without overflow (the fixed 340/400 basis + non-shrinkable import inputs
+   were forcing the left column to min-content and collapsing the center). */
+.nle-body > *{ min-width:0; }
+.nle-left{ flex:1 1 300px; }
+.nle-center{ flex:1.7 1 320px; min-width:240px; }
+.nle-right{ flex:1 1 330px; }
+.nle-left #importBar .row{ flex-wrap:wrap; gap:6px; }
+.nle-left #importBar input{ min-width:0; flex:1 1 130px; width:auto; }
+.nle-left #importBar .row > button{ flex:0 0 auto; }
+
+/* Track2: keep the right inspector's actions inside the column at narrow widths */
+.nle-right .panels{ overflow-x:hidden; }
+.nle-right .panels .panelHead{ flex-wrap:wrap; gap:6px; }
+.nle-right .panels .publishRow{ flex-wrap:wrap; }
+.nle-right .panels .publishRow > .big{ flex:1 1 140px; min-width:0; }
+.nle-right .panels .big{ max-width:100%; box-sizing:border-box; }
+.nle-right .panels .funnyBtn,.nle-right .panels .pepaiBtn{ white-space:normal; }

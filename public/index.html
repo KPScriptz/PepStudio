@@ -23,153 +23,188 @@
     </main>
   </div>
 
+  <!-- Workspace header ribbon -->
   <header>
     <button id="backToProjects" class="backBtn" title="Back to projects">◀ Projects</button>
     <div class="brand">⚡ PepStudio</div>
+    <div id="activeProjectTitle" class="window-title-tab">Untitled Sequence 01</div>
     <div class="sub">VOD → TikTok clips · YouTube cut · captions — local & free</div>
     <div id="capStatus" class="badge muted">captions: checking…</div>
     <button id="themeToggle" class="themeToggle" title="Toggle light / dark">🌗</button>
   </header>
-
-  <section id="importBar" class="card">
-    <label>Paste a YouTube or Twitch VOD link</label>
-    <div class="row">
-      <input id="urlInput" type="text" spellcheck="false"
-             placeholder="https://www.twitch.tv/videos/…   or   https://youtu.be/…" />
-      <button id="importBtn" class="primary">Import VOD</button>
-    </div>
-    <div id="urlProgress" class="urlProgress hidden">
-      <div class="bar"><div id="urlBarFill"></div></div>
-      <span id="urlProgressText" class="muted"></span>
-    </div>
-    <div class="orDivider"><span>or use a local file</span></div>
-    <div class="row">
-      <input id="pathInput" type="text" spellcheck="false"
-             placeholder="/Users/you/Movies/raw-gameplay.mp4  (or ~/Movies/… — or drop a file here)" />
-      <button id="btn-import-file" class="filePickBtn" title="Choose a video file…">📁 Choose…</button>
-      <button id="analyzeBtn">Analyze</button>
-    </div>
-    <div id="importHint" class="hint">Clip your own streams/VODs. Nothing is uploaded — files are processed locally.</div>
-  </section>
 
   <div id="progress" class="card hidden">
     <div class="spinner"></div>
     <span id="progressText">Working…</span>
   </div>
 
-  <main id="editor" class="hidden">
-    <div class="stage">
-      <div class="monitor">
-        <video id="player" controls preload="metadata"></video>
-        <div id="monitorPlaceholder" class="monitorPlaceholder">No Media Loaded</div>
-      </div>
-      <div class="playerMeta">
-        <span id="metaName">—</span>
-        <span id="metaInfo" class="muted"></span>
-      </div>
-    </div>
+  <!-- Track 2: 4-pane NLE workspace. #editor stays the toggled root; #importBar, .stage, .panels,
+       and the timelines are RELOCATED (not re-declared) into quadrants — every wired ID is preserved. -->
+  <main id="editor" class="hidden nleGrid">
+    <div class="nle-body">
 
-    <div class="timelineWrap card">
-      <div class="tlHead">
-        <strong>👻 Phantasm Timeline</strong>
-        <span class="legend"><i class="sw keep"></i>keep</span>
-        <span class="legend"><i class="sw silence"></i>silence</span>
-        <span class="legend"><i class="sw static"></i>static screen</span>
-        <span class="legend"><i class="sw risky"></i>⚠ check</span>
-        <span class="legend"><i class="sw scene"></i>cut</span>
-        <span class="legend"><i class="sw hl"></i>highlight</span>
-        <span id="tlTime" class="muted right">0:00 / 0:00</span>
-      </div>
-      <canvas id="timeline" height="160"></canvas>
-      <div class="phantasmBar">
-        <span id="phantasmSummary" class="muted">—</span>
-        <button id="banishBtn" class="danger right">🔥 Banish all red → export cut</button>
-      </div>
-      <div class="tlTip muted">Click a block to seek. Press <kbd>G</kbd> to toggle the selected block keep↔ghost, <kbd>V</kbd> to verify (play 2s), <kbd>B</kbd> to banish.</div>
-    </div>
-
-    <!-- Premiere-style multi-track sequence timeline: clips/overlays/audio laid out in OUTPUT order. -->
-    <div class="trackPanel card">
-      <div class="trackTabs"><span class="ttab active">⏱ Sequence</span><span id="seqDur" class="muted right">0:00</span></div>
-      <div class="trackBody">
-        <div class="trackHeaders">
-          <div class="trk vid">V2 · Overlay</div>
-          <div class="trk vid">V1 · Clips</div>
-          <div class="trk aud">A1 · Speech</div>
-          <div class="trk aud">A2 · Music</div>
-          <div class="trk aud">A3 · SFX</div>
-        </div>
-        <div class="trackLanes" id="trackLanes"></div>
-      </div>
-    </div>
-
-    <div class="panels">
-      <div class="card ghostPanel">
-        <div class="panelHead">
-          <strong>👻 Ghost clips</strong>
-          <span id="ghostCount" class="muted"></span>
-        </div>
-        <div class="ghostHint muted">Red = cut candidates, kept on the timeline so nothing is lost. Verify, then banish. <b>⚠ = silent but moving</b> (possible stealth play) — check before cutting.</div>
-        <div id="ghostList"></div>
-      </div>
-
-      <div class="card hlPanel">
-        <div class="panelHead">
-          <strong>Highlights</strong>
-          <span id="hlCount" class="muted"></span>
-          <button id="funnyBtn" class="funnyBtn" title="Transcribe the candidate moments and rank them by your reactions — laughter, hype, big moments">🎭 Rank funny moments</button>
-          <button id="pepaiBtn" class="pepaiBtn hidden" title="Upgrade titles/tags with local PepAI">✨ Upgrade titles</button>
-        </div>
-        <div id="hlList"></div>
-      </div>
-
-      <div class="card exportPanel">
-        <div class="panelHead"><strong>Publish</strong></div>
-
-        <div class="publishRow">
-          <button id="tiktokBtn" class="big">🎵 TikTok pack<small>vertical + burned captions</small></button>
-          <button id="youtubeBtn" class="big">▶ YouTube cut<small>hook + tight edit</small></button>
-        </div>
-        <button id="seqExportBtn" class="big seqBtn">🎬 Export sequence<small>kept clips in order + text overlays</small></button>
-        <label class="check"><input type="checkbox" id="capPublish" checked /> Captions on publish exports</label>
-        <div class="field">
-          <label>TikTok clips</label>
-          <select id="tiktokCount">
-            <option value="3">Top 3 moments</option>
-            <option value="5" selected>Top 5 moments</option>
-            <option value="8">Top 8 moments</option>
-          </select>
-        </div>
-
-        <div class="field">
-          <label>Finish in your editor</label>
-          <button id="premiereBtn" style="width:100%">🎬 Send to Premiere (EDL + XML)</button>
-          <div class="hint">Rebuilds the Phantasm cut on your original footage in Premiere / Resolve / Final Cut — auto-relinked, highlights as markers.</div>
-        </div>
-        <div id="exportHint" class="hint"></div>
-
-        <details class="advanced">
-          <summary>Manual exports</summary>
-          <div class="field">
-            <label>Long-form cut source</label>
-            <select id="longMode">
-              <option value="phantasm">Phantasm cut — keep green, banish red</option>
-              <option value="highlights">Highlights reel (kept highlights only)</option>
-            </select>
+      <!-- QUADRANT 1 · LEFT: Effect Controls + Project Media Bin (#importBar / #pathInput) -->
+      <aside class="nle-left">
+        <div class="nle-pane fxPane">
+          <div class="paneTab">Effect Controls</div>
+          <div class="fxInspector">
+            <div class="fxGroup">▼ Transform</div>
+            <div class="fxRow"><span>Position</span><span class="fxVal">960 × 540</span></div>
+            <div class="fxRow"><span>Scale</span><span class="fxVal">100 %</span></div>
+            <div class="fxRow"><span>Opacity</span><span class="fxVal">100.0 %</span></div>
+            <div class="fxGroup">▼ Crop (9:16 auto)</div>
+            <div class="fxRow"><span>Top / Bottom</span><span class="fxVal">33.3% / 66.6%</span></div>
           </div>
-          <label class="check"><input type="checkbox" id="capLong" /> Burn captions into long cut</label>
-          <label class="check"><input type="checkbox" id="capShort" checked /> Burn captions into shorts</label>
-          <div class="btnRow">
-            <button id="captionsBtn">Generate captions</button>
-            <button id="longBtn">Export long cut</button>
-            <button id="shortsBtn">Export shorts</button>
-            <button id="thumbsBtn">Grab thumbnails</button>
-          </div>
-        </details>
+        </div>
+        <div class="nle-pane grow">
+          <div class="paneTab">Project · Media Bin</div>
+          <section id="importBar" class="card">
+            <label>Paste a YouTube or Twitch VOD link</label>
+            <div class="row">
+              <input id="urlInput" type="text" spellcheck="false"
+                     placeholder="https://www.twitch.tv/videos/…   or   https://youtu.be/…" />
+              <button id="importBtn" class="primary">Import VOD</button>
+            </div>
+            <div id="urlProgress" class="urlProgress hidden">
+              <div class="bar"><div id="urlBarFill"></div></div>
+              <span id="urlProgressText" class="muted"></span>
+            </div>
+            <div class="orDivider"><span>or use a local file</span></div>
+            <div class="row">
+              <input id="pathInput" type="text" spellcheck="false"
+                     placeholder="/Users/you/Movies/raw-gameplay.mp4  (or ~/Movies/… — or drop a file here)" />
+              <button id="btn-import-file" class="filePickBtn" title="Choose a video file…">📁 Choose…</button>
+              <button id="analyzeBtn">Analyze</button>
+            </div>
+            <div id="importHint" class="hint">Clip your own streams/VODs. Nothing is uploaded — files are processed locally.</div>
+          </section>
+        </div>
+      </aside>
 
-        <div id="outputs"></div>
-      </div>
+      <!-- QUADRANT 2 · CENTER: Program Viewport Monitor (#player) -->
+      <main class="nle-center">
+        <div class="paneTab">Program Monitor · Sequence 01</div>
+        <div class="stage">
+          <div class="monitor">
+            <video id="player" controls preload="metadata"></video>
+            <div id="monitorPlaceholder" class="monitorPlaceholder">No Media Loaded — import source footage to mount the timeline</div>
+          </div>
+          <div class="playerMeta">
+            <span id="metaName">—</span>
+            <span id="metaInfo" class="muted"></span>
+          </div>
+        </div>
+      </main>
+
+      <!-- QUADRANT 3 · RIGHT: Sequence Highlights Inspector (#hlList) + Ghost + Publish (nothing orphaned) -->
+      <section class="nle-right">
+        <div class="paneTab">Sequence Highlights &amp; Publish</div>
+        <div class="panels">
+          <div class="card ghostPanel">
+            <div class="panelHead">
+              <strong>👻 Ghost clips</strong>
+              <span id="ghostCount" class="muted"></span>
+            </div>
+            <div class="ghostHint muted">Red = cut candidates, kept on the timeline so nothing is lost. Verify, then banish. <b>⚠ = silent but moving</b> (possible stealth play) — check before cutting.</div>
+            <div id="ghostList"></div>
+          </div>
+
+          <div class="card hlPanel">
+            <div class="panelHead">
+              <strong>Highlights</strong>
+              <span id="hlCount" class="muted"></span>
+              <button id="funnyBtn" class="funnyBtn" title="Transcribe the candidate moments and rank them by your reactions — laughter, hype, big moments">🎭 Rank funny moments</button>
+              <button id="pepaiBtn" class="pepaiBtn hidden" title="Upgrade titles/tags with local PepAI">✨ Upgrade titles</button>
+            </div>
+            <div id="hlList"></div>
+          </div>
+
+          <div class="card exportPanel">
+            <div class="panelHead"><strong>Publish</strong></div>
+
+            <div class="publishRow">
+              <button id="tiktokBtn" class="big">🎵 TikTok pack<small>vertical + burned captions</small></button>
+              <button id="youtubeBtn" class="big">▶ YouTube cut<small>hook + tight edit</small></button>
+            </div>
+            <button id="seqExportBtn" class="big seqBtn">🎬 Export sequence<small>kept clips in order + text overlays</small></button>
+            <label class="check"><input type="checkbox" id="capPublish" checked /> Captions on publish exports</label>
+            <div class="field">
+              <label>TikTok clips</label>
+              <select id="tiktokCount">
+                <option value="3">Top 3 moments</option>
+                <option value="5" selected>Top 5 moments</option>
+                <option value="8">Top 8 moments</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label>Finish in your editor</label>
+              <button id="premiereBtn" style="width:100%">🎬 Send to Premiere (EDL + XML)</button>
+              <div class="hint">Rebuilds the Phantasm cut on your original footage in Premiere / Resolve / Final Cut — auto-relinked, highlights as markers.</div>
+            </div>
+            <div id="exportHint" class="hint"></div>
+
+            <details class="advanced">
+              <summary>Manual exports</summary>
+              <div class="field">
+                <label>Long-form cut source</label>
+                <select id="longMode">
+                  <option value="phantasm">Phantasm cut — keep green, banish red</option>
+                  <option value="highlights">Highlights reel (kept highlights only)</option>
+                </select>
+              </div>
+              <label class="check"><input type="checkbox" id="capLong" /> Burn captions into long cut</label>
+              <label class="check"><input type="checkbox" id="capShort" checked /> Burn captions into shorts</label>
+              <div class="btnRow">
+                <button id="captionsBtn">Generate captions</button>
+                <button id="longBtn">Export long cut</button>
+                <button id="shortsBtn">Export shorts</button>
+                <button id="thumbsBtn">Grab thumbnails</button>
+              </div>
+            </details>
+
+            <div id="outputs"></div>
+          </div>
+        </div>
+      </section>
+
     </div>
+
+    <!-- QUADRANT 4 · BOTTOM: Phantasm timeline (#timeline) + master track lanes (#trackLanes) -->
+    <footer class="nle-bottom">
+      <div class="timelineWrap card">
+        <div class="tlHead">
+          <strong>👻 Phantasm Timeline</strong>
+          <span class="legend"><i class="sw keep"></i>keep</span>
+          <span class="legend"><i class="sw silence"></i>silence</span>
+          <span class="legend"><i class="sw static"></i>static screen</span>
+          <span class="legend"><i class="sw risky"></i>⚠ check</span>
+          <span class="legend"><i class="sw scene"></i>cut</span>
+          <span class="legend"><i class="sw hl"></i>highlight</span>
+          <span id="tlTime" class="muted right">0:00 / 0:00</span>
+        </div>
+        <canvas id="timeline" height="160"></canvas>
+        <div class="phantasmBar">
+          <span id="phantasmSummary" class="muted">—</span>
+          <button id="banishBtn" class="danger right">🔥 Banish all red → export cut</button>
+        </div>
+        <div class="tlTip muted">Click a block to seek. Press <kbd>G</kbd> to toggle the selected block keep↔ghost, <kbd>V</kbd> to verify (play 2s), <kbd>B</kbd> to banish.</div>
+      </div>
+
+      <div class="trackPanel card">
+        <div class="trackTabs"><span class="ttab active">⏱ Sequence</span><span id="seqDur" class="muted right">0:00</span></div>
+        <div class="trackBody">
+          <div class="trackHeaders">
+            <div class="trk vid">V2 · Overlay</div>
+            <div class="trk vid">V1 · Clips</div>
+            <div class="trk aud">A1 · Speech</div>
+            <div class="trk aud">A2 · Music</div>
+            <div class="trk aud">A3 · SFX</div>
+          </div>
+          <div class="trackLanes" id="trackLanes"></div>
+        </div>
+      </div>
+    </footer>
   </main>
 
   <div id="toast" class="toast hidden"></div>
