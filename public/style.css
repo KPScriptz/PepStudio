@@ -666,3 +666,76 @@ input, textarea, [contenteditable="true"], #outputs, #outputs *, code, kbd{
   header{ padding:6px 10px; gap:8px; }
   .native-shell header{ padding-left:78px; }
 }
+
+/* ======================================================================
+   PRO POLISH LAYER — tier-1 NLE refinement on the REAL selectors
+   (translated from the design spec: precision tabs, depth shadows,
+   accent-glow actions, mono readouts, dashed empty states, no emojis)
+   ====================================================================== */
+body{ letter-spacing:-.1px; }
+button svg, .tpBtn svg{ pointer-events:none; display:block; }
+
+/* Precision pane tabs: subtle vertical gradient + tighter type */
+.paneTab{
+  background:linear-gradient(180deg, rgba(255,255,255,.025) 0%, rgba(0,0,0,.18) 100%);
+  font-weight:600; letter-spacing:.8px;
+  display:flex; align-items:center; gap:6px;
+}
+[data-theme="light"] .paneTab{ background:linear-gradient(180deg, rgba(255,255,255,.5) 0%, rgba(0,0,0,.04) 100%); }
+
+/* Panel depth: micro-shadow + hover focus */
+.nle-pane,.nle-center,.nle-right,.nle-bottom>.card{
+  box-shadow:0 4px 20px -2px rgba(0,0,0,.5), inset 0 1px 1px rgba(255,255,255,.03);
+  transition:border-color .25s ease;
+}
+.nle-pane:hover,.nle-center:hover,.nle-right:hover{ border-color:rgba(255,255,255,.12); }
+[data-theme="light"] .nle-pane:hover,[data-theme="light"] .nle-center:hover,[data-theme="light"] .nle-right:hover{ border-color:rgba(0,0,0,.18); }
+
+/* Accent-glow action buttons */
+button.primary, #btn-import-file{
+  background:linear-gradient(180deg, rgba(59,130,246,.22) 0%, rgba(37,99,235,.18) 100%);
+  border-color:rgba(59,130,246,.55);
+}
+button.primary:hover, #btn-import-file:hover{
+  background:#2563eb; border-color:#3b82f6; color:#fff;
+  box-shadow:0 0 12px rgba(59,130,246,.4);
+}
+.funnyBtn{
+  background:linear-gradient(180deg, rgba(124,58,237,.22) 0%, rgba(109,40,217,.18) 100%);
+  border-color:rgba(124,58,237,.55);
+}
+.funnyBtn:hover{ background:#7c3aed; border-color:#8b5cf6; color:#fff; box-shadow:0 0 12px rgba(124,58,237,.4); }
+.pepaiBtn{ border-color:rgba(110,231,255,.45); }
+.pepaiBtn:hover{ box-shadow:0 0 12px rgba(110,231,255,.3); }
+
+/* Mono precision readouts in inputs + time chips */
+input[type=text]{ font-family:ui-monospace, "SF Mono", monospace; font-size:12.5px; }
+.tpTime, #seqDur, #tlTime{ font-family:ui-monospace, "SF Mono", monospace; }
+
+/* Track badges: mono chips, darker rail */
+.trackHeaders{ background:rgba(0,0,0,.35); }
+[data-theme="light"] .trackHeaders{ background:rgba(0,0,0,.05); }
+.trk{ font-family:ui-monospace, "SF Mono", monospace; letter-spacing:.4px; }
+
+/* Dashed empty states (bin/sequence prompts) */
+.hlEmpty, .recents-empty{
+  border:1px dashed var(--glass-border); border-radius:8px;
+  padding:18px 14px; margin:10px 0; text-align:center; color:var(--muted); font-size:12px;
+  background:rgba(0,0,0,.08);
+}
+[data-theme="light"] .hlEmpty,[data-theme="light"] .recents-empty{ background:rgba(0,0,0,.02); }
+.monitorPlaceholder{ letter-spacing:.6px; }
+
+/* Transport: play/pause icon swap + centered glyphs */
+.tpBtn{ display:inline-flex; align-items:center; justify-content:center; min-width:30px; height:26px; padding:0 9px; }
+.tpPlay .icPause{ display:none; }
+.tpPlay.playing .icPlay{ display:none; }
+.tpPlay.playing .icPause{ display:block; }
+.themeToggle{ display:inline-flex; align-items:center; justify-content:center; }
+
+/* Recents card actions as clean text chips (was emoji buttons) */
+.recent-acts button{ font-size:10px; padding:3px 8px; border-radius:6px; font-weight:600; }
+
+/* In-row play buttons (ghost verify / highlight preview) center their icon */
+#ghostList button, #hlList button{ vertical-align:middle; }
+#ghostList svg, #hlList svg{ display:inline-block; vertical-align:-1px; }

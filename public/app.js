@@ -19,6 +19,7 @@ const state = { proj: null, highlights: [], selected: null, drag: null };
 const player = $('#player');
 const canvas = $('#timeline');
 const ctx = canvas.getContext('2d');
+const IC_PLAY = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2l10 6-10 6V2z"/></svg>';
 
 // ---- Theme (Liquid Glass light/dark) ----
 (() => {
@@ -47,14 +48,14 @@ function renderRecents() {
     ? list.map((r) => `<div class="recent-card" data-id="${r.id}">
          <div class="recent-thumb" style="background-image:url('/api/thumb?id=${encodeURIComponent(r.id)}&t=1')">
            <div class="recent-acts">
-             <button class="recent-rename" title="Rename">✏️</button>
-             <button class="recent-del" title="Remove from recents">🗑️</button>
+             <button class="recent-rename" title="Rename">Rename</button>
+             <button class="recent-del" title="Remove from recents">Remove</button>
            </div>
          </div>
          <div class="recent-name">${escapeHtml(r.name)}</div>
          <div class="recent-date">${new Date(r.ts).toLocaleDateString()}</div>
        </div>`).join('')
-    : '<div class="recents-empty">No recent projects yet — hit “➕ New Project” to start.</div>';
+    : '<div class="recents-empty">No recent projects yet — hit “+ New Project” to start.</div>';
 }
 // One delegated handler: rename / delete (recents-only) / open.
 $('#recentsGrid').addEventListener('click', (e) => {
@@ -275,7 +276,7 @@ function renderMeta() {
   const m = d.meta || {};
   const tail = d.videoReady
     ? `${(d.sceneCuts || []).length} scene cuts · ${(d.freezes || []).length} static screens`
-    : '⏳ analyzing video…';
+    : 'analyzing video…';
   $('#metaInfo').textContent =
     `${m.width}×${m.height} · ${m.fps}fps · ${fmt(d.duration)} · ${tail} · ${state.highlights.length} highlights`;
 }
@@ -335,7 +336,7 @@ function updatePhantasmSummary() {
   $('#phantasmSummary').innerHTML =
     `<b style="color:var(--danger)">${ghosts.length}</b> red ghosts · ${fmt(ghostDur)} dead air ` +
     `→ cut ≈ <b style="color:var(--green)">${fmt(keepDur)}</b>` +
-    (risky ? ` · <span style="color:var(--hl)">⚠ ${risky} to check</span>` : '');
+    (risky ? ` · <span style="color:var(--hl)">${risky} to check</span>` : '');
 }
 
 const reasonLabel = { silence: 'silence', static: 'static', dead: 'dead air' };
@@ -348,7 +349,7 @@ function renderGhosts() {
   list.forEach((s) => {
     const row = document.createElement('div');
     row.className = 'ghostRow' + (s.state === 'keep' ? ' kept' : '') + (s.id === state.selSeg ? ' sel' : '');
-    const chip = s.risky ? '<span class="chip risky">⚠ check</span>'
+    const chip = s.risky ? '<span class="chip risky">check</span>'
       : `<span class="chip ${s.reason}">${reasonLabel[s.reason] || s.reason}</span>`;
     row.innerHTML = `
       ${chip}
@@ -357,7 +358,7 @@ function renderGhosts() {
         <div class="muted">${s.state === 'keep' ? 'kept ✓' : 'will be cut'}</div>
       </div>
       <div class="acts">
-        <button data-act="verify" title="Play 2s">▶</button>
+        <button data-act="verify" title="Play 2s">${IC_PLAY}</button>
         <button data-act="toggle">${s.state === 'ghost' ? 'Keep' : 'Ghost'}</button>
       </div>`;
     row.addEventListener('click', (e) => { if (e.target.tagName !== 'BUTTON') selectSeg(s); });
@@ -379,7 +380,7 @@ function toggleSeg(s) {
 function renderHighlights() {
   if (!state.highlights.length) {
     $('#hlCount').textContent = '0 / 0';
-    $('#hlList').innerHTML = '<div class="hlEmpty">Sequence empty — analyze a file, then press 🎭 Rank funny moments to begin.</div>';
+    $('#hlList').innerHTML = '<div class="hlEmpty">Sequence empty — analyze a file, then press Rank funny moments to begin.</div>';
     renderTracks();
     return;
   }
@@ -391,7 +392,7 @@ function renderHighlights() {
     row.className = 'hlRow' + (h.keep ? '' : ' dropped');
     row.dataset.id = h.id;
     const reactBadge = (h.reactionScore != null)
-      ? `<span class="react" title="reaction score">🎭 ${h.reactionScore}</span>`
+      ? `<span class="react" title="reaction score">${h.reactionScore}</span>`
       : '';
     const hitTags = (h.hits && h.hits.length)
       ? `<span class="hitTags">${h.hits.map((t) => `<span class="tag ${t}">${t}</span>`).join('')}</span>`
@@ -406,14 +407,14 @@ function renderHighlights() {
     const trimmed = (h.snapped && h.originalStart != null)
       ? Math.max(0, (h.originalEnd - h.originalStart) - (h.end - h.start)) : 0;
     const snapChip = trimmed >= 1
-      ? `<span class="snapChip" title="snapped to the reaction — trimmed ${trimmed.toFixed(1)}s of dead air">✂ snapped</span>` : '';
+      ? `<span class="snapChip" title="snapped to the reaction — trimmed ${trimmed.toFixed(1)}s of dead air">snapped</span>` : '';
     // Overlay drawer: text overlays in the server's shape {type,content,startTime,endTime}.
     const overlays = h.overlays || (h.overlays = []);
     const ovItems = overlays.map((ov, oi) => `
       <div class="ovItem" data-oi="${oi}">
         <select class="ovType" title="overlay type">
-          <option value="text" ${ov.type === 'broll' ? '' : 'selected'}>📝</option>
-          <option value="broll" ${ov.type === 'broll' ? 'selected' : ''}>🖼</option>
+          <option value="text" ${ov.type === 'broll' ? '' : 'selected'}>Text</option>
+          <option value="broll" ${ov.type === 'broll' ? 'selected' : ''}>B-roll</option>
         </select>
         <input type="text" class="ovText" value="${escapeHtml(ov.content || '')}" placeholder="${ov.type === 'broll' ? '/path/to/image.png' : 'on-screen text…'}">
         <input type="number" step="0.1" class="ovStart" value="${ov.startTime ?? 0}" title="start (s into clip)">
@@ -435,7 +436,7 @@ function renderHighlights() {
         end <input type="number" step="0.5" value="${h.end.toFixed(1)}" data-k="end">
       </div>
       <div class="acts">
-        <button data-act="preview">▶</button>
+        <button data-act="preview">${IC_PLAY}</button>
         <button data-act="keep">${h.keep ? 'Drop' : 'Keep'}</button>
       </div>
       ${ovDrawer}`;
@@ -487,12 +488,12 @@ function renderTracks() {
     vClip.push(blk('clip ' + tier, pct(s), pct(d), escapeHtml((h.title || h.id || '').slice(0, 24))));
     aSpeech.push(blk('speech', pct(s), pct(d), ''));
     const auto = h.automation || {};
-    if (auto.bgMusic && auto.bgMusic.path) aMusic.push(blk('music', pct(s), pct(d), '🎵 music'));
+    if (auto.bgMusic && auto.bgMusic.path) aMusic.push(blk('music', pct(s), pct(d), 'music'));
     (auto.sfxTrack || []).forEach((sfx) => aSfx.push(blk('sfx', pct(s + (sfx.time || 0)), 1.2, '◆', `SFX @ ${(sfx.time || 0)}s`)));
     (h.overlays || []).forEach((ov) => {
       const os = s + (ov.startTime ?? 0); const oe = s + (ov.endTime ?? d);
       vOv.push(blk(ov.type === 'broll' ? 'broll' : 'text', pct(os), pct(oe - os),
-        ov.type === 'broll' ? '🖼 b-roll' : escapeHtml((ov.content || 'text').slice(0, 16))));
+        ov.type === 'broll' ? 'b-roll' : escapeHtml((ov.content || 'text').slice(0, 16))));
     });
   }
   lanes.innerHTML = [vOv, vClip, aSpeech, aMusic, aSfx].map((a) => `<div class="lane">${a.join('')}</div>`).join('')
@@ -658,7 +659,7 @@ function updateTransport() {
   const dur = state.proj?.duration || player.duration || 0;
   if (scrub) { scrub.max = dur || 100; if (document.activeElement !== scrub) scrub.value = player.currentTime || 0; }
   if (tEl) tEl.textContent = `${fmt(player.currentTime || 0)} / ${fmt(dur)}`;
-  if (pEl) pEl.textContent = player.paused ? '▶' : '⏸';
+  if (pEl) pEl.classList.toggle('playing', !player.paused);
 }
 // Sequence time ≠ source time: find which kept clip the source playhead is inside, then
 // place the sequence playhead at that clip's back-to-back position on the track lanes.
@@ -847,7 +848,7 @@ window.addEventListener('mouseup', () => {
   const h = state.highlights.find((c) => c.id === state.drag.id);
   state.drag = null;
   canvas.style.cursor = 'default';
-  if (h) { renderHighlights(); draw(); }   // commit: refresh duration line + ✂ chip + inputs
+  if (h) { renderHighlights(); draw(); }   // commit: refresh duration line + snap chip + inputs
 });
 
 // Razor: double-click a clip to split it in two — at the playhead if it's inside the clip,
@@ -943,7 +944,7 @@ $('#banishBtn').addEventListener('click', () => {
   const risky = ghosts.filter((s) => s.risky).length;
   const dur = ghosts.reduce((a, s) => a + (s.end - s.start), 0);
   let msg = `Banish ${ghosts.length} red ghosts (${fmt(dur)} of dead air) and export the cut?`;
-  if (risky) msg += `\n\n⚠ ${risky} are silent-but-moving (possible stealth plays). Keep them first if they matter.`;
+  if (risky) msg += `\n\n${risky} are silent-but-moving (possible stealth plays). Keep them first if they matter.`;
   if (!window.confirm(msg)) return;
   $('#longMode').value = 'phantasm';
   renderLongCut('Phantasm cut');

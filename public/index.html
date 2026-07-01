@@ -14,12 +14,12 @@
   <div id="view-project-picker" class="view-picker">
     <aside class="picker-side">
       <div class="picker-logo"><img src="icon-192.png" alt="" class="brandLogo" /><span>PepStudio</span></div>
-      <nav class="picker-nav"><div class="pnav active">🏠 Projects</div></nav>
+      <nav class="picker-nav"><div class="pnav active">Projects</div></nav>
     </aside>
     <main class="picker-main">
       <div class="picker-head">
         <h1>Projects</h1>
-        <button id="btnNewProject" class="picker-new">➕ New Project</button>
+        <button id="btnNewProject" class="picker-new">+ New Project</button>
       </div>
       <div id="recentsGrid" class="recents-grid"></div>
     </main>
@@ -27,12 +27,12 @@
 
   <!-- Workspace header ribbon -->
   <header>
-    <button id="backToProjects" class="backBtn" title="Back to projects">◀ Projects</button>
+    <button id="backToProjects" class="backBtn" title="Back to projects">‹ Projects</button>
     <div class="brand"><img src="icon-192.png" alt="PepStudio" class="brandLogo" /></div>
     <div id="activeProjectTitle" class="window-title-tab">Untitled Sequence 01</div>
     <div class="sub">VOD → TikTok clips · YouTube cut · captions — local & free</div>
     <div id="capStatus" class="badge muted">captions: checking…</div>
-    <button id="themeToggle" class="themeToggle" title="Toggle light / dark">🌗</button>
+    <button id="themeToggle" class="themeToggle" title="Toggle light / dark"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1a7 7 0 100 14A7 7 0 018 1zm0 1.6a5.4 5.4 0 010 10.8V2.6z"/></svg></button>
   </header>
 
   <div id="progress" class="card hidden">
@@ -75,7 +75,7 @@
             <div class="row">
               <input id="pathInput" type="text" spellcheck="false"
                      placeholder="/Users/you/Movies/raw-gameplay.mp4  (or ~/Movies/… — or drop a file here)" />
-              <button id="btn-import-file" class="filePickBtn" title="Choose a video file…">📁 Choose…</button>
+              <button id="btn-import-file" class="filePickBtn" title="Choose a video file…">Choose…</button>
               <button id="analyzeBtn">Analyze</button>
             </div>
             <div id="importHint" class="hint">Clip your own streams/VODs. Nothing is uploaded — files are processed locally.</div>
@@ -92,9 +92,9 @@
             <div id="monitorPlaceholder" class="monitorPlaceholder">No Media Loaded — import source footage to mount the timeline</div>
           </div>
           <div class="transport">
-            <button id="tpBack" class="tpBtn" title="Back 5s">⏪</button>
-            <button id="tpPlay" class="tpBtn tpPlay" title="Play / Pause">▶</button>
-            <button id="tpFwd" class="tpBtn" title="Forward 5s">⏩</button>
+            <button id="tpBack" class="tpBtn" title="Back 5s"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8.5 8l6.5-4.5v9L8.5 8zM1 8l6.5-4.5v9L1 8z"/></svg></button>
+            <button id="tpPlay" class="tpBtn tpPlay" title="Play / Pause"><svg class="icPlay" width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2l10 6-10 6V2z"/></svg><svg class="icPause" width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M3.5 2h3.4v12H3.5zM9.1 2h3.4v12H9.1z"/></svg></button>
+            <button id="tpFwd" class="tpBtn" title="Forward 5s"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M1 3.5L7.5 8 1 12.5v-9zM8.5 3.5L15 8l-6.5 4.5v-9z"/></svg></button>
             <input id="tpScrub" class="tpScrub" type="range" min="0" max="100" value="0" step="0.01" />
             <span id="tpTime" class="tpTime muted">0:00 / 0:00</span>
           </div>
@@ -111,10 +111,10 @@
         <div class="panels">
           <div class="card ghostPanel">
             <div class="panelHead">
-              <strong>👻 Ghost clips</strong>
+              <strong>Ghost clips</strong>
               <span id="ghostCount" class="muted"></span>
             </div>
-            <div class="ghostHint muted">Red = cut candidates, kept on the timeline so nothing is lost. Verify, then banish. <b>⚠ = silent but moving</b> (possible stealth play) — check before cutting.</div>
+            <div class="ghostHint muted">Red = cut candidates, kept on the timeline so nothing is lost. Verify, then banish. <b>Silent-but-moving</b> (possible stealth play) — check before cutting.</div>
             <div id="ghostList"></div>
           </div>
 
@@ -122,8 +122,8 @@
             <div class="panelHead">
               <strong>Highlights</strong>
               <span id="hlCount" class="muted"></span>
-              <button id="funnyBtn" class="funnyBtn" title="Transcribe the candidate moments and rank them by your reactions — laughter, hype, big moments">🎭 Rank funny moments</button>
-              <button id="pepaiBtn" class="pepaiBtn hidden" title="Upgrade titles/tags with local PepAI">✨ Upgrade titles</button>
+              <button id="funnyBtn" class="funnyBtn" title="Transcribe the candidate moments and rank them by your reactions — laughter, hype, big moments">Rank funny moments</button>
+              <button id="pepaiBtn" class="pepaiBtn hidden" title="Upgrade titles/tags with local PepAI">Upgrade titles</button>
             </div>
             <div id="hlList"></div>
           </div>
@@ -132,10 +132,10 @@
             <div class="panelHead"><strong>Publish</strong></div>
 
             <div class="publishRow">
-              <button id="tiktokBtn" class="big">🎵 TikTok pack<small>vertical + burned captions</small></button>
-              <button id="youtubeBtn" class="big">▶ YouTube cut<small>hook + tight edit</small></button>
+              <button id="tiktokBtn" class="big">TikTok pack<small>vertical + burned captions</small></button>
+              <button id="youtubeBtn" class="big">YouTube cut<small>hook + tight edit</small></button>
             </div>
-            <button id="seqExportBtn" class="big seqBtn">🎬 Export sequence<small>kept clips in order + text overlays</small></button>
+            <button id="seqExportBtn" class="big seqBtn">Export sequence<small>kept clips in order + text overlays</small></button>
             <label class="check"><input type="checkbox" id="capPublish" checked /> Captions on publish exports</label>
             <div class="field">
               <label>TikTok clips</label>
@@ -148,7 +148,7 @@
 
             <div class="field">
               <label>Finish in your editor</label>
-              <button id="premiereBtn" style="width:100%">🎬 Send to Premiere (EDL + XML)</button>
+              <button id="premiereBtn" style="width:100%">Send to Premiere (EDL + XML)</button>
               <div class="hint">Rebuilds the Phantasm cut on your original footage in Premiere / Resolve / Final Cut — auto-relinked, highlights as markers.</div>
             </div>
             <div id="exportHint" class="hint"></div>
@@ -183,11 +183,11 @@
     <footer class="nle-bottom">
       <div class="timelineWrap card">
         <div class="tlHead">
-          <strong>👻 Phantasm Timeline</strong>
+          <strong>Phantasm Timeline</strong>
           <span class="legend"><i class="sw keep"></i>keep</span>
           <span class="legend"><i class="sw silence"></i>silence</span>
           <span class="legend"><i class="sw static"></i>static screen</span>
-          <span class="legend"><i class="sw risky"></i>⚠ check</span>
+          <span class="legend"><i class="sw risky"></i>check</span>
           <span class="legend"><i class="sw scene"></i>cut</span>
           <span class="legend"><i class="sw hl"></i>highlight</span>
           <span id="tlTime" class="muted right">0:00 / 0:00</span>
@@ -195,13 +195,13 @@
         <canvas id="timeline" height="160"></canvas>
         <div class="phantasmBar">
           <span id="phantasmSummary" class="muted">—</span>
-          <button id="banishBtn" class="danger right">🔥 Banish all red → export cut</button>
+          <button id="banishBtn" class="danger right">Banish all red → export cut</button>
         </div>
-        <div class="tlTip muted">Click a block to seek. Press <kbd>G</kbd> to toggle the selected block keep↔ghost, <kbd>V</kbd> to verify (play 2s), <kbd>B</kbd> to banish.</div>
+        <div class="tlTip muted">Click a block to seek. Press <kbd>G</kbd> to toggle the selected block keep/ghost, <kbd>V</kbd> to verify (play 2s), <kbd>B</kbd> to banish.</div>
       </div>
 
       <div class="trackPanel card">
-        <div class="trackTabs"><span class="ttab active">⏱ Sequence</span><span id="seqDur" class="muted right">0:00</span></div>
+        <div class="trackTabs"><span class="ttab active">Sequence</span><span id="seqDur" class="muted right">0:00</span></div>
         <div class="trackBody">
           <div class="trackHeaders">
             <div class="trk vid">V2 · Overlay</div>
