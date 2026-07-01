@@ -646,3 +646,19 @@ input, textarea, [contenteditable="true"], #outputs, #outputs *, code, kbd{
 }
 /* Project picker: keep the sidebar logo clear of the lights too */
 .native-shell .picker-side{ padding-top:40px; }
+
+/* ===== Any-resolution support: stack the NLE quadrants on narrow windows ===== */
+@media (max-width: 980px){
+  #editor.nleGrid:not(.hidden){ height:auto; overflow:visible; }
+  .nle-body{ flex-direction:column; }
+  .nle-left,.nle-center,.nle-right{ flex:1 1 auto; width:100%; min-width:0; }
+  .nle-center .monitor{ min-height:280px; }
+  .nle-right .panels{ max-height:60vh; }
+  .nle-bottom{ flex-direction:column; flex-basis:auto; height:auto; }
+  .nle-bottom .timelineWrap,.nle-bottom .trackPanel{ flex:1 1 auto; }
+}
+@media (max-width: 700px){
+  body{ padding:10px 10px 40px; }
+  header{ padding:6px 10px; gap:8px; }
+  .native-shell header{ padding-left:78px; }
+}
