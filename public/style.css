@@ -334,7 +334,7 @@ body.reordering .hlRow, body.reordering .card { transition: none; }
   width: 240px; padding: 26px 20px; border-right: 1px solid var(--glass-border);
   background: var(--glass-bg); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
 }
-.picker-logo { font-size: 18px; font-weight: 800; color: var(--accent2); margin-bottom: 28px; }
+.picker-logo { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 800; color: var(--text); margin-bottom: 28px; }
 .pnav { font-size: 13px; color: var(--muted); padding: 8px 10px; border-radius: 8px; }
 .pnav.active { color: var(--text); background: rgba(255,255,255,0.05); }
 .picker-main { flex: 1; padding: 40px 48px; overflow-y: auto; }
