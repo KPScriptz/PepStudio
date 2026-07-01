@@ -473,6 +473,8 @@ function renderTracks() {
   let acc = 0;
   const seq = kept.map((h) => { const d = Math.max(0.01, h.end - h.start); const s = acc; acc += d; return { h, s, d }; });
   const total = acc || 1;
+  state.seqMap = { items: seq, total };   // source-time → sequence-position map for the playhead
+  const maxScore = Math.max(0.0001, ...seq.map(({ h }) => h.score || 0));
   $('#seqDur').textContent = fmt(total);
   const pct = (t) => (t / total) * 100;
   const blk = (cls, left, width, label, title) =>
@@ -480,7 +482,9 @@ function renderTracks() {
 
   const vOv = [], vClip = [], aSpeech = [], aMusic = [], aSfx = [];
   for (const { h, s, d } of seq) {
-    vClip.push(blk('clip', pct(s), pct(d), escapeHtml((h.title || h.id || '').slice(0, 24))));
+    const sc = h.score || 0;
+    const tier = sc >= maxScore * 0.8 ? 'hot' : sc >= maxScore * 0.5 ? 'warm' : 'cool';
+    vClip.push(blk('clip ' + tier, pct(s), pct(d), escapeHtml((h.title || h.id || '').slice(0, 24))));
     aSpeech.push(blk('speech', pct(s), pct(d), ''));
     const auto = h.automation || {};
     if (auto.bgMusic && auto.bgMusic.path) aMusic.push(blk('music', pct(s), pct(d), '🎵 music'));
@@ -491,7 +495,9 @@ function renderTracks() {
         ov.type === 'broll' ? '🖼 b-roll' : escapeHtml((ov.content || 'text').slice(0, 16))));
     });
   }
-  lanes.innerHTML = [vOv, vClip, aSpeech, aMusic, aSfx].map((a) => `<div class="lane">${a.join('')}</div>`).join('');
+  lanes.innerHTML = [vOv, vClip, aSpeech, aMusic, aSfx].map((a) => `<div class="lane">${a.join('')}</div>`).join('')
+    + '<div class="seqPlayhead" id="seqPlayhead" style="display:none"></div>';
+  updateSeqPlayhead();
 }
 
 // ---- Sequence reorder: drag a card's handle to change OUTPUT order (array order). This
@@ -642,7 +648,39 @@ player.addEventListener('timeupdate', () => {
   if (m) { player.pause(); m._stopAt = null; }
   draw();
   $('#tlTime').textContent = `${fmt(player.currentTime)} / ${fmt(state.proj?.duration || 0)}`;
+  updateTransport();
+  updateSeqPlayhead();
 });
+
+// ---- Transport bar (custom controls under the monitor) + sequence playhead ----
+function updateTransport() {
+  const scrub = $('#tpScrub'); const tEl = $('#tpTime'); const pEl = $('#tpPlay');
+  const dur = state.proj?.duration || player.duration || 0;
+  if (scrub) { scrub.max = dur || 100; if (document.activeElement !== scrub) scrub.value = player.currentTime || 0; }
+  if (tEl) tEl.textContent = `${fmt(player.currentTime || 0)} / ${fmt(dur)}`;
+  if (pEl) pEl.textContent = player.paused ? '▶' : '⏸';
+}
+// Sequence time ≠ source time: find which kept clip the source playhead is inside, then
+// place the sequence playhead at that clip's back-to-back position on the track lanes.
+function updateSeqPlayhead() {
+  const ph = $('#seqPlayhead'); if (!ph) return;
+  const map = state.seqMap; const cur = player.currentTime || 0;
+  if (!map || !map.items || !map.items.length) { ph.style.display = 'none'; return; }
+  const hit = map.items.find(({ h }) => cur >= h.start - 0.05 && cur <= h.end + 0.05);
+  if (!hit) { ph.style.display = 'none'; return; }
+  ph.style.left = `${((hit.s + (cur - hit.h.start)) / map.total) * 100}%`;
+  ph.style.display = 'block';
+}
+function setupTransport() {
+  const play = $('#tpPlay'); const back = $('#tpBack'); const fwd = $('#tpFwd'); const scrub = $('#tpScrub');
+  if (play) play.addEventListener('click', () => { if (player.paused) player.play(); else player.pause(); });
+  if (back) back.addEventListener('click', () => { player.currentTime = Math.max(0, player.currentTime - 5); });
+  if (fwd) fwd.addEventListener('click', () => { player.currentTime = Math.min(player.duration || 1e9, player.currentTime + 5); });
+  if (scrub) scrub.addEventListener('input', () => { player.currentTime = parseFloat(scrub.value) || 0; });
+  ['play', 'pause', 'loadedmetadata', 'seeked'].forEach((ev) => player.addEventListener(ev, updateTransport));
+  updateTransport();
+}
+setupTransport();
 
 // ---- Timeline canvas (Phantasm green/red band) ----
 const TOP = 26;       // clip lane height (scene-cut ticks + draggable highlight blocks)
