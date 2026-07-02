@@ -9,7 +9,7 @@ You are the Principal AI Software Architect tasking with building/rebuilding Pep
 ### A. Environment Core
 - Stack: 100% Vanilla JavaScript, ESM module syntax, hardware-accelerated local subprocess spawning (`ffmpeg`, `whisper-cli` with Metal acceleration).
 - Sandbox: All persistent state, local downloads, and rendering passes live cleanly in `~/Library/Application Support/PepStudio`. No project outputs pollute the source tree.
-- Core UI Theme: Premium "Liquid Glass" theme engine (dark obsidian background, frosted glassmorphic cards using 22px backdrop-filter blurs, and specular edge sheen).
+- Core UI Theme: dark = **flat Premiere charcoal** (#141414 app / #1d1d1d panels / 1px #2d2d2d separators, exact NLE track color codes V2 violet #6a4c93 · V1 blue #4361ee · A1 teal #2a9d8f · A2 terracotta #e76f51 · A3 gold #f4a261, hot clips = 1px #72efdd top sheen); light theme = Liquid Glass (frosted cards, 22px blur). No emojis anywhere — SVG icons only.
 
 ### B. Selector Guardrails (DO NOT REMOVE, RENAME, OR SHIFT)
 The application runtime attaches over 20 specific event listeners to these structural DOM nodes. They must remain active and intact across layout shifts:

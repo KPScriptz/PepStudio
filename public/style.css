@@ -756,3 +756,82 @@ input[type=text]{ font-family:ui-monospace, "SF Mono", monospace; font-size:12.5
 }
 .assetName{ font-size:12.5px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .assetMeta{ font-size:11px; color:var(--muted); font-family:ui-monospace,"SF Mono",monospace; margin-top:2px; }
+
+/* ======================================================================
+   PREMIERE SKIN — flat Adobe charcoal identity (dark theme only).
+   Solid panels, 1px separators, exact NLE track color codes, kinetic
+   micro-interactions. Pure CSS: all JS classes/IDs untouched.
+   ====================================================================== */
+[data-theme="dark"]{
+  --bg:#141414; --panel:#1d1d1d; --panel2:#101010;
+  --line:#2d2d2d; --muted:#b3b3b3; --text:#ffffff;
+  --premiere-blue:#1473e6;
+  --v2-color:#6a4c93; --v1-color:#4361ee;
+  --a1-color:#2a9d8f; --a2-color:#e76f51; --a3-color:#f4a261;
+  --lg-track-bg:#101010;
+}
+[data-theme="dark"] body{ background:#141414; }
+[data-theme="dark"] .view-picker{ background:#141414; }
+
+/* Flat steel panels — kill blur, glow shadows, and heavy chrome */
+[data-theme="dark"] .nle-pane,
+[data-theme="dark"] .nle-center,
+[data-theme="dark"] .nle-right,
+[data-theme="dark"] .nle-bottom>.card,
+[data-theme="dark"] header,
+[data-theme="dark"] .view-picker .picker-side{
+  background:#1d1d1d; backdrop-filter:none; -webkit-backdrop-filter:none;
+  border:1px solid #2d2d2d; border-radius:8px; box-shadow:none;
+}
+[data-theme="dark"] .nle-pane:hover,
+[data-theme="dark"] .nle-center:hover,
+[data-theme="dark"] .nle-right:hover{ border-color:#3a3a3a; }
+[data-theme="dark"] .card,
+[data-theme="dark"] .nle-right .panels>.card{
+  background:#232323; border:1px solid #2d2d2d; box-shadow:none;
+}
+[data-theme="dark"] input[type=text],[data-theme="dark"] select{
+  background:#101010; border-color:#2d2d2d; box-shadow:none;
+}
+[data-theme="dark"] input[type=text]:focus,[data-theme="dark"] select:focus{
+  border-color:#1473e6; box-shadow:0 0 0 2px rgba(20,115,230,.25);
+}
+
+/* Flat professional pane tabs: muted → normal on hover, crisp blue underline */
+[data-theme="dark"] .paneTab{
+  background:#1d1d1d; color:#707070; border-bottom:1px solid #2d2d2d;
+  transition:color .12s ease;
+}
+[data-theme="dark"] .paneTab:hover{ color:#b3b3b3; }
+[data-theme="dark"] .paneTab::after{ background:#1473e6; height:2px; }
+
+/* Interactive property readouts: Premiere-blue mono values w/ scrub affordance */
+.fxVal{ color:var(--premiere-blue); cursor:ew-resize; }
+.fxVal:hover{ text-decoration:underline; }
+
+/* Exact color-coded timeline lanes */
+.tblk.text{  background:var(--v2-color, #6a4c93); border-color:#8a6cb3; }
+.tblk.broll{ background:var(--v2-color, #6a4c93); border-color:#8a6cb3; }
+.tblk.speech{ background:var(--a1-color, #2a9d8f); border-color:#3ebfae; }
+.tblk.music{  background:var(--a2-color, #e76f51); border-color:#f08a6e; }
+.tblk.sfx{    background:var(--a3-color, #f4a261); border-color:#f7b87f; transform:skewX(-12deg); }
+/* V1 clips: consistent slate blue; PepAI tier expressed as a sheen, not a recolor */
+.tblk.clip.hot,.tblk.clip.warm,.tblk.clip.cool{
+  background:var(--v1-color, #4361ee); border-color:#5a75f2;
+}
+.tblk.clip.hot{ box-shadow:inset 0 1.5px 0 #72efdd, 0 0 6px rgba(114,239,221,.25); }
+.tblk.clip.cool{ filter:saturate(.45) brightness(.8); }
+
+/* Track badge rails color-matched to their lanes (V2/V1/A1/A2/A3) */
+.trackHeaders .trk:nth-child(1){ border-left:3px solid var(--v2-color, #6a4c93); }
+.trackHeaders .trk:nth-child(2){ border-left:3px solid var(--v1-color, #4361ee); }
+.trackHeaders .trk:nth-child(3){ border-left:3px solid var(--a1-color, #2a9d8f); }
+.trackHeaders .trk:nth-child(4){ border-left:3px solid var(--a2-color, #e76f51); }
+.trackHeaders .trk:nth-child(5){ border-left:3px solid var(--a3-color, #f4a261); }
+
+/* Hardware-editor playhead: 1px rule + diamond head marker */
+.seqPlayhead{ width:1px; background:#eab308; box-shadow:none; }
+.seqPlayhead::before{
+  content:''; position:absolute; top:-3px; left:-4px; width:8px; height:8px;
+  border:0; background:#eab308; transform:rotate(45deg); border-radius:1px;
+}
