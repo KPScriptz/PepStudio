@@ -100,6 +100,7 @@ function newProject() {
   $('#metaName').textContent = 'Untitled Project *';
   $('#metaInfo').textContent = '';
   { const t = $('#activeProjectTitle'); if (t) t.textContent = 'Untitled Sequence *'; }
+  renderMediaAsset();   // clears the bin's asset card (no project)
   renderHighlights();
   $('#pathInput').focus();
 }
@@ -279,6 +280,25 @@ function renderMeta() {
     : 'analyzing video…';
   $('#metaInfo').textContent =
     `${m.width}×${m.height} · ${m.fps}fps · ${fmt(d.duration)} · ${tail} · ${state.highlights.length} highlights`;
+  renderMediaAsset();
+}
+
+// Media Bin asset card: the loaded source rendered as a solid block (Premiere-style),
+// replacing the dashed empty-drop-zone look once a file is mounted.
+function renderMediaAsset() {
+  const bar = $('#importBar'); if (!bar) return;
+  let card = $('#mediaAsset');
+  if (!state.proj) { if (card) card.remove(); bar.classList.remove('has-asset'); return; }
+  const m = state.proj.meta || {};
+  const html = `<div class="assetName">${escapeHtml(state.proj.name || 'source')}</div>
+      <div class="assetMeta">${m.width || '?'}×${m.height || '?'} · ${m.fps || '?'}fps · ${fmt(state.proj.duration)}</div>`;
+  if (!card) {
+    card = document.createElement('div');
+    card.id = 'mediaAsset'; card.className = 'mediaAsset';
+    bar.prepend(card);
+  }
+  card.innerHTML = html;
+  bar.classList.add('has-asset');
 }
 
 // Poll the persisted analysis until the background video pass (Phantasm / scene cuts) lands.
@@ -675,8 +695,10 @@ function updateSeqPlayhead() {
 function setupTransport() {
   const play = $('#tpPlay'); const back = $('#tpBack'); const fwd = $('#tpFwd'); const scrub = $('#tpScrub');
   if (play) play.addEventListener('click', () => { if (player.paused) player.play(); else player.pause(); });
-  if (back) back.addEventListener('click', () => { player.currentTime = Math.max(0, player.currentTime - 5); });
-  if (fwd) fwd.addEventListener('click', () => { player.currentTime = Math.min(player.duration || 1e9, player.currentTime + 5); });
+  // Premiere-style frame stepping: click = 1 frame (from the source fps), Shift+click = 5s jump.
+  const frameStep = () => 1 / ((state.proj && state.proj.meta && state.proj.meta.fps) || 30);
+  if (back) back.addEventListener('click', (e) => { player.currentTime = Math.max(0, player.currentTime - (e.shiftKey ? 5 : frameStep())); });
+  if (fwd) fwd.addEventListener('click', (e) => { player.currentTime = Math.min(player.duration || 1e9, player.currentTime + (e.shiftKey ? 5 : frameStep())); });
   if (scrub) scrub.addEventListener('input', () => { player.currentTime = parseFloat(scrub.value) || 0; });
   ['play', 'pause', 'loadedmetadata', 'seeked'].forEach((ev) => player.addEventListener(ev, updateTransport));
   updateTransport();

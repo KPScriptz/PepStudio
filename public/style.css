@@ -739,3 +739,20 @@ input[type=text]{ font-family:ui-monospace, "SF Mono", monospace; font-size:12.5
 /* In-row play buttons (ghost verify / highlight preview) center their icon */
 #ghostList button, #hlList button{ vertical-align:middle; }
 #ghostList svg, #hlList svg{ display:inline-block; vertical-align:-1px; }
+
+/* ===== Premiere deltas: track accents, media asset card, dashed drop zone ===== */
+/* 3px accent rails on the track badges (video blue / audio green) */
+.trk.vid{ border-left:3px solid var(--premiere-blue); }
+.trk.aud{ border-left:3px solid #10b981; }
+
+/* Media Bin: dashed drop-zone look until a source is mounted… */
+.nle-left #importBar:not(.has-asset){
+  border:1px dashed var(--glass-border); border-radius:8px; margin:10px; padding:12px;
+}
+/* …then a solid Premiere-style asset card once the file resolves */
+.mediaAsset{
+  background:var(--lg-fill-2); border:1px solid rgba(59,130,246,.45); border-left:3px solid var(--premiere-blue);
+  border-radius:8px; padding:9px 12px; margin-bottom:12px;
+}
+.assetName{ font-size:12.5px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.assetMeta{ font-size:11px; color:var(--muted); font-family:ui-monospace,"SF Mono",monospace; margin-top:2px; }
