@@ -905,6 +905,8 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'g' || e.key === 'G') { if (seg) { e.preventDefault(); toggleSeg(seg); } }
   else if (e.key === 'v' || e.key === 'V') { if (seg) { e.preventDefault(); verifySeg(seg); } }
   else if (e.key === 'b' || e.key === 'B') { e.preventDefault(); $('#banishBtn').click(); }
+  // Spacebar = transport play/pause (industry standard; inputs already guarded above).
+  else if (e.code === 'Space') { e.preventDefault(); if (player.paused) player.play(); else player.pause(); }
 });
 
 // ---- Captions ----
