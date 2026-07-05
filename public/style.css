@@ -835,3 +835,55 @@ input[type=text]{ font-family:ui-monospace, "SF Mono", monospace; font-size:12.5
   content:''; position:absolute; top:-3px; left:-4px; width:8px; height:8px;
   border:0; background:#eab308; transform:rotate(45deg); border-radius:1px;
 }
+
+/* ======================================================================
+   CHROME DEEP — tier-1 dark-chrome tune on the Premiere skin (dark only).
+   Deeper obsidian stack, subtler metallic separators, deep lane tones,
+   3-tier heatmap top-edges (supersedes the cyan hot-sheen), dashed scrub
+   affordance. Token-level changes — zero selectors/JS touched.
+   ====================================================================== */
+[data-theme="dark"]{
+  --bg:#09090b; --panel:#151518; --panel2:#0c0c0e;
+  --line:rgba(255,255,255,.07); --muted:#a1a1aa;
+  --v2-color:#5a3791; --v1-color:#2244a0;
+  --a1-color:#1a7468; --a2-color:#bc5333; --a3-color:#cb812b;
+  --heat-hot:#ef4444; --heat-warm:#f97316; --heat-cool:#3b82f6;
+  --lg-track-bg:#0c0c0e; --lg-input-bg:#0c0c0e;
+}
+[data-theme="dark"] body{ background:#09090b; }
+[data-theme="dark"] .view-picker{ background:#09090b; }
+[data-theme="dark"] .nle-pane,
+[data-theme="dark"] .nle-center,
+[data-theme="dark"] .nle-right,
+[data-theme="dark"] .nle-bottom>.card,
+[data-theme="dark"] header,
+[data-theme="dark"] .view-picker .picker-side{
+  background:#151518; border-color:rgba(255,255,255,.07);
+  box-shadow:0 8px 32px -4px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.02);
+  border-radius:6px;
+}
+[data-theme="dark"] .paneTab{ background:#1b1b1f; color:#52525b; border-bottom-color:rgba(255,255,255,.07); }
+[data-theme="dark"] .paneTab:hover{ color:#a1a1aa; }
+[data-theme="dark"] .card,
+[data-theme="dark"] .nle-right .panels>.card{ background:#1b1b1f; border-color:rgba(255,255,255,.06); }
+[data-theme="dark"] input[type=text],[data-theme="dark"] select,[data-theme="dark"] .ovText{
+  background:#0c0c0e; border-color:rgba(255,255,255,.07);
+  box-shadow:inset 0 2px 4px rgba(0,0,0,.4); border-radius:4px;
+}
+
+/* Scrub affordance: dashed underline on hover (replaces solid text-decoration) */
+.fxVal{ border-bottom:1px dashed transparent; transition:border-color .1s; }
+.fxVal:hover{ text-decoration:none; border-bottom-color:var(--premiere-blue); }
+
+/* Lane fills pick up the deep tones via tokens; tint the borders to match */
+.tblk.text,.tblk.broll{ border-color:#7c3aed; }
+.tblk.clip.hot,.tblk.clip.warm,.tblk.clip.cool{ border-color:#3b82f6; }
+.tblk.speech{ border-color:#0d9488; }
+
+/* 3-tier heatmap top edges (supersedes the cyan sheen + desaturation) */
+.tblk.clip.hot{  box-shadow:inset 0 2px 0 var(--heat-hot, #ef4444); }
+.tblk.clip.warm{ box-shadow:inset 0 2px 0 var(--heat-warm, #f97316); filter:none; }
+.tblk.clip.cool{ box-shadow:inset 0 2px 0 var(--heat-cool, #3b82f6); filter:none; }
+
+/* Hardware playhead: 9px diamond + drop shadow */
+.seqPlayhead::before{ top:-4px; left:-4px; width:9px; height:9px; box-shadow:0 2px 4px rgba(0,0,0,.4); }
