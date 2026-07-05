@@ -9,7 +9,7 @@ You are the Principal AI Software Architect tasking with building/rebuilding Pep
 ### A. Environment Core
 - Stack: 100% Vanilla JavaScript, ESM module syntax, hardware-accelerated local subprocess spawning (`ffmpeg`, `whisper-cli` with Metal acceleration).
 - Sandbox: All persistent state, local downloads, and rendering passes live cleanly in `~/Library/Application Support/PepStudio`. No project outputs pollute the source tree.
-- Core UI Theme: dark = **flat Premiere charcoal** (#141414 app / #1d1d1d panels / 1px #2d2d2d separators, exact NLE track color codes V2 violet #6a4c93 · V1 blue #4361ee · A1 teal #2a9d8f · A2 terracotta #e76f51 · A3 gold #f4a261, hot clips = 1px #72efdd top sheen); light theme = Liquid Glass (frosted cards, 22px blur). No emojis anywhere — SVG icons only.
+- Core UI Theme: dark = **CHROME DEEP flat obsidian** (#09090b chrome / #151518 panels / #1b1b1f tab wells / #0c0c0e input+track wells, 7%-white separators; lane tokens V2 violet #5a3791 · V1 cobalt #2244a0 · A1 teal #1a7468 · A2 amber #bc5333 · A3 ochre #cb812b; PepAI heat tiers = 2px TOP EDGES on V1 clips: hot crimson #ef4444 / warm orange #f97316 / cool blue #3b82f6 — fills stay uniform). Light theme = Liquid Glass (frosted cards, 22px blur). No emojis anywhere — SVG icons only.
 
 ### B. Selector Guardrails (DO NOT REMOVE, RENAME, OR SHIFT)
 The application runtime attaches over 20 specific event listeners to these structural DOM nodes. They must remain active and intact across layout shifts:
@@ -77,3 +77,13 @@ This codebase was **recovered from Claude session transcripts after a full Mac w
 - **Server only:** `npm start` → http://localhost:4178
 - **External tools:** `~/.local/bin` (`ffmpeg` with libass, `ffprobe`, `whisper-cli`, `yt-dlp`); whisper model at `~/whisper.cpp/models`; node at `~/.local/node/bin`.
 - **Verify a change:** boot the server, generate a speech sample (`ffmpeg -f lavfi -i color=black:s=1280x720:d=11 -i ~/whisper.cpp/samples/jfk.wav -shortest out.mp4`), then drive the pipeline.
+
+## STATUS ADDENDUM — 2026-07-02 (verified on disk)
+
+- **Encoder policy (benchmarked, not assumed):** `libx264 veryfast` is the DEFAULT — on M1 Pro the vertical chain is filter-bound and x264 measured 7.4s vs VideoToolbox 9.2s (+20% file size) on a 60s 1080x1920 export. `PEP_ENCODER=vt` opts into hardware (frees CPU for concurrent whisper/analysis). Logic + benchmark note live in `lib/ff.js` `videoEncodeArgs()`.
+- **Parallel pack rendering:** `/api/export/tiktok` renders clips CONCURRENTLY (per-clip whisper→zoom→encode pipelines are independent; `mkdtemp` per call verified collision-free). Measured: 3 captioned verticals in 14s wall.
+- **Shorts quality chain:** light `unsharp` BEFORE the caption burn (no glyph ringing) + single-pass `loudnorm` to −16 LUFS mobile target (measured −14.6 on output). Lanczos scaling was already in place.
+- **Title synthesizer (`lib/pepai.js`):** high-CTR frameworks (incomplete-narrative curiosity loop / hyperbolic stake / interpersonal drama), ≤55 chars, bans generic words (gaming/lets play/episode/part/stream/video).
+- **Transport:** frame-accurate stepping (1/source-fps; Shift = 5s), SVG play/pause, spacebar play/pause (input-guarded).
+- **Two LaunchAgents (do not conflate):** `com.pepstudio.ollama.plist` keeps the local LLM server alive; `com.pepstudio.trainer.plist` runs the DAILY 8:00 AM self-tuning pass (login + calendar) writing `data/gaming_heuristics.json`. The trainer is a local snapshot + EMA convergence — it does not fetch external creator telemetry.
+- **Not applicable on this hardware (do not implement):** NVENC/CUVID/CUDA, Direct3D11, AVX-512/x86 assembly, HugeTLB — Apple Silicon Mac; write no dead code for these.
