@@ -142,13 +142,17 @@ fetch('/api/status').then((r) => r.json()).then((s) => {
 $('#analyzeBtn').addEventListener('click', analyze);
 $('#pathInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') analyze(); });
 
-// "Choose file…" → native OS dialog in the Electron build; prompt fallback in a plain browser.
+// "Choose file…" → native OS dialog: Electron IPC in the Electron build, the Swift
+// pepChooseFile bridge (NSOpenPanel) in the native macOS app, prompt in a plain browser.
 $('#btn-import-file')?.addEventListener('click', async () => {
   if (window.electron && typeof window.electron.showOpenDialog === 'function') {
     try {
       const p = await window.electron.showOpenDialog();
       if (p) window.pepResolveNativeFilePath(p);
     } catch (e) { toast(`File dialog failed: ${e.message}`, true); }
+  } else if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.pepChooseFile) {
+    // Native macOS shell: real NSOpenPanel; the selection comes back via pepResolveNativeFilePath.
+    window.webkit.messageHandlers.pepChooseFile.postMessage(null);
   } else {
     const p = prompt('Enter the absolute path to a video file:');
     if (p && p.trim()) window.pepResolveNativeFilePath(p.trim());
