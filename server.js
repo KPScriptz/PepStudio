@@ -404,10 +404,12 @@ app.post('/api/export/tiktok', async (req, res) => {
     const burn = wantCaps && await canBurnCaptions();
     const zoomOn = req.body.zoom !== false;   // beat-synced punch-ins on emphasis words
     const dir = path.join(RENDERS, req.body.id);
-    const results = [];
+    const results = new Array(clips.length);
     let zoomed = false;
-    for (let i = 0; i < clips.length; i++) {
-      const { start, end } = clips[i];
+    // Render the pack in PARALLEL — each clip's transcribe→zoom→encode pipeline is fully
+    // independent (whisper + exportShort both use per-call mkdtemp/output paths), so the
+    // pack's wall time ≈ the slowest single clip instead of the sum of all clips.
+    await Promise.all(clips.map(async ({ start, end }, i) => {
       let subs; let zoomFilter = null;
       if (wantCaps) {
         const ass = path.join(dir, `tiktok-${i + 1}.ass`);
@@ -419,11 +421,11 @@ app.post('/api/export/tiktok', async (req, res) => {
       }
       const out = path.join(dir, `tiktok-${i + 1}.mp4`);
       await exportShort(file, start, end, out, { subs, zoomFilter });
-      results.push({
+      results[i] = {
         file: out, url: `/renders/${req.body.id}/tiktok-${i + 1}.mp4`,
         srtUrl: wantCaps ? `/renders/${req.body.id}/tiktok-${i + 1}.srt` : null,
-      });
-    }
+      };
+    }));
     res.json({ clips: results, captionsBurned: burn, zoomed });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
