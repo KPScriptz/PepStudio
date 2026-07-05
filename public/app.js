@@ -1116,3 +1116,75 @@ function addOutput(label, data, kind) {
   });
   $('#outputs').prepend(el);
 }
+
+// ---- PepAI interactive console: chat with the local model; whitelisted tuning
+// mutations are applied server-side to data/gaming_heuristics.json (hot-reloaded by
+// the ranker). Rendered via textContent — no HTML injection from model output.
+const aiHistory = [];
+function aiAppend(who, text) {
+  const log = $('#pepaiChatLog'); if (!log) return;
+  const d = document.createElement('div');
+  d.className = 'aiMsg ' + (who === 'you' ? 'you' : 'ai');
+  const w = document.createElement('span'); w.className = 'aiWho';
+  w.textContent = who === 'you' ? 'You' : 'PepAI';
+  d.appendChild(w);
+  d.appendChild(document.createTextNode(text));
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+}
+async function aiSend() {
+  const inp = $('#pepaiChatInput'); const btn = $('#pepaiChatSend');
+  const q = (inp && inp.value || '').trim(); if (!q) return;
+  inp.value = '';
+  aiAppend('you', q);
+  aiHistory.push({ role: 'user', content: q });
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    const r = await fetch('/api/pepai/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: aiHistory.slice(-12) }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'chat failed');
+    aiHistory.push({ role: 'assistant', content: data.reply });
+    aiAppend('ai', data.reply);
+    if (data.applied) {
+      aiAppend('ai', 'Tuning applied: ' + Object.entries(data.applied)
+        .map(([k, v]) => `${k}=${Array.isArray(v) ? v.join('/') : v}`).join(' · ')
+        + ' — the next "Rank funny moments" uses these weights.');
+    }
+  } catch (e) {
+    aiAppend('ai', `Offline — ${e.message}`);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Send'; }
+  }
+}
+$('#pepaiChatSend')?.addEventListener('click', aiSend);
+$('#pepaiChatInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') aiSend(); });
+
+// ---- Sequence lanes: click a clip block or drag anywhere across the lanes to scrub.
+// Maps lane-x% -> sequence time -> SOURCE time via state.seqMap (read-only: never
+// mutates clip.start/end — guardrail).
+(() => {
+  const lanes = $('#trackLanes'); if (!lanes) return;
+  const seek = (clientX) => {
+    const map = state.seqMap;
+    if (!map || !map.items || !map.items.length) return;
+    const r = lanes.getBoundingClientRect(); if (!r.width) return;
+    const t = Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * map.total;
+    let acc = 0;
+    for (const { h, d } of map.items) {
+      if (acc + d >= t) { player.currentTime = h.start + (t - acc); return; }
+      acc += d;
+    }
+    player.currentTime = map.items[map.items.length - 1].h.end;
+  };
+  lanes.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    seek(e.clientX);
+    const mv = (ev) => seek(ev.clientX);
+    const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); };
+    window.addEventListener('mousemove', mv);
+    window.addEventListener('mouseup', up);
+  });
+})();

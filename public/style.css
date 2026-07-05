@@ -887,3 +887,18 @@ input[type=text]{ font-family:ui-monospace, "SF Mono", monospace; font-size:12.5
 
 /* Hardware playhead: 9px diamond + drop shadow */
 .seqPlayhead::before{ top:-4px; left:-4px; width:9px; height:9px; box-shadow:0 2px 4px rgba(0,0,0,.4); }
+
+/* ===== PepAI console + scrubbable sequence lanes ===== */
+.aiLog{
+  max-height:190px; min-height:88px; overflow-y:auto; display:flex; flex-direction:column;
+  gap:7px; padding:10px; background:var(--lg-input-bg); border:1px solid var(--glass-border);
+  border-radius:8px; font-size:12px;
+}
+.aiMsg{ line-height:1.45; overflow-wrap:anywhere; }
+.aiWho{ font-weight:700; margin-right:6px; color:var(--premiere-blue); }
+.aiMsg.you .aiWho{ color:var(--text); }
+.aiRow{ display:flex; gap:6px; margin-top:8px; }
+.aiRow input{ flex:1; min-width:0; }
+#aiStatus{ font-size:10px; font-family:ui-monospace,"SF Mono",monospace; }
+.trackLanes{ cursor:crosshair; }
+.tblk{ cursor:pointer; }

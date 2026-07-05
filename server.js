@@ -12,7 +12,7 @@ import { exportLongCut, exportShort, grabFrame, burnSubs, canBurnCaptions, expor
 import { generateCaptions, captionsReady, transcribeRange, transcribeWindows, emphasisChunks } from './lib/captions.js';
 import { scoreWindow } from './lib/reactions.js';
 import { heuristicMeta } from './lib/titles.js';
-import { pepaiReady, generateClipMeta } from './lib/pepai.js';
+import { pepaiReady, generateClipMeta, chatWithPepAI } from './lib/pepai.js';
 import { tightBounds } from './lib/trim.js';
 import { buildTimelineZoomExpression } from './lib/zooms.js';
 import { hookPenalty, pacingTag, triggerBoost } from './lib/retention.js';
@@ -326,6 +326,59 @@ app.post('/api/pepai/enhance', async (req, res) => {
 // Multi-track sequence export: clips in OUTPUT (array) order, each with optional text
 // overlays, composited + concatenated in ONE filter_complex pass. Body:
 //   { id, clips: [{ start, end, overlays?: [...] }], vertical?: true }
+// ---- PepAI interactive console: multi-turn chat + LIVE tuning mutations. ----
+// The model may return [MUTATION]{...}; keys are whitelisted + clamped here and merged
+// into data/gaming_heuristics.json — lib/retention.js hot-reloads it (mtime check), so
+// the very next "Rank funny moments" run uses the new weights. Chat cannot touch clips.
+app.post('/api/pepai/chat', async (req, res) => {
+  try {
+    const messages = Array.isArray(req.body.messages) ? req.body.messages.slice(-16) : [];
+    if (!messages.length) return res.status(400).json({ error: 'No messages' });
+    const WPATH = path.join(__dirname, 'data', 'gaming_heuristics.json');
+    let weights = {};
+    try { weights = JSON.parse(await fsp.readFile(WPATH, 'utf8')); } catch {}
+    const out = await chatWithPepAI(messages, { heuristics: {
+      targetPacingInterval: weights.targetPacingInterval,
+      loudnessThresholdZ: weights.loudnessThresholdZ,
+      comedicDelayTailMs: weights.comedicDelayTailMs,
+      triggerWeight: weights.triggerWeight,
+      hookPenalty: weights.hookPenalty,
+      triggerCount: (weights.retentionTriggers || []).length,
+    } });
+    if (!out) return res.status(503).json({ error: 'PepAI offline (Ollama not reachable)' });
+
+    let applied = null;
+    if (out.mutations && typeof out.mutations === 'object') {
+      const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, Number(v)));
+      const m = out.mutations; const a = {};
+      if (Number.isFinite(+m.targetPacingInterval)) a.targetPacingInterval = +clamp(m.targetPacingInterval, 0.5, 3).toFixed(3);
+      if (Number.isFinite(+m.loudnessThresholdZ)) a.loudnessThresholdZ = +clamp(m.loudnessThresholdZ, 1.5, 4).toFixed(3);
+      if (Number.isFinite(+m.comedicDelayTailMs)) a.comedicDelayTailMs = Math.round(clamp(m.comedicDelayTailMs, 40, 400));
+      if (Number.isFinite(+m.triggerWeight)) a.triggerWeight = +clamp(m.triggerWeight, 0, 2).toFixed(3);
+      if (Number.isFinite(+m.hookPenalty)) a.hookPenalty = +clamp(m.hookPenalty, -4, 0).toFixed(3);
+      let addedTriggers = [];
+      if (Array.isArray(m.addTriggers)) {
+        addedTriggers = m.addTriggers.map((t) => String(t).toUpperCase().trim())
+          .filter((t) => t && t.length <= 40).slice(0, 12);
+        if (addedTriggers.length) {
+          weights.retentionTriggers = Array.from(new Set([...(weights.retentionTriggers || []), ...addedTriggers]));
+        }
+      }
+      if (Object.keys(a).length || addedTriggers.length) {
+        Object.assign(weights, a);
+        weights.lastUpdate = new Date().toISOString();
+        await fsp.mkdir(path.dirname(WPATH), { recursive: true });
+        await fsp.writeFile(WPATH, JSON.stringify(weights, null, 2), 'utf8');
+        applied = { ...a };
+        if (addedTriggers.length) applied.addTriggers = addedTriggers;
+      }
+    }
+    res.json({ reply: out.reply, applied, model: out.model });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
 app.post('/api/export/sequence', async (req, res) => {
   try {
     const file = await sourceFor(req.body.id);
