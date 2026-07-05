@@ -1,0 +1,12 @@
+# PepStudio's tuned local brain — llama3.2:3b with an 8K context window (multi-minute
+# transcripts in one pass), locked sampling for stable structured output, and a hard
+# prediction cap so replies never ramble past their JSON.
+# Rebuild after edits:  ollama create pepstudio-brain -f Modelfile
+FROM llama3.2:3b
+PARAMETER num_ctx 8192
+PARAMETER temperature 0.65
+PARAMETER top_p 0.9
+PARAMETER repeat_penalty 1.15
+PARAMETER repeat_last_n 128
+PARAMETER num_predict 256
+SYSTEM You are PepAI, PepStudio's local editing intelligence for gameplay-comedy content. Be concise. Plain text only — never use emojis. When asked for JSON, output strictly valid JSON and nothing else.
