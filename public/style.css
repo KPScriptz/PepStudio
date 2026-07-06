@@ -957,3 +957,34 @@ input[type=text]{ font-family:ui-monospace, "SF Mono", monospace; font-size:12.5
 }
 .paneTabs .rtab:hover{ color:var(--text); }
 .paneTabs .rtab.active{ color:var(--text); border-bottom-color:var(--premiere-blue); }
+
+/* ======================================================================
+   FCP MAGNETIC — Final Cut reading of the EXISTING sequence lanes (dark).
+   The five lanes already map to FCPX: overlay = connected-above,
+   clip = primary spine, speech/music/sfx = audio roles below. This layer
+   RESTYLES only — no JS, no DOM: renderTracks/seqMap/playhead/drag-scrub/
+   Phantasm are untouched. Header rows resize in lockstep with the lanes so
+   V2/V1/A1/A2/A3 labels stay aligned. tblk heights = laneHeight-6 so the
+   base `top:3px` keeps every clip vertically centered.
+   ====================================================================== */
+[data-theme="dark"]{ --fcp-blue:#007aff; }
+
+/* thick primary spine (V1 · lane 2); slim connected (V2 · lane 1) + audio roles (3-5) */
+[data-theme="dark"] .lane:nth-child(1){ height:22px; }
+[data-theme="dark"] .lane:nth-child(2){ height:40px; background-color:rgba(255,255,255,.022); }
+[data-theme="dark"] .lane:nth-child(n+3){ height:22px; opacity:.92; }
+[data-theme="dark"] .lane:nth-child(1) .tblk,
+[data-theme="dark"] .lane:nth-child(n+3) .tblk{ height:16px; }
+[data-theme="dark"] .lane:nth-child(2) .tblk{ height:34px; }
+[data-theme="dark"] .trackHeaders .trk:nth-child(1){ height:22px; }
+[data-theme="dark"] .trackHeaders .trk:nth-child(2){ height:40px; }
+[data-theme="dark"] .trackHeaders .trk:nth-child(n+3){ height:22px; }
+
+/* FCP rounded cards + authentic palette (CHROME DEEP heat top-edges preserved) */
+[data-theme="dark"] .tblk{ border-radius:5px; }
+[data-theme="dark"] .lane:nth-child(2) .tblk.clip{ background:linear-gradient(180deg,#274a8a,#1d3b73); border-color:#31569b; }
+[data-theme="dark"] .tblk.text,[data-theme="dark"] .tblk.broll{ background:linear-gradient(180deg,#5f379a,#522d80); border-color:#6b3fae; }
+[data-theme="dark"] .tblk.speech,[data-theme="dark"] .tblk.music,[data-theme="dark"] .tblk.sfx{ background:linear-gradient(180deg,#1c6d61,#165c52); border-color:#1f7a6c; }
+
+/* Apple-blue interactive — outline, so it never clobbers the heat box-shadow edge */
+[data-theme="dark"] .tblk:hover{ filter:brightness(1.12); outline:1px solid var(--fcp-blue); outline-offset:-1px; z-index:5; }
