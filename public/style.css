@@ -902,3 +902,58 @@ input[type=text]{ font-family:ui-monospace, "SF Mono", monospace; font-size:12.5
 #aiStatus{ font-size:10px; font-family:ui-monospace,"SF Mono",monospace; }
 .trackLanes{ cursor:crosshair; }
 .tblk{ cursor:pointer; }
+
+/* ======================================================================
+   SPECTRAL ORB — hero action jewel (banner). Three GPU-composited layers:
+   ambient base, chromatic conic ring (XOR-masked to a 2px edge, spins on
+   hover), frosted volumetric cap. One per app: the magic button.
+   ====================================================================== */
+.spectral-action-trigger{
+  --orb: 38px;
+  position:relative; width:var(--orb); height:var(--orb); border-radius:50%;
+  background:rgba(30,30,35,.6); border:none; cursor:pointer; padding:0;
+  display:inline-flex; align-items:center; justify-content:center; outline:none;
+  box-shadow:0 8px 18px -4px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.05);
+  transition:transform .2s cubic-bezier(.16,1,.3,1);
+  -webkit-app-region:no-drag; flex:0 0 auto;
+}
+.spectral-action-trigger::before{
+  content:''; position:absolute; inset:-2px; border-radius:50%;
+  background:conic-gradient(from 0deg,
+    #ff4b4b,#ffb84b,#b8ff4b,#4bffb8,#4bb8ff,#7c4bff,#ff4bfa,#ff4b4b);
+  padding:2px;
+  -webkit-mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite:xor;
+          mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+          mask-composite:exclude;
+  opacity:.65; mix-blend-mode:screen;
+  transition:opacity .3s ease;
+}
+.spectral-glass-cap{
+  position:absolute; inset:1px; border-radius:50%;
+  background:radial-gradient(110% 110% at 50% 10%, rgba(255,255,255,.14) 0%, rgba(0,0,0,.28) 100%);
+  backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  box-shadow:inset 0 1px 2px rgba(255,255,255,.25), inset 0 -3px 8px rgba(0,0,0,.4);
+  display:flex; align-items:center; justify-content:center; pointer-events:none;
+}
+.spectral-glass-cap svg{
+  width:16px; height:16px; fill:rgba(255,255,255,.9);
+  filter:drop-shadow(0 2px 4px rgba(0,0,0,.35));
+}
+@keyframes spinSpectralGlare{ to{ transform:rotate(360deg); } }
+.spectral-action-trigger:hover{ transform:scale(1.06); }
+.spectral-action-trigger:hover::before{ opacity:1; animation:spinSpectralGlare 4s linear infinite; }
+.spectral-action-trigger:active{ transform:scale(.94); }
+@media (prefers-reduced-motion: reduce){
+  .spectral-action-trigger:hover::before{ animation:none; }
+}
+
+/* ===== Right-column nested tabs (Curate / Publish) ===== */
+.paneTab.paneTabs{ display:flex; gap:0; padding:0; border-bottom:1px solid var(--glass-border); }
+.paneTabs .rtab{
+  padding:8px 15px; font:inherit; font-size:10px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.6px; color:var(--muted); cursor:pointer; user-select:none;
+  border-bottom:2px solid transparent; margin-bottom:-1px; transition:color .12s ease, border-color .12s ease;
+}
+.paneTabs .rtab:hover{ color:var(--text); }
+.paneTabs .rtab.active{ color:var(--text); border-bottom-color:var(--premiere-blue); }

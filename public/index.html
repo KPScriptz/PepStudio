@@ -107,9 +107,12 @@
 
       <!-- QUADRANT 3 · RIGHT: Sequence Highlights Inspector (#hlList) + Ghost + Publish (nothing orphaned) -->
       <section class="nle-right">
-        <div class="paneTab">Sequence Highlights &amp; Publish</div>
+        <div class="paneTab paneTabs" role="tablist">
+          <span class="rtab active" data-rtab="curate" role="tab">Curate</span>
+          <span class="rtab" data-rtab="publish" role="tab">Publish</span>
+        </div>
         <div class="panels">
-          <div class="card ghostPanel">
+          <div class="card ghostPanel rtabPane" data-rtab="curate">
             <div class="panelHead">
               <strong>Ghost clips</strong>
               <span id="ghostCount" class="muted"></span>
@@ -118,7 +121,7 @@
             <div id="ghostList"></div>
           </div>
 
-          <div class="card hlPanel">
+          <div class="card hlPanel rtabPane" data-rtab="curate">
             <div class="panelHead">
               <strong>Highlights</strong>
               <span id="hlCount" class="muted"></span>
@@ -128,7 +131,7 @@
             <div id="hlList"></div>
           </div>
 
-          <div class="card exportPanel">
+          <div class="card exportPanel rtabPane" data-rtab="publish">
             <div class="panelHead"><strong>Publish</strong></div>
 
             <div class="publishRow">
@@ -175,7 +178,7 @@
             <div id="outputs"></div>
           </div>
 
-          <div class="card aiPanel">
+          <div class="card aiPanel rtabPane" data-rtab="curate">
             <div class="panelHead">
               <strong>PepAI Console</strong>
               <span id="aiStatus" class="muted right"></span>

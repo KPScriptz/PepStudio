@@ -1188,3 +1188,21 @@ $('#pepaiChatInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter'
     window.addEventListener('mouseup', up);
   });
 })();
+
+// ---- Right-column tabs (Curate / Publish): pure show/hide by data-rtab. Cards stay in
+// the DOM (display:none), so every listener/value in the hidden tab still works — this is
+// only a density view, never a teardown. All guardrail IDs untouched.
+(() => {
+  const strip = document.querySelector('.nle-right .paneTabs');
+  if (!strip) return;
+  const panes = [...document.querySelectorAll('.nle-right .rtabPane')];
+  const show = (name) => {
+    strip.querySelectorAll('.rtab').forEach((t) => t.classList.toggle('active', t.dataset.rtab === name));
+    panes.forEach((p) => p.classList.toggle('hidden', p.dataset.rtab !== name));
+  };
+  strip.addEventListener('click', (e) => {
+    const t = e.target.closest('.rtab');
+    if (t) show(t.dataset.rtab);
+  });
+  show('curate');
+})();
