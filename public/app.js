@@ -531,12 +531,34 @@ function renderTracks() {
       + 'background-repeat:no-repeat;';
   };
 
+  // FCP-style audio waveform inside A1 speech clips, drawn from the REAL loudness envelope
+  // (state.proj.envelope, the same data the Phantasm canvas uses) — no extra decode. Rendered
+  // as an inline SVG (single-quoted so it survives the double-quoted style attr) over green.
+  const envAll = (state.proj && state.proj.envelope) || [];
+  const envMax = envAll.reduce((m, e) => Math.max(m, e.v || 0), 0) || 1;   // client field is .v (0–1)
+  const waveform = (h) => {
+    const pts = envAll.filter((e) => e.t >= h.start && e.t <= h.end);
+    if (pts.length < 2) return '';
+    const N = pts.length, top = [], bot = [];
+    pts.forEach((e, i) => {
+      const x = ((i / (N - 1)) * 100).toFixed(1);
+      const a = Math.min(1, (e.v || 0) / envMax) * 17;
+      top.push(`${x},${(20 - a).toFixed(1)}`);
+      bot.push(`${x},${(20 + a).toFixed(1)}`);
+    });
+    const poly = top.concat(bot.reverse()).join(' ');
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'><polygon points='${poly}' fill='rgba(200,255,244,0.55)'/></svg>`;
+    const uri = encodeURIComponent(svg).replace(/'/g, '%27');
+    return `background-image:url('data:image/svg+xml,${uri}'),linear-gradient(180deg,#1c6d61,#165c52);`
+      + 'background-size:100% 100%,cover;background-repeat:no-repeat;';
+  };
+
   const vOv = [], vClip = [], aSpeech = [], aMusic = [], aSfx = [];
   for (const { h, s, d } of seq) {
     const sc = h.score || 0;
     const tier = sc >= maxScore * 0.8 ? 'hot' : sc >= maxScore * 0.5 ? 'warm' : 'cool';
     vClip.push(blk('clip ' + tier, pct(s), pct(d), escapeHtml((h.title || h.id || '').slice(0, 24)), null, filmstrip(h)));
-    aSpeech.push(blk('speech', pct(s), pct(d), ''));
+    aSpeech.push(blk('speech', pct(s), pct(d), '', null, waveform(h)));
     const auto = h.automation || {};
     if (auto.bgMusic && auto.bgMusic.path) aMusic.push(blk('music', pct(s), pct(d), 'music'));
     (auto.sfxTrack || []).forEach((sfx) => aSfx.push(blk('sfx', pct(s + (sfx.time || 0)), 1.2, '◆', `SFX @ ${(sfx.time || 0)}s`)));
