@@ -22,7 +22,7 @@ const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => (
 const showProgress = (txt) => { $('#progressText').textContent = txt; $('#progress').classList.remove('hidden'); };
 const hideProgress = () => $('#progress').classList.add('hidden');
 
-const state = { proj: null, highlights: [], selected: null, drag: null };
+const state = { proj: null, highlights: [], selected: null, selClip: null, drag: null };
 const player = $('#player');
 const canvas = $('#timeline');
 const ctx = canvas.getContext('2d');
@@ -564,7 +564,8 @@ function renderTracks() {
   for (const { h, s, d } of seq) {
     const sc = h.score || 0;
     const tier = sc >= maxScore * 0.8 ? 'hot' : sc >= maxScore * 0.5 ? 'warm' : 'cool';
-    vClip.push(blk('clip ' + tier, pct(s), pct(d), escapeHtml((h.title || h.id || '').slice(0, 24)), null, filmstrip(h)));
+    const _sel = state.selClip === h.id ? ' sel' : '';
+    vClip.push(`<div class="tblk clip ${tier}${_sel}" data-hid="${escapeHtml(String(h.id))}" style="left:${pct(s)}%;width:${Math.max(0.6, pct(d))}%;${filmstrip(h)}" title="${escapeHtml(h.title || h.id || '')}"><span>${escapeHtml((h.title || h.id || '').slice(0, 24))}</span></div>`);
     aSpeech.push(blk('speech', pct(s), pct(d), '', null, waveform(h)));
     const auto = h.automation || {};
     if (auto.bgMusic && auto.bgMusic.path) aMusic.push(blk('music', pct(s), pct(d), 'music'));
@@ -1237,6 +1238,13 @@ $('#pepaiChatInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter'
   };
   lanes.addEventListener('mousedown', (e) => {
     e.preventDefault();
+    // Click a clip → select it (FCP-blue outline); drag still scrubs.
+    const clip = e.target.closest('.tblk.clip');
+    if (clip && clip.dataset.hid) {
+      state.selClip = clip.dataset.hid;
+      lanes.querySelectorAll('.tblk.clip.sel').forEach((c) => c.classList.remove('sel'));
+      clip.classList.add('sel');
+    }
     seek(e.clientX);
     const mv = (ev) => seek(ev.clientX);
     const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); };

@@ -1033,3 +1033,6 @@ input[type=text]{ font-family:ui-monospace, "SF Mono", monospace; font-size:12.5
 
 /* FCP-style mono timecode readout in the transport */
 .tpTime{ font-family:ui-monospace,"SF Mono",Menlo,monospace; letter-spacing:.2px; font-variant-numeric:tabular-nums; }
+
+/* FCP clip selection: click a sequence clip → Apple-blue selection outline */
+.tblk.clip.sel{ outline:2px solid var(--fcp-blue, #007aff); outline-offset:-1px; z-index:7; }

@@ -120,5 +120,5 @@ Feature-complete and verified end-to-end on synthetic footage: 4-pane NLE, proje
 picker/recents, native drag-drop + NSOpenPanel file dialog, analyze/Phantasm, funny-rank,
 parallel TikTok pack export (loudnorm + pre-burn sharpen), YouTube cut, EDL/FCP7 XML,
 PepAI titles + interactive tuning console, daily self-tuning trainer, Curate/Publish tabs,
-FCP-magnetic timeline. **Never yet run on a real gameplay VOD** — that's the outstanding
+FCP-magnetic timeline (V1 filmstrip thumbnails via /api/thumb, A1 audio waveforms from state.proj.envelope .v, click-to-select clips, HH:MM:SS:FF timecode). **Never yet run on a real gameplay VOD** — that's the outstanding
 real-world test. Both repos clean and pushed.
