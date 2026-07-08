@@ -123,6 +123,16 @@
             <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M9 1L3 9h4l-1 6 6-8H8l1-6z"/></svg>One-Button Story Cut
           </button>
           <div id="clipInsight" class="clipInsight hidden rtabPane" data-rtab="curate"></div>
+          <!-- Step 5: correction capture — one-tap "why?" after a manual override -->
+          <div id="correctionShelf" class="correctionShelf hidden rtabPane" data-rtab="curate">
+            <div class="corrHead"><span>Why did you change <b id="corrWhat">this</b>?</span><span id="corrClose" class="corrClose" title="dismiss">×</span></div>
+            <div class="corrGrid">
+              <button class="corrTag" data-reason="BAD_TIMING">Bad timing / cut</button>
+              <button class="corrTag" data-reason="MISSED_SETUP">Missed setup</button>
+              <button class="corrTag" data-reason="BORING_FILLER">Boring filler</button>
+              <button class="corrTag" data-reason="PACING">Rhythm / pacing</button>
+            </div>
+          </div>
           <div class="card ghostPanel rtabPane" data-rtab="curate">
             <div class="panelHead">
               <strong>Ghost clips</strong>

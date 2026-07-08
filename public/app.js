@@ -417,6 +417,7 @@ function toggleSeg(s) {
   s._wasGhost = true;
   s.state = s.state === 'ghost' ? 'keep' : 'ghost';
   logEdit(s.state === 'ghost' ? 'segment_cut' : 'segment_restored', { start: s.start, end: s.end, reason: s.reason });
+  promptCorrection(s.state === 'ghost' ? 'segment_cut' : 'segment_restore', { start: s.start, end: s.end, segReason: s.reason, label: `segment ${s.state === 'ghost' ? 'cut' : 'restored'}` });
   renderGhosts(); updatePhantasmSummary(); draw();
 }
 
@@ -493,6 +494,7 @@ function renderHighlights() {
         h[inp.dataset.k] = Math.max(0, Math.min(state.proj.duration, v));
         if (h.end - h.start < 1) h.end = h.start + 1;
         logEdit('trim', { id: h.id, edge: inp.dataset.k, start: +h.start.toFixed(1), end: +h.end.toFixed(1) });
+        promptCorrection('trim', { clipId: h.id, edge: inp.dataset.k, start: +h.start.toFixed(1), end: +h.end.toFixed(1), story: (h.story || {}).intent || null, label: `trimmed ${h.id.toUpperCase()}` });
         renderHighlights(); draw();
       });
     });
@@ -505,6 +507,7 @@ function renderHighlights() {
       logEdit(h.keep ? 'clip_kept' : 'clip_dropped', { id: h.id, start: h.start, end: h.end, score: h.score,
         story: h.story ? { role: h.story.label, intent: h.story.intent, confidence: h.story.confidence, setupAt: h.story.setupAt, payoffAt: h.story.payoffAt, callbackOf: h.story.callbackOf } : null,
         scores: h.scores || null });
+      promptCorrection(h.keep ? 'restore' : 'drop', { clipId: h.id, kept: h.keep, story: (h.story || {}).intent || null, label: `${h.keep ? 'restored' : 'dropped'} ${h.id.toUpperCase()}` });
       renderHighlights(); draw();
     });
     row.querySelector('.dragHandle').addEventListener('mousedown', (e) => {
@@ -612,7 +615,9 @@ function reorderMove(clientY) {
 document.addEventListener('mousemove', (e) => { if (_reorderId != null) reorderMove(e.clientY); });
 document.addEventListener('mouseup', () => {
   if (_reorderId == null) return;
+  const id = _reorderId;
   _reorderId = null; document.body.classList.remove('reordering');
+  promptCorrection('reorder', { clipId: id, story: ((state.highlights.find((h) => h.id === id) || {}).story || {}).intent || null, label: `reordered ${String(id).toUpperCase()}` });
 });
 
 // Transcribe candidate windows and re-rank by reaction (laughter / hype / big moments).
@@ -1593,3 +1598,25 @@ function oneButtonStoryCut() {
   toast(`Story cut assembled — ${kept} clips (${fmt(total)}), filler dropped.`);
 }
 $('#storyCutBtn')?.addEventListener('click', oneButtonStoryCut);
+
+// ---- Step 5: Correction Capture. After a MANUAL override (trim/keep/reorder/segment),
+// surface a one-tap "why?" popover. The base action already logged; tapping a reason
+// appends a labeled human_correction token (with story context) to the feedback corpus.
+// Optional + non-blocking: it auto-fades if ignored (low friction — even 10% labels help).
+let _corrCtx = null, _corrTimer = null;
+function promptCorrection(action, ctx) {
+  const shelf = $('#correctionShelf'); if (!shelf) return;
+  _corrCtx = { action, ...ctx };
+  const what = $('#corrWhat'); if (what) what.textContent = (ctx && ctx.label) || action;
+  shelf.classList.remove('hidden');
+  clearTimeout(_corrTimer);
+  _corrTimer = setTimeout(() => { shelf.classList.add('hidden'); _corrCtx = null; }, 9000);
+}
+$('#correctionShelf')?.addEventListener('click', (e) => {
+  const shelf = $('#correctionShelf');
+  if (e.target.closest('#corrClose')) { shelf.classList.add('hidden'); clearTimeout(_corrTimer); _corrCtx = null; return; }
+  const b = e.target.closest('.corrTag'); if (!b || !_corrCtx) return;
+  logEdit('human_correction', { ..._corrCtx, reason: b.dataset.reason });
+  toast('Thanks — logged as training feedback.');
+  shelf.classList.add('hidden'); clearTimeout(_corrTimer); _corrCtx = null;
+});

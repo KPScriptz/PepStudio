@@ -1379,3 +1379,14 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
   box-shadow:0 6px 18px -6px rgba(45,118,255,.6); transition:transform .12s, box-shadow .15s; letter-spacing:.01em; }
 .storyCutBtn:hover{ transform:translateY(-1px); box-shadow:0 9px 24px -6px rgba(45,118,255,.75); }
 .storyCutBtn:disabled{ opacity:.65; cursor:not-allowed; transform:none; }
+
+/* ===== Step 5: Correction Capture popover ===== */
+.correctionShelf{ background:rgba(37,37,42,.96); border:1px solid #2d76ff; border-radius:8px; padding:10px 12px; margin-bottom:10px; box-shadow:0 6px 20px -6px rgba(0,0,0,.6); }
+.correctionShelf.hidden{ display:none !important; }
+.corrHead{ display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--px-text,#ececec); margin-bottom:8px; }
+.corrHead b{ color:#7fb2ff; font-weight:600; }
+.corrClose{ cursor:pointer; color:var(--px-muted,#8c919b); font-size:15px; line-height:1; }
+.corrClose:hover{ color:var(--px-text,#ececec); }
+.corrGrid{ display:grid; grid-template-columns:1fr 1fr; gap:5px; }
+.corrTag{ padding:7px 9px !important; font-size:11px !important; text-align:left !important; background:var(--px-hover,#22252a) !important; border:1px solid var(--px-divider,rgba(255,255,255,.06)) !important; border-radius:6px !important; color:var(--px-text,#ececec) !important; cursor:pointer; transition:background .12s, border-color .12s; }
+.corrTag:hover{ background:#2d3340 !important; border-color:#2d76ff !important; transform:none !important; }
