@@ -1030,3 +1030,6 @@ input[type=text]{ font-family:ui-monospace, "SF Mono", monospace; font-size:12.5
 [data-theme="dark"] select,
 [data-theme="dark"] .ovText{ border-radius:4px; }
 [data-theme="dark"] .tblk{ border-radius:3px; }
+
+/* FCP-style mono timecode readout in the transport */
+.tpTime{ font-family:ui-monospace,"SF Mono",Menlo,monospace; letter-spacing:.2px; font-variant-numeric:tabular-nums; }

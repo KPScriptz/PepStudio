@@ -5,6 +5,13 @@ const fmt = (t) => {
   const m = Math.floor(t / 60), s = Math.floor(t % 60);
   return `${m}:${String(s).padStart(2, '0')}`;
 };
+// FCP-style timecode HH:MM:SS:FF (frames from the source fps).
+const tc = (t, fps) => {
+  t = Math.max(0, t || 0); fps = Math.round(fps || 30) || 30;
+  const p = (n) => String(n).padStart(2, '0');
+  const f = Math.min(fps - 1, Math.floor((t - Math.floor(t)) * fps));
+  return `${p(Math.floor(t / 3600))}:${p(Math.floor(t / 60) % 60)}:${p(Math.floor(t) % 60)}:${p(f)}`;
+};
 const toast = (msg, isErr) => {
   const el = $('#toast');
   el.textContent = msg; el.classList.toggle('err', !!isErr); el.classList.remove('hidden');
@@ -730,7 +737,8 @@ function updateTransport() {
   const scrub = $('#tpScrub'); const tEl = $('#tpTime'); const pEl = $('#tpPlay');
   const dur = state.proj?.duration || player.duration || 0;
   if (scrub) { scrub.max = dur || 100; if (document.activeElement !== scrub) scrub.value = player.currentTime || 0; }
-  if (tEl) tEl.textContent = `${fmt(player.currentTime || 0)} / ${fmt(dur)}`;
+  const fps = (state.proj && state.proj.meta && state.proj.meta.fps) || 30;
+  if (tEl) tEl.textContent = `${tc(player.currentTime || 0, fps)} / ${tc(dur, fps)}`;
   if (pEl) pEl.classList.toggle('playing', !player.paused);
 }
 // Sequence time ≠ source time: find which kept clip the source playhead is inside, then
