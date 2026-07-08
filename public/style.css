@@ -462,7 +462,7 @@ body.reordering .hlRow, body.reordering .card { transition: none; }
 .nle-right .panels > .card{ margin:0 0 8px 0; width:auto; }
 
 /* Bottom: phantasm timeline + master track lanes */
-.nle-bottom{ flex:0 0 214px; display:flex; gap:6px; min-height:0; }
+.nle-bottom{ flex:0 0 240px; display:flex; gap:6px; min-height:0; }
 .nle-bottom > .card{ margin:0; overflow:auto; }
 .nle-bottom .timelineWrap{ flex:2 1 0; }
 .nle-bottom .trackPanel{ flex:1 1 0; }
@@ -477,8 +477,8 @@ body.reordering .hlRow, body.reordering .card { transition: none; }
    were forcing the left column to min-content and collapsing the center). */
 .nle-body > *{ min-width:0; }
 .nle-left{ flex:1 1 300px; }
-.nle-center{ flex:1.7 1 320px; min-width:240px; }
-.nle-right{ flex:1 1 330px; }
+.nle-center{ flex:2.3 1 340px; min-width:240px; }   /* theater-weighted center monitor */
+.nle-right{ flex:1 1 320px; }
 .nle-left #importBar .row{ flex-wrap:wrap; gap:6px; }
 .nle-left #importBar input{ min-width:0; flex:1 1 130px; width:auto; }
 .nle-left #importBar .row > button{ flex:0 0 auto; }
