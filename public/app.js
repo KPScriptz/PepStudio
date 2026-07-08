@@ -22,13 +22,24 @@ const ctx = canvas.getContext('2d');
 const IC_PLAY = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2l10 6-10 6V2z"/></svg>';
 
 // ---- Theme (Liquid Glass light/dark) ----
+// No saved choice → follow the macOS system appearance (and keep following it live).
+// The moment the user hits the toggle, their choice is persisted and wins from then on.
 (() => {
-  const saved = localStorage.getItem('pepstudio-theme') || 'dark';
-  document.documentElement.setAttribute('data-theme', saved);
+  const mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
+  const systemTheme = () => (mq && mq.matches ? 'light' : 'dark');
+  const saved = localStorage.getItem('pepstudio-theme');
+  document.documentElement.setAttribute('data-theme', saved || systemTheme());
+  if (!saved && mq) {
+    mq.addEventListener('change', () => {
+      if (localStorage.getItem('pepstudio-theme')) return;   // user has since chosen; stop following
+      document.documentElement.setAttribute('data-theme', systemTheme());
+      if (state.proj) draw();
+    });
+  }
   $('#themeToggle')?.addEventListener('click', () => {
     const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', next);
-    localStorage.setItem('pepstudio-theme', next);
+    localStorage.setItem('pepstudio-theme', next);   // explicit choice — sticky from now on
     if (state.proj) draw();   // canvas stays dark, but redraw to be safe
   });
 })();

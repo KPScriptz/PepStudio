@@ -113,6 +113,8 @@ and merges into `data/gaming_heuristics.json`, which the ranker hot-reloads. Cha
 - The owner's workflow is: implement → verify in a browser preview (screenshot + DOM
   assertions) → relaunch the native app if Swift changed → commit + push. Match it.
 
+See **BACKLOG.md** for the vetted, prioritized feature queue (what to build next, what NOT to).
+
 ## Current state (2026-07-02)
 Feature-complete and verified end-to-end on synthetic footage: 4-pane NLE, project
 picker/recents, native drag-drop + NSOpenPanel file dialog, analyze/Phantasm, funny-rank,
