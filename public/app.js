@@ -416,6 +416,7 @@ function verifySeg(s) { state.selSeg = s.id; player.currentTime = s.start; playe
 function toggleSeg(s) {
   s._wasGhost = true;
   s.state = s.state === 'ghost' ? 'keep' : 'ghost';
+  logEdit(s.state === 'ghost' ? 'segment_cut' : 'segment_restored', { start: s.start, end: s.end, reason: s.reason });
   renderGhosts(); updatePhantasmSummary(); draw();
 }
 
@@ -497,7 +498,7 @@ function renderHighlights() {
       h._stopAt = h.end; draw();
     });
     row.querySelector('[data-act=keep]').addEventListener('click', () => {
-      h.keep = !h.keep; renderHighlights(); draw();
+      h.keep = !h.keep; logEdit(h.keep ? 'clip_kept' : 'clip_dropped', { id: h.id, start: h.start, end: h.end, score: h.score }); renderHighlights(); draw();
     });
     row.querySelector('.dragHandle').addEventListener('mousedown', (e) => {
       e.preventDefault(); startReorder(h.id);
@@ -598,6 +599,7 @@ function reorderMove(clientY) {
   if (to === from || to < 0 || to >= state.highlights.length) return;
   const [m] = state.highlights.splice(from, 1);
   state.highlights.splice(to, 0, m);
+  logEdit('reorder', { id: m.id, from, to });
   renderHighlights(); draw();
 }
 document.addEventListener('mousemove', (e) => { if (_reorderId != null) reorderMove(e.clientY); });
@@ -956,6 +958,7 @@ canvas.addEventListener('dblclick', (e) => {
   const right = { ...clip, id: `m${++_splitSeq}`, start: cut, snapped: false };
   clip.end = cut; clip.snapped = false;
   state.highlights.splice(idx + 1, 0, right);
+  logEdit('split', { id: clip.id, at: cut });
   state.selected = right.id;
   renderHighlights(); draw();
   toast(`Split into 2 clips at ${fmt(cut)}.`);
@@ -1033,6 +1036,7 @@ $('#banishBtn').addEventListener('click', () => {
   let msg = `Banish ${ghosts.length} red ghosts (${fmt(dur)} of dead air) and export the cut?`;
   if (risky) msg += `\n\n${risky} are silent-but-moving (possible stealth plays). Keep them first if they matter.`;
   if (!window.confirm(msg)) return;
+  logEdit('banish_all', { ghosts: ghosts.length, deadAir: +dur.toFixed(1) });
   $('#longMode').value = 'phantasm';
   renderLongCut('Phantasm cut');
 });
@@ -1345,11 +1349,11 @@ function renderAIAssistant() {
 }
 $('#aiActions')?.addEventListener('click', (e) => {
   const b = e.target.closest('.aiAction'); if (!b) return;
-  const fn = AI_TRIGGER[b.dataset.act]; if (fn) fn();
+  const fn = AI_TRIGGER[b.dataset.act]; if (fn) { logEdit('ai_action_accepted', { act: b.dataset.act }); fn(); }
 });
 $('#aiSuggest')?.addEventListener('click', (e) => {
   const b = e.target.closest('.aiSuggestRow'); if (!b) return;
-  const t = parseFloat(b.dataset.seek); if (!Number.isNaN(t)) player.currentTime = t;
+  const t = parseFloat(b.dataset.seek); if (!Number.isNaN(t)) { logEdit('suggestion_followed', { t }); player.currentTime = t; }
 });
 renderAIAssistant();
 
@@ -1397,3 +1401,21 @@ renderAIAssistant();
     }
   });
 })();
+
+// ---- Editorial feedback recorder: every real human edit decision → /api/feedback, a
+// local JSONL corpus (the substrate for future supervised learning from real edits).
+function logEdit(action, detail) {
+  try {
+    fetch('/api/feedback', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, projectId: state.proj && state.proj.id, detail: detail || {} }), keepalive: true,
+    }).then(() => refreshEditCount()).catch(() => {});
+  } catch {}
+}
+function refreshEditCount() {
+  const el = $('#editCount'); if (!el) return;
+  fetch('/api/feedback/count').then((r) => r.json()).then((d) => {
+    el.textContent = d.count ? `${d.count} edit decision${d.count === 1 ? '' : 's'} recorded` : '';
+  }).catch(() => {});
+}
+refreshEditCount();

@@ -66,6 +66,27 @@ app.get('/api/status', async (req, res) => {
   });
 });
 
+// ---- Editorial feedback recorder: append every real human edit decision to a local
+// JSONL corpus (data/feedback.jsonl). This is the SUBSTRATE for supervised learning from
+// real editorial decisions — it collects; a model that trains on it is the next milestone.
+app.post('/api/feedback', async (req, res) => {
+  try {
+    const { action, projectId, detail } = req.body || {};
+    if (!action || typeof action !== 'string') return res.status(400).json({ error: 'action required' });
+    const rec = { t: Date.now(), projectId: projectId || null, action, detail: (detail && typeof detail === 'object') ? detail : {} };
+    await fsp.appendFile(path.join(DATA, 'feedback.jsonl'), JSON.stringify(rec) + '\n', 'utf8');
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
+// Count of recorded decisions (for the UI's "N decisions recorded" indicator).
+app.get('/api/feedback/count', async (req, res) => {
+  try {
+    const txt = await fsp.readFile(path.join(DATA, 'feedback.jsonl'), 'utf8').catch(() => '');
+    res.json({ count: txt ? txt.trimEnd().split('\n').filter(Boolean).length : 0 });
+  } catch { res.json({ count: 0 }); }
+});
+
 // ---- Import a VOD from a URL (YouTube / Twitch). Long-running → job + polling. ----
 const jobs = new Map(); // jobId -> { status, progress, stage, error, project }
 
