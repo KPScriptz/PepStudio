@@ -383,6 +383,7 @@ function updatePhantasmSummary() {
 
 const reasonLabel = { silence: 'silence', static: 'static', dead: 'dead air' };
 function renderGhosts() {
+  if (typeof renderAIAssistant === 'function') renderAIAssistant();   // dead-air count lands with phase-2 segments
   // Show every segment that began as a ghost (re-kept ones stay listed, dimmed).
   const list = (state.segments || []).filter((s) => s.reason !== 'active');
   $('#ghostCount').textContent = `${list.filter((s) => s.state === 'ghost').length} red / ${list.length}`;
@@ -508,6 +509,7 @@ function renderHighlights() {
 
 // ---- Premiere-style multi-track sequence timeline (output-time view of the real layers) ----
 function renderTracks() {
+  if (typeof renderAIAssistant === 'function') renderAIAssistant();   // keep the copilot live
   const lanes = $('#trackLanes');
   if (!lanes) return;
   const kept = (state.proj ? state.highlights : []).filter((h) => h.keep);
@@ -1270,3 +1272,83 @@ $('#pepaiChatInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter'
   });
   show('curate');
 })();
+
+// ==========================================================================
+// AI ASSISTANT — action-first copilot. Every action drives an EXISTING pipeline
+// by triggering the real control; nothing here is fake. Status + suggestions are
+// derived from real analysis state; the action set is context-aware (no project
+// vs analyzed). The natural-language chat is kept, demoted to "Advanced prompt".
+// ==========================================================================
+const SVG_CHK = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.4l3 3 6-7"/></svg>';
+const SVG_ARR = '<svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor"><path d="M6 3.5L10.5 8 6 12.5z"/></svg>';
+
+function aiSilences() {
+  return (state.segments || []).filter((s) => s.reason === 'silence' || s.reason === 'static' || s.state === 'ghost');
+}
+// Each action → the REAL control it clicks (honest: no new backend).
+const AI_TRIGGER = {
+  choose:   () => $('#btn-import-file') && $('#btn-import-file').click(),
+  url:      () => { const u = $('#urlInput'); if (u) { u.focus(); u.scrollIntoView({ block: 'nearest' }); } },
+  analyze:  () => $('#analyzeBtn') && $('#analyzeBtn').click(),
+  deadair:  () => $('#banishBtn') && $('#banishBtn').click(),
+  rank:     () => $('#funnyBtn') && $('#funnyBtn').click(),
+  captions: () => $('#captionsBtn') && $('#captionsBtn').click(),
+  shorts:   () => $('#tiktokBtn') && $('#tiktokBtn').click(),
+};
+function aiActionSet() {
+  if (!state.proj) {
+    return [
+      { act: 'choose', label: 'Choose a video file', meta: 'MP4 · MOV · MKV' },
+      { act: 'url', label: 'Paste a Twitch / YouTube link', meta: 'processed locally' },
+      { act: 'analyze', label: 'Analyze footage', meta: 'silence · scenes · loudness' },
+    ];
+  }
+  const sil = aiSilences();
+  const dead = sil.reduce((a, s) => a + (s.end - s.start), 0);
+  const kept = (state.highlights || []).filter((h) => h.keep).length;
+  const n = ($('#tiktokCount') && $('#tiktokCount').value) || '5';
+  return [
+    { act: 'deadair', label: 'Remove Dead Air', meta: sil.length ? `${sil.length} sections · ${fmt(dead)}` : 'none detected', dim: !sil.length },
+    { act: 'rank', label: 'Rank Highlights', meta: kept ? `${kept} kept` : 'ready to rank' },
+    { act: 'captions', label: 'Generate Captions', meta: state.canBurn ? 'burn-in ready' : 'SRT sidecar' },
+    { act: 'shorts', label: 'Create Shorts', meta: `${n} vertical clip${n === '1' ? '' : 's'}` },
+  ];
+}
+function aiSuggestions() {
+  if (!state.proj) return [];
+  const out = [];
+  const hs = [...(state.highlights || [])].filter((h) => (h.score || 0) > 0).sort((a, b) => (b.score || 0) - (a.score || 0));
+  if (hs[0]) out.push({ t: hs[0].start, label: `Top moment at ${fmt(hs[0].start)}` });
+  const sil = [...aiSilences()].sort((a, b) => (b.end - b.start) - (a.end - a.start));
+  if (sil[0]) out.push({ t: sil[0].start, label: `Long pause at ${fmt(sil[0].start)} · ${fmt(sil[0].end - sil[0].start)}` });
+  const env = state.proj.envelope || [];
+  if (env.length) { const loud = env.reduce((m, e) => ((e.v || 0) > (m.v || 0) ? e : m), env[0]); out.push({ t: loud.t, label: `Loud reaction at ${fmt(loud.t)}` }); }
+  return out.slice(0, 3);
+}
+function renderAIAssistant() {
+  const box = $('#aiActions'); if (!box) return;
+  box.innerHTML = aiActionSet().map((a) =>
+    `<button class="aiAction${a.dim ? ' dim' : ''}" data-act="${a.act}">`
+    + `<span class="aiActIcon">${SVG_CHK}</span>`
+    + `<span class="aiActBody"><span class="aiActLabel">${escapeHtml(a.label)}</span>`
+    + `<span class="aiActMeta">${escapeHtml(a.meta)}</span></span></button>`).join('');
+  const sbox = $('#aiSuggest');
+  if (sbox) {
+    const sug = aiSuggestions();
+    sbox.innerHTML = sug.length
+      ? '<div class="aiSuggestHead">Suggestions</div>' + sug.map((s) =>
+          `<button class="aiSuggestRow" data-seek="${s.t}">${SVG_ARR}<span>${escapeHtml(s.label)}</span></button>`).join('')
+      : '';
+  }
+  const st = $('#aiStatus');
+  if (st) st.textContent = state.pepaiReady ? 'local model ✓' : '';
+}
+$('#aiActions')?.addEventListener('click', (e) => {
+  const b = e.target.closest('.aiAction'); if (!b) return;
+  const fn = AI_TRIGGER[b.dataset.act]; if (fn) fn();
+});
+$('#aiSuggest')?.addEventListener('click', (e) => {
+  const b = e.target.closest('.aiSuggestRow'); if (!b) return;
+  const t = parseFloat(b.dataset.seek); if (!Number.isNaN(t)) player.currentTime = t;
+});
+renderAIAssistant();

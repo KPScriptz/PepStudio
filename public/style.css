@@ -1249,3 +1249,31 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
   [data-theme="dark"] #editor.nleGrid:not(.hidden) > .nle-bottom{ animation:none; }
   [data-theme="dark"] button:hover{ transform:none; }
 }
+
+/* ===== AI Assistant: action-first copilot ===== */
+.aiActions{ display:flex; flex-direction:column; gap:2px; margin:2px 0 10px; }
+.aiAction{
+  display:flex; align-items:center; gap:11px; width:100%; text-align:left;
+  background:transparent !important; border:0 !important; border-radius:8px !important;
+  padding:9px 10px !important; cursor:pointer; transition:background .12s;
+}
+.aiAction:hover{ background:var(--px-hover, #22252a) !important; transform:none !important; }
+.aiActIcon{ flex:0 0 auto; width:22px; height:22px; display:flex; align-items:center; justify-content:center;
+  border-radius:6px; background:rgba(45,118,255,.14); color:#2d76ff; }
+.aiAction.dim{ opacity:.5; }
+.aiAction.dim .aiActIcon{ background:rgba(255,255,255,.06); color:var(--px-muted, #8c919b); }
+.aiActBody{ display:flex; flex-direction:column; gap:1px; min-width:0; }
+.aiActLabel{ font-size:13px; font-weight:600; color:var(--px-text, #ececec); }
+.aiActMeta{ font-size:11px; color:var(--px-muted, #8c919b); }
+.aiSuggestHead{ font-size:10px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--px-muted,#8c919b); padding:6px 10px 4px; border-top:1px solid var(--px-divider, rgba(255,255,255,.05)); margin-top:2px; }
+.aiSuggestRow{ display:flex; align-items:center; gap:8px; width:100%; text-align:left;
+  background:transparent !important; border:0 !important; padding:6px 10px !important; cursor:pointer;
+  color:var(--px-muted,#8c919b) !important; font-size:12px; border-radius:6px !important; transition:background .12s, color .12s; }
+.aiSuggestRow:hover{ background:var(--px-hover,#22252a) !important; color:var(--px-text,#ececec) !important; transform:none !important; }
+.aiSuggestRow svg{ flex:0 0 auto; color:#a78bfa; }
+.aiAdvanced{ margin-top:10px; border-top:1px solid var(--px-divider, rgba(255,255,255,.05)); padding-top:8px; }
+.aiAdvanced summary{ cursor:pointer; font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--px-muted,#8c919b); list-style:none; padding:4px 2px; }
+.aiAdvanced summary::-webkit-details-marker{ display:none; }
+.aiAdvanced summary::before{ content:'▸ '; }
+.aiAdvanced[open] summary::before{ content:'▾ '; }
+.aiAdvanced .aiLog{ margin-top:8px; }

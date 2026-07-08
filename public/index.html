@@ -180,16 +180,23 @@
 
           <div class="card aiPanel rtabPane" data-rtab="curate">
             <div class="panelHead">
-              <strong>PepAI Console</strong>
+              <strong>AI Assistant</strong>
               <span id="aiStatus" class="muted right"></span>
             </div>
+            <!-- Action-first copilot: every action drives an EXISTING pipeline (see app.js
+                 AI_ACTIONS). Status + suggestions come from real analysis state. -->
+            <div id="aiActions" class="aiActions"></div>
+            <div id="aiSuggest" class="aiSuggest"></div>
+            <details class="aiAdvanced">
+              <summary>Advanced prompt</summary>
             <div id="pepaiChatLog" class="aiLog">
-              <div class="aiMsg ai"><span class="aiWho">PepAI</span>Online. Tell me how to tune the edit — e.g. "make the cuts faster", "only keep the screaming", "add trigger word BETRAYAL".</div>
+              <div class="aiMsg ai"><span class="aiWho">PepAI</span>Type a custom instruction — e.g. "keep only the screaming", "add trigger word BETRAYAL".</div>
             </div>
             <div class="aiRow">
               <input id="pepaiChatInput" type="text" spellcheck="false" placeholder='"tighter pacing" · "list the current settings"' />
-              <button id="pepaiChatSend">Send</button>
+              <button id="pepaiChatSend">Run</button>
             </div>
+            </details>
           </div>
         </div>
       </section>
