@@ -1009,3 +1009,24 @@ input[type=text]{ font-family:ui-monospace, "SF Mono", monospace; font-size:12.5
   border-color:rgba(110,231,255,.5);
   box-shadow:0 0 14px rgba(110,231,255,.16);
 }
+
+/* ======================================================================
+   FCP RAZOR CORNERS (dark) — tighten pane/card/monitor/control radii
+   toward Final Cut's squared edges. Geometry only; [data-theme=dark]-scoped
+   so Liquid Glass (light) keeps its soft rounded look. Real selectors, additive.
+   ====================================================================== */
+[data-theme="dark"] .nle-pane,
+[data-theme="dark"] .nle-center,
+[data-theme="dark"] .nle-right,
+[data-theme="dark"] .nle-bottom > .card,
+[data-theme="dark"] header,
+[data-theme="dark"] .view-picker .picker-side,
+[data-theme="dark"] .card,
+[data-theme="dark"] .nle-right .panels > .card{ border-radius:3px; }
+[data-theme="dark"] #player,
+[data-theme="dark"] .monitor{ border-radius:3px; }
+[data-theme="dark"] button,
+[data-theme="dark"] input[type=text],
+[data-theme="dark"] select,
+[data-theme="dark"] .ovText{ border-radius:4px; }
+[data-theme="dark"] .tblk{ border-radius:3px; }
