@@ -970,15 +970,15 @@ input[type=text]{ font-family:ui-monospace, "SF Mono", monospace; font-size:12.5
 [data-theme="dark"]{ --fcp-blue:#007aff; }
 
 /* thick primary spine (V1 · lane 2); slim connected (V2 · lane 1) + audio roles (3-5) */
-[data-theme="dark"] .lane:nth-child(1){ height:30px; }
-[data-theme="dark"] .lane:nth-child(2){ height:74px; background-color:rgba(255,255,255,.022); }
-[data-theme="dark"] .lane:nth-child(n+3){ height:30px; opacity:.92; }
+[data-theme="dark"] .lane:nth-child(1){ height:40px; }
+[data-theme="dark"] .lane:nth-child(2){ height:116px; background-color:rgba(255,255,255,.022); }
+[data-theme="dark"] .lane:nth-child(n+3){ height:40px; opacity:.92; }
 [data-theme="dark"] .lane:nth-child(1) .tblk,
-[data-theme="dark"] .lane:nth-child(n+3) .tblk{ height:24px; }
-[data-theme="dark"] .lane:nth-child(2) .tblk{ height:68px; }
-[data-theme="dark"] .trackHeaders .trk:nth-child(1){ height:30px; }
-[data-theme="dark"] .trackHeaders .trk:nth-child(2){ height:74px; }
-[data-theme="dark"] .trackHeaders .trk:nth-child(n+3){ height:30px; }
+[data-theme="dark"] .lane:nth-child(n+3) .tblk{ height:34px; }
+[data-theme="dark"] .lane:nth-child(2) .tblk{ height:110px; }
+[data-theme="dark"] .trackHeaders .trk:nth-child(1){ height:40px; }
+[data-theme="dark"] .trackHeaders .trk:nth-child(2){ height:116px; }
+[data-theme="dark"] .trackHeaders .trk:nth-child(n+3){ height:40px; }
 
 /* FCP rounded cards + authentic palette (CHROME DEEP heat top-edges preserved) */
 [data-theme="dark"] .tblk{ border-radius:5px; }
@@ -1200,3 +1200,52 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
 [data-theme="dark"] button.primary:hover,[data-theme="dark"] #funnyBtn:hover,[data-theme="dark"] .picker-new:hover{ background:#4485ff !important; }
 [data-theme="dark"] .tpBtn{ background:var(--px-hover); border:1px solid var(--px-divider); border-radius:8px; }
 [data-theme="dark"] .tpBtn:hover{ border-color:var(--px-accent); }
+
+/* ==========================================================================
+   EDITOR-FIRST v2 — deeper on the critique: cockpit timeline, zero inner boxes,
+   stronger type, premium buttons + motion. Dark-scoped, real selectors.
+   ========================================================================== */
+/* cockpit timeline (bigger, and lanes above fill it) */
+[data-theme="dark"] .nle-bottom{ flex:0 0 340px; }
+
+/* KILL every inner box: ghost/highlight rows → whitespace + hairline divider */
+[data-theme="dark"] .ghostRow,[data-theme="dark"] .hlRow{
+  background:transparent !important; border:0 !important; border-radius:0 !important;
+  border-bottom:1px solid var(--px-divider) !important; box-shadow:none !important; padding:12px 2px;
+}
+[data-theme="dark"] .ghostRow:last-child,[data-theme="dark"] .hlRow:last-child{ border-bottom:0 !important; }
+[data-theme="dark"] #ghostList,[data-theme="dark"] #hlList{ gap:0; }
+
+/* seamless monitor — no black box inside a black box */
+[data-theme="dark"] .nle-center{ background:#0b0c0e; }
+[data-theme="dark"] .nle-center .stage{ margin:0; }
+[data-theme="dark"] .monitor{ background:transparent !important; border:0 !important; box-shadow:none !important; }
+
+/* stronger type hierarchy */
+[data-theme="dark"] .panelHead strong{ font-size:15px; font-weight:600; }
+[data-theme="dark"] .trk{ font-size:12px; letter-spacing:.02em; }
+[data-theme="dark"] .playerMeta{ font-size:12px; }
+
+/* premium buttons: padding, soft corners, shadow, hover lift + motion */
+[data-theme="dark"] button{ transition:transform .12s cubic-bezier(.2,.8,.2,1), background .15s, border-color .15s, box-shadow .15s; }
+[data-theme="dark"] button:not(.big){ padding:10px 16px; border-radius:9px; }
+[data-theme="dark"] button:not(.big):hover{ transform:translateY(-1px); }
+[data-theme="dark"] button:not(.big):active{ transform:translateY(0); }
+[data-theme="dark"] button.primary,[data-theme="dark"] #funnyBtn,[data-theme="dark"] .picker-new{
+  box-shadow:0 6px 18px -6px rgba(45,118,255,.55), inset 0 1px 0 rgba(255,255,255,.16); }
+[data-theme="dark"] button.primary:hover,[data-theme="dark"] #funnyBtn:hover,[data-theme="dark"] .picker-new:hover{
+  box-shadow:0 9px 24px -6px rgba(45,118,255,.72); }
+
+/* accent system: AI = purple, ready = green (blue stays selection) */
+[data-theme="dark"] .aiWho{ color:#a78bfa; }
+[data-theme="dark"] .badge.ok{ color:#34d399; border-color:transparent; background:rgba(52,211,153,.12); }
+
+/* motion / identity: subtle staged fade-in on the workspace */
+@keyframes pxFade{ from{ opacity:0; transform:translateY(5px); } to{ opacity:1; transform:none; } }
+[data-theme="dark"] #editor.nleGrid:not(.hidden) > .nle-body > *,
+[data-theme="dark"] #editor.nleGrid:not(.hidden) > .nle-bottom{ animation:pxFade .24s ease both; }
+@media (prefers-reduced-motion: reduce){
+  [data-theme="dark"] #editor.nleGrid:not(.hidden) > .nle-body > *,
+  [data-theme="dark"] #editor.nleGrid:not(.hidden) > .nle-bottom{ animation:none; }
+  [data-theme="dark"] button:hover{ transform:none; }
+}

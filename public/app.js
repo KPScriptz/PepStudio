@@ -772,7 +772,7 @@ const EDGE_PX = 6;    // grab tolerance for a clip's trim edges
 function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth || canvas.parentElement.clientWidth;
-  canvas.width = w * dpr; canvas.height = 160 * dpr;
+  canvas.width = w * dpr; canvas.height = 240 * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 window.addEventListener('resize', () => { resizeCanvas(); draw(); });
@@ -789,7 +789,7 @@ const SEG_FILL = {
 
 function draw() {
   if (!state.proj) return;
-  const W = canvas.clientWidth, H = 160;
+  const W = canvas.clientWidth, H = 240;
   ctx.clearRect(0, 0, W, H);
 
   // Phantasm band: contiguous keep/ghost blocks
@@ -921,7 +921,7 @@ window.addEventListener('mousemove', (e) => {
   }
 
   // Hover feedback, only while over the canvas.
-  if (x < 0 || x > canvas.clientWidth || y < 0 || y > 160) return;
+  if (x < 0 || x > canvas.clientWidth || y < 0 || y > 240) return;
   const hit = clipLaneAt(x, y);
   canvas.style.cursor = hit ? (hit.zone === 'body' ? 'grab' : 'ew-resize') : 'default';
 });
