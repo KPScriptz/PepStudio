@@ -1336,3 +1336,6 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
 /* editorial feedback recorder: "N decisions recorded" indicator */
 .editCount{ font-size:11px; color:var(--px-muted,#8c919b); padding:8px 10px 2px; opacity:.85; }
 .editCount:empty{ display:none; }
+
+/* Story graph v0.1 — "why this clip is kept" line on highlight rows */
+.storyWhy{ font-size:11px; color:#a78bfa; margin-top:4px; line-height:1.4; opacity:.95; }

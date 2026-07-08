@@ -431,6 +431,7 @@ function renderHighlights() {
   $('#hlCount').textContent = `${state.highlights.filter((h) => h.keep).length} kept / ${state.highlights.length}`;
   const list = $('#hlList');
   list.innerHTML = '';
+  buildStory(state.highlights);   // v0.1 story graph → per-clip "why kept"
   state.highlights.forEach((h, i) => {
     const row = document.createElement('div');
     row.className = 'hlRow' + (h.keep ? '' : ' dropped');
@@ -473,6 +474,7 @@ function renderHighlights() {
         <div>${h.id.toUpperCase()} · <span class="score">score ${h.score}</span> ${reactBadge} ${hitTags}</div>
         <div class="muted">${fmt(h.start)}–${fmt(h.end)} (${Math.round(h.end - h.start)}s) ${snapChip}</div>
         ${snip}
+        ${h.story && h.story.why ? `<div class="storyWhy">${STORY_ICON}${escapeHtml(h.story.why)}</div>` : ''}
         ${tagLine}
       </div>
       <div class="trim">
@@ -490,6 +492,7 @@ function renderHighlights() {
         if (!Number.isFinite(v)) return;
         h[inp.dataset.k] = Math.max(0, Math.min(state.proj.duration, v));
         if (h.end - h.start < 1) h.end = h.start + 1;
+        logEdit('trim', { id: h.id, edge: inp.dataset.k, start: +h.start.toFixed(1), end: +h.end.toFixed(1) });
         renderHighlights(); draw();
       });
     });
@@ -498,7 +501,10 @@ function renderHighlights() {
       h._stopAt = h.end; draw();
     });
     row.querySelector('[data-act=keep]').addEventListener('click', () => {
-      h.keep = !h.keep; logEdit(h.keep ? 'clip_kept' : 'clip_dropped', { id: h.id, start: h.start, end: h.end, score: h.score }); renderHighlights(); draw();
+      h.keep = !h.keep;
+      logEdit(h.keep ? 'clip_kept' : 'clip_dropped', { id: h.id, start: h.start, end: h.end, score: h.score,
+        story: h.story ? { intent: h.story.intent, setupAt: h.story.setupAt, payoffAt: h.story.payoffAt, callbackOf: h.story.callbackOf } : null });
+      renderHighlights(); draw();
     });
     row.querySelector('.dragHandle').addEventListener('mousedown', (e) => {
       e.preventDefault(); startReorder(h.id);
@@ -1419,3 +1425,54 @@ function refreshEditCount() {
   }).catch(() => {});
 }
 refreshEditCount();
+
+// ==========================================================================
+// STORY GRAPH v0.1 — heuristic (rule-based, not a trained model). Classifies each
+// clip's transcript intent, links setups→payoffs, and detects callbacks, from the
+// real whisper snippet + reaction score. Powers the "why this clip is kept" line and
+// enriches the feedback corpus with the story context of every human decision.
+// ==========================================================================
+const STORY_RX = {
+  setup: /\b(i bet|i can|i'?ll|i'?m gonna|gonna|going to|watch (this|me)|it'?s easy|no way i|let me|check this|guarantee|bet you|about to|i promise|trust me)\b/i,
+  payoff: /\b(oh no|nope|no way|what happened|i failed|i died|wasted|i missed|dammit|are you kidding|so bad|oh my|told you|called it|that was awful|why)\b/i,
+};
+const STORY_STOP = new Set('the and are was were you your this that with have has had they them will would gonna going just like get got out here there what when this been about really very much more some they mine your okay guys yeah nah'.split(' '));
+function storyKeywords(text) {
+  return [...new Set((text || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/)
+    .filter((w) => w.length >= 4 && !STORY_STOP.has(w)))];
+}
+function buildStory(hs) {
+  if (!hs || !hs.length) return;
+  const items = hs.map((h) => ({ h, kw: storyKeywords(h.snippet || h.title || '') }));
+  items.forEach(({ h }) => {
+    const t = h.snippet || h.title || '';
+    const reactive = (h.reactionScore || 0) >= 1 || (h.hits && h.hits.length);
+    const intent = STORY_RX.setup.test(t) ? 'setup' : (STORY_RX.payoff.test(t) || reactive) ? 'payoff' : 'neutral';
+    h.story = { intent, why: '', setupAt: null, payoffAt: null, callbackOf: null, callbackTopic: null };
+  });
+  const byTime = [...items].sort((a, b) => a.h.start - b.h.start);
+  // setup → payoff: a setup, then a payoff/reaction within 45s of source time
+  byTime.forEach((s, i) => {
+    if (s.h.story.intent !== 'setup') return;
+    for (let j = i + 1; j < byTime.length; j++) {
+      if (byTime[j].h.start - s.h.end > 45) break;
+      if (byTime[j].h.story.intent === 'payoff') { s.h.story.payoffAt = byTime[j].h.start; byTime[j].h.story.setupAt = s.h.start; break; }
+    }
+  });
+  // callbacks: shared distinctive keyword, >60s apart
+  for (let i = 0; i < byTime.length; i++) for (let j = i + 1; j < byTime.length; j++) {
+    if (byTime[j].h.start - byTime[i].h.start < 60) continue;
+    const shared = byTime[j].kw.find((w) => byTime[i].kw.includes(w));
+    if (shared && byTime[j].h.story.callbackOf == null) { byTime[j].h.story.callbackOf = byTime[i].h.start; byTime[j].h.story.callbackTopic = shared; }
+  }
+  hs.forEach((h) => {
+    const p = [];
+    if (h.story.intent === 'setup' && h.story.payoffAt != null) p.push(`sets up the payoff at ${fmt(h.story.payoffAt)}`);
+    else if (h.story.intent === 'setup') p.push('sets up a moment');
+    if (h.story.setupAt != null) p.push(`pays off the setup at ${fmt(h.story.setupAt)}`);
+    if (h.story.callbackOf != null) p.push(`callback to ${fmt(h.story.callbackOf)}${h.story.callbackTopic ? ` (“${h.story.callbackTopic}”)` : ''}`);
+    if (!p.length && h.story.intent === 'payoff') p.push('strong reaction moment');
+    h.story.why = p.join(' · ');
+  });
+}
+const STORY_ICON = '<svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" style="vertical-align:-1px;margin-right:4px"><path d="M2 3h12v2H2zM2 7h8v2H2zM2 11h11v2H2z"/></svg>';
