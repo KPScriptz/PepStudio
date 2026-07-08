@@ -970,15 +970,15 @@ input[type=text]{ font-family:ui-monospace, "SF Mono", monospace; font-size:12.5
 [data-theme="dark"]{ --fcp-blue:#007aff; }
 
 /* thick primary spine (V1 · lane 2); slim connected (V2 · lane 1) + audio roles (3-5) */
-[data-theme="dark"] .lane:nth-child(1){ height:22px; }
-[data-theme="dark"] .lane:nth-child(2){ height:40px; background-color:rgba(255,255,255,.022); }
-[data-theme="dark"] .lane:nth-child(n+3){ height:22px; opacity:.92; }
+[data-theme="dark"] .lane:nth-child(1){ height:26px; }
+[data-theme="dark"] .lane:nth-child(2){ height:56px; background-color:rgba(255,255,255,.022); }
+[data-theme="dark"] .lane:nth-child(n+3){ height:26px; opacity:.92; }
 [data-theme="dark"] .lane:nth-child(1) .tblk,
-[data-theme="dark"] .lane:nth-child(n+3) .tblk{ height:16px; }
-[data-theme="dark"] .lane:nth-child(2) .tblk{ height:34px; }
-[data-theme="dark"] .trackHeaders .trk:nth-child(1){ height:22px; }
-[data-theme="dark"] .trackHeaders .trk:nth-child(2){ height:40px; }
-[data-theme="dark"] .trackHeaders .trk:nth-child(n+3){ height:22px; }
+[data-theme="dark"] .lane:nth-child(n+3) .tblk{ height:20px; }
+[data-theme="dark"] .lane:nth-child(2) .tblk{ height:50px; }
+[data-theme="dark"] .trackHeaders .trk:nth-child(1){ height:26px; }
+[data-theme="dark"] .trackHeaders .trk:nth-child(2){ height:56px; }
+[data-theme="dark"] .trackHeaders .trk:nth-child(n+3){ height:26px; }
 
 /* FCP rounded cards + authentic palette (CHROME DEEP heat top-edges preserved) */
 [data-theme="dark"] .tblk{ border-radius:5px; }
