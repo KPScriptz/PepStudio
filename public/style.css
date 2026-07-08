@@ -1339,3 +1339,25 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
 
 /* Story graph v0.1 — "why this clip is kept" line on highlight rows */
 .storyWhy{ font-size:11px; color:#a78bfa; margin-top:4px; line-height:1.4; opacity:.95; }
+
+/* ===== Visual Story Inspector (Clip Insight) ===== */
+.clipInsight{ background:var(--px-raised,#1c1c20); border:1px solid var(--px-line2,rgba(255,255,255,.11)); border-radius:8px; padding:12px 14px; margin-bottom:10px; }
+.clipInsight.hidden{ display:none !important; }
+.ciHead{ font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--px-muted,#8c919b); display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+.ciClose{ cursor:pointer; font-size:16px; line-height:1; color:var(--px-muted,#8c919b); }
+.ciClose:hover{ color:var(--px-text,#ececec); }
+.ciChain{ display:flex; flex-direction:column; align-items:flex-start; gap:3px; margin-bottom:8px; }
+.ciNode{ font-size:12px; font-weight:600; padding:5px 10px; border-radius:6px; background:rgba(255,255,255,.05); color:var(--px-text,#ececec); }
+.ciNode.this{ background:rgba(45,118,255,.18); color:#7fb2ff; }
+.ciNode.setup{ background:rgba(167,139,250,.16); color:#c4b5fd; }
+.ciNode.payoff{ background:rgba(52,211,153,.16); color:#6ee7b7; }
+.ciNode.cb{ background:rgba(244,163,97,.16); color:#f4c08a; }
+.ciConf{ font-family:ui-monospace,monospace; font-size:10px; opacity:.75; margin-left:8px; }
+.ciArrow{ color:var(--px-muted,#8c919b); font-size:12px; padding-left:14px; }
+.ciAlts{ font-size:11px; color:var(--px-muted,#8c919b); margin:2px 0 10px; }
+.ciScores{ display:flex; flex-direction:column; gap:5px; margin-bottom:8px; }
+.ciBar{ display:grid; grid-template-columns:56px 1fr 26px; align-items:center; gap:8px; font-size:11px; color:var(--px-muted,#8c919b); }
+.ciBar i{ height:5px; border-radius:3px; background:linear-gradient(90deg,#2d76ff,#7fb2ff); display:block; }
+.ciBar b{ font-family:ui-monospace,monospace; font-weight:500; text-align:right; color:var(--px-text,#ececec); }
+.ciWhy{ font-size:11px; color:#a78bfa; line-height:1.4; }
+.ciDebt{ font-size:11px; color:#f4c08a; margin-top:8px; line-height:1.4; }

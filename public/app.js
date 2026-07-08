@@ -503,7 +503,8 @@ function renderHighlights() {
     row.querySelector('[data-act=keep]').addEventListener('click', () => {
       h.keep = !h.keep;
       logEdit(h.keep ? 'clip_kept' : 'clip_dropped', { id: h.id, start: h.start, end: h.end, score: h.score,
-        story: h.story ? { intent: h.story.intent, setupAt: h.story.setupAt, payoffAt: h.story.payoffAt, callbackOf: h.story.callbackOf } : null });
+        story: h.story ? { role: h.story.label, intent: h.story.intent, confidence: h.story.confidence, setupAt: h.story.setupAt, payoffAt: h.story.payoffAt, callbackOf: h.story.callbackOf } : null,
+        scores: h.scores || null });
       renderHighlights(); draw();
     });
     row.querySelector('.dragHandle').addEventListener('mousedown', (e) => {
@@ -1256,6 +1257,7 @@ $('#pepaiChatInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter'
       state.selClip = clip.dataset.hid;
       lanes.querySelectorAll('.tblk.clip.sel').forEach((c) => c.classList.remove('sel'));
       clip.classList.add('sel');
+      renderClipInsight();
     }
     seek(e.clientX);
     const mv = (ev) => seek(ev.clientX);
@@ -1443,36 +1445,92 @@ function storyKeywords(text) {
 }
 function buildStory(hs) {
   if (!hs || !hs.length) return;
+  const maxScore = Math.max(0.001, ...hs.map((h) => h.score || 0));
   const items = hs.map((h) => ({ h, kw: storyKeywords(h.snippet || h.title || '') }));
+  // v0.2 — intent with confidence + competing interpretations (heuristic, not learned).
   items.forEach(({ h }) => {
-    const t = h.snippet || h.title || '';
-    const reactive = (h.reactionScore || 0) >= 1 || (h.hits && h.hits.length);
-    const intent = STORY_RX.setup.test(t) ? 'setup' : (STORY_RX.payoff.test(t) || reactive) ? 'payoff' : 'neutral';
-    h.story = { intent, why: '', setupAt: null, payoffAt: null, callbackOf: null, callbackTopic: null };
+    const t = (h.snippet || h.title || '').toLowerCase();
+    const cues = (rx) => (t.match(rx) || []).length;
+    const reactive = (h.reactionScore || 0) + (((h.hits && h.hits.length) || 0));
+    const raw = {
+      SETUP: cues(STORY_RX.setup) * 1.4,
+      PAYOFF: cues(STORY_RX.payoff) * 1.2 + reactive,
+      TRASH_TALK: cues(/\b(destroy|beat you|trash|noob|owned|rekt|clap|garbage|you'?re (bad|trash))\b/g) * 1.3,
+      NEUTRAL: 0.6,
+    };
+    const total = Object.values(raw).reduce((a, b) => a + b, 0) || 1;
+    const ranked = Object.entries(raw).map(([type, v]) => ({ type, confidence: +(v / total).toFixed(2) }))
+      .sort((a, b) => b.confidence - a.confidence);
+    const primary = ranked[0];
+    const bucket = (primary.type === 'SETUP' || primary.type === 'TRASH_TALK') ? 'setup'
+      : primary.type === 'PAYOFF' ? 'payoff' : 'neutral';
+    h.story = { intent: bucket, label: primary.type, confidence: primary.confidence,
+      alternatives: ranked.slice(1).filter((r) => r.confidence >= 0.05),
+      why: '', setupAt: null, payoffAt: null, callbackOf: null, callbackTopic: null, debt: null };
   });
   const byTime = [...items].sort((a, b) => a.h.start - b.h.start);
-  // setup → payoff: a setup, then a payoff/reaction within 45s of source time
   byTime.forEach((s, i) => {
     if (s.h.story.intent !== 'setup') return;
     for (let j = i + 1; j < byTime.length; j++) {
       if (byTime[j].h.start - s.h.end > 45) break;
       if (byTime[j].h.story.intent === 'payoff') { s.h.story.payoffAt = byTime[j].h.start; byTime[j].h.story.setupAt = s.h.start; break; }
     }
+    // story debt: a setup opens an unfinished question; resolved when a payoff is found.
+    s.h.story.debt = { question: (s.h.snippet || s.h.title || 'setup').slice(0, 60),
+      created: s.h.start, resolved: s.h.story.payoffAt, resolution: s.h.story.payoffAt != null ? 'resolved' : 'open' };
   });
-  // callbacks: shared distinctive keyword, >60s apart
   for (let i = 0; i < byTime.length; i++) for (let j = i + 1; j < byTime.length; j++) {
     if (byTime[j].h.start - byTime[i].h.start < 60) continue;
     const shared = byTime[j].kw.find((w) => byTime[i].kw.includes(w));
     if (shared && byTime[j].h.story.callbackOf == null) { byTime[j].h.story.callbackOf = byTime[i].h.start; byTime[j].h.story.callbackTopic = shared; }
   }
+  // multi-dimensional scores (0-1) from real signals.
   hs.forEach((h) => {
+    const s = h.story;
+    const reactive = (h.reactionScore || 0) + (((h.hits && h.hits.length) || 0));
+    const callback = s.callbackOf != null ? 0.8 : 0;
+    const chain = (s.intent === 'setup' && s.payoffAt != null) || s.setupAt != null;
+    h.scores = {
+      story: +Math.min(1, (chain ? 0.65 : 0) + (s.intent === 'payoff' ? 0.25 : 0) + callback * 0.3 + (s.intent === 'setup' ? 0.2 : 0.1)).toFixed(2),
+      humor: +Math.min(1, reactive / 3).toFixed(2),
+      context: +(s.intent === 'setup' ? 0.9 : (s.setupAt != null ? 0.8 : 0.4)).toFixed(2),
+      callback: +callback.toFixed(2),
+      retention: +Math.min(1, (h.score || 0) / maxScore).toFixed(2),
+    };
     const p = [];
-    if (h.story.intent === 'setup' && h.story.payoffAt != null) p.push(`sets up the payoff at ${fmt(h.story.payoffAt)}`);
-    else if (h.story.intent === 'setup') p.push('sets up a moment');
-    if (h.story.setupAt != null) p.push(`pays off the setup at ${fmt(h.story.setupAt)}`);
-    if (h.story.callbackOf != null) p.push(`callback to ${fmt(h.story.callbackOf)}${h.story.callbackTopic ? ` (“${h.story.callbackTopic}”)` : ''}`);
-    if (!p.length && h.story.intent === 'payoff') p.push('strong reaction moment');
-    h.story.why = p.join(' · ');
+    if (s.intent === 'setup' && s.payoffAt != null) p.push(`sets up the payoff at ${fmt(s.payoffAt)}`);
+    else if (s.intent === 'setup') p.push('opens a setup (payoff not found yet)');
+    if (s.setupAt != null) p.push(`pays off the setup at ${fmt(s.setupAt)}`);
+    if (s.callbackOf != null) p.push(`callback to ${fmt(s.callbackOf)}${s.callbackTopic ? ` (“${s.callbackTopic}”)` : ''}`);
+    if (!p.length && s.intent === 'payoff') p.push('strong reaction moment');
+    s.why = p.join(' · ');
   });
 }
 const STORY_ICON = '<svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" style="vertical-align:-1px;margin-right:4px"><path d="M2 3h12v2H2zM2 7h8v2H2zM2 11h11v2H2z"/></svg>';
+
+// ---- Visual Story Inspector: click a sequence clip → see its story chain, confidence,
+// competing interpretations, and multi-dimensional scores. Makes the AI's reasoning
+// visible so creators can trust (and later correct) it.
+function renderClipInsight() {
+  const box = $('#clipInsight'); if (!box) return;
+  const h = (state.highlights || []).find((x) => x.id === state.selClip);
+  if (!h || !h.story) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+  box.classList.remove('hidden');
+  const s = h.story; const sc = h.scores || {};
+  const pct = (v) => Math.round((v || 0) * 100);
+  const bar = (label, v) => `<div class="ciBar"><span>${label}</span><i style="width:${pct(v)}%"></i><b>${pct(v)}</b></div>`;
+  const chain = [];
+  if (s.setupAt != null) chain.push(`<div class="ciNode setup">Setup · ${fmt(s.setupAt)}</div><div class="ciArrow">↓</div>`);
+  chain.push(`<div class="ciNode this">${escapeHtml((s.label || s.intent).toLowerCase())} · ${fmt(h.start)}<span class="ciConf">${pct(s.confidence)}%</span></div>`);
+  if (s.payoffAt != null) chain.push(`<div class="ciArrow">↓</div><div class="ciNode payoff">Payoff · ${fmt(s.payoffAt)}</div>`);
+  if (s.callbackOf != null) chain.push(`<div class="ciArrow">↺</div><div class="ciNode cb">Callback of ${fmt(s.callbackOf)}</div>`);
+  const alts = (s.alternatives || []).length
+    ? `<div class="ciAlts">Could also be: ${s.alternatives.map((a) => `${a.type.toLowerCase().replace('_', ' ')} ${pct(a.confidence)}%`).join(' · ')}</div>` : '';
+  const debt = (s.debt && s.debt.resolution === 'open')
+    ? `<div class="ciDebt">⚠ open story debt — keep this setup; its payoff isn't in the cut yet</div>` : '';
+  box.innerHTML = `<div class="ciHead">Clip Insight<span class="ciClose" title="close">×</span></div>`
+    + `<div class="ciChain">${chain.join('')}</div>${alts}`
+    + `<div class="ciScores">${bar('Story', sc.story)}${bar('Humor', sc.humor)}${bar('Context', sc.context)}${bar('Callback', sc.callback)}${bar('Retention', sc.retention)}</div>`
+    + `${s.why ? `<div class="ciWhy">${s.why}</div>` : ''}${debt}`;
+  box.querySelector('.ciClose')?.addEventListener('click', () => { state.selClip = null; box.classList.add('hidden'); renderTracks(); });
+}
