@@ -210,8 +210,18 @@
 
     </div>
 
-    <!-- QUADRANT 4 · BOTTOM: Phantasm timeline (#timeline) + master track lanes (#trackLanes) -->
+    <!-- QUADRANT 4 · BOTTOM: ONE full-width timeline zone. A toggle swaps between the
+         Timeline (edit / #trackLanes) and Phantasm (analysis / #timeline canvas) views —
+         they're different time-bases (output vs full source), so it's a swap, not a
+         misaligned overlay. Both renderers preserved. -->
     <footer class="nle-bottom">
+      <div class="tlToolbar">
+        <div class="tlToggle" id="tlToggle" role="tablist">
+          <button data-view="seq" class="active" role="tab">Timeline</button>
+          <button data-view="phantasm" role="tab">Phantasm</button>
+        </div>
+        <span class="tlToolLabel">Sequence 01</span>
+      </div>
       <div class="timelineWrap card">
         <div class="tlHead">
           <strong>Phantasm Timeline</strong>

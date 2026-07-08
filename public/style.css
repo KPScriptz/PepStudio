@@ -1307,3 +1307,28 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
 [data-theme="light"] .rail button:hover{ background:rgba(0,0,0,.06) !important; color:#18181b !important; }
 [data-theme="light"] .rail button.active{ background:rgba(45,118,255,.14) !important; color:#2d76ff !important; }
 [data-theme="light"] .nle-center > .paneTab{ display:none; }
+
+/* ==========================================================================
+   UNIFIED TIMELINE — one full-width zone; toggle swaps Timeline (edit) ⇄ Phantasm
+   (analysis). Replaces the two side-by-side bottom panels. dark + light.
+   ========================================================================== */
+.nle-bottom{ flex-direction:column !important; gap:0 !important; }
+.nle-bottom .tlToolbar{
+  flex:0 0 34px; display:flex; align-items:center; justify-content:space-between;
+  padding:0 12px; background:#141518; border-bottom:1px solid var(--px-divider, rgba(255,255,255,.06));
+}
+[data-theme="light"] .nle-bottom .tlToolbar{ background:#e8ebf2; border-bottom-color:rgba(0,0,0,.08); }
+.tlToggle{ display:inline-flex; background:rgba(255,255,255,.05); border-radius:8px; padding:2px; gap:2px; }
+[data-theme="light"] .tlToggle{ background:rgba(0,0,0,.06); }
+.tlToggle button{
+  padding:4px 14px !important; font-size:12px !important; font-weight:600 !important;
+  background:transparent !important; border:0 !important; border-radius:6px !important;
+  color:var(--px-muted,#8c919b) !important; cursor:pointer; transition:background .12s, color .12s; }
+.tlToggle button.active{ background:#2d76ff !important; color:#fff !important; }
+.tlToolLabel{ font-size:11px; color:var(--px-muted,#8c919b); font-family:ui-monospace,"SF Mono",monospace; letter-spacing:.04em; }
+
+/* one card at a time, full-width, filling the zone */
+.nle-bottom > .card{ flex:1 1 auto !important; width:100% !important; min-height:0; margin:0 !important; }
+.nle-bottom .timelineWrap{ display:none; }
+.nle-bottom.view-phantasm .timelineWrap{ display:block; }
+.nle-bottom.view-phantasm .trackPanel{ display:none; }

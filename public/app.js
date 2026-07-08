@@ -1373,3 +1373,27 @@ renderAIAssistant();
   });
   apply();
 })();
+
+// ---- Unified timeline: one full-width zone, toggle between Timeline (edit) and
+// Phantasm (analysis). Both are different time-bases, so it's a swap not an overlay.
+// The Phantasm canvas is re-fit on show (a hidden canvas has 0 width).
+(() => {
+  const bottom = document.querySelector('.nle-bottom'); const toggle = $('#tlToggle');
+  if (!bottom || !toggle) return;
+  toggle.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-view]'); if (!b) return;
+    const phantasm = b.dataset.view === 'phantasm';
+    bottom.classList.toggle('view-phantasm', phantasm);
+    toggle.querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
+    if (phantasm) {
+      // The canvas has 0 width until the display:block reflow settles; re-fit on a
+      // short delay (rAF alone fires too early here) and draw.
+      const refit = () => {
+        if (typeof resizeCanvas === 'function') resizeCanvas();
+        if (typeof draw === 'function' && state.proj) draw();
+      };
+      requestAnimationFrame(refit);
+      setTimeout(refit, 60);
+    }
+  });
+})();
