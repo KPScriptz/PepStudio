@@ -1036,3 +1036,26 @@ input[type=text]{ font-family:ui-monospace, "SF Mono", monospace; font-size:12.5
 
 /* FCP clip selection: click a sequence clip → Apple-blue selection outline */
 .tblk.clip.sel{ outline:2px solid var(--fcp-blue, #007aff); outline-offset:-1px; z-index:7; }
+
+/* ======================================================================
+   FCP FULL-BLEED — edge-to-edge flush frame. Kills the web-app outer margin
+   and the floating-card gaps so the workspace fills the window like Final Cut,
+   panes separated by ~2px seams (black in dark). Body becomes a self-sizing
+   flex column so header+editor fill exactly, no height-calc mismatch. The
+   project picker is position:fixed, so it's unaffected. Native banner rules
+   reconciled (their negative margins were compensating the old body padding).
+   ====================================================================== */
+body{ padding:0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(--glass-border); align-items:center; }
+.native-shell header{ margin:0; }                 /* body no longer padded → drop the -22px comp */
+#progress{ flex:0 0 auto; margin:0; }
+#editor.nleGrid:not(.hidden){ flex:1 1 auto; height:auto; min-height:0; padding:2px; gap:2px; align-items:stretch; }
+[data-theme="dark"] #editor.nleGrid:not(.hidden){ background:#000; }   /* seams read black like FCP */
+.nle-body{ gap:2px; }
+.nle-left{ gap:2px; }
+.nle-bottom{ gap:2px; }
+/* flush square panes in dark (FCP); light keeps its Liquid Glass rounding */
+[data-theme="dark"] .nle-pane,
+[data-theme="dark"] .nle-center,
+[data-theme="dark"] .nle-right,
+[data-theme="dark"] .nle-bottom > .card{ border-radius:0; }
