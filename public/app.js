@@ -1534,3 +1534,28 @@ function renderClipInsight() {
     + `${s.why ? `<div class="ciWhy">${s.why}</div>` : ''}${debt}`;
   box.querySelector('.ciClose')?.addEventListener('click', () => { state.selClip = null; box.classList.add('hidden'); renderTracks(); });
 }
+
+// ---- "Edit for Me": one-click auto-edit. Marks silence + static screens for removal
+// (the real auto-edit rules), then exports the clean Phantasm cut via the EXISTING
+// pipeline (renderLongCut -> /api/export/longcut). No fake endpoint, no hardcoded ids.
+async function autoEdit() {
+  const btn = $('#autoEditBtn'); if (!btn) return;
+  if (!state.proj) { toast('Load and analyze a video first.', true); return; }
+  const segs = (state.segments || []).filter((s) => s.reason !== 'active');
+  if (!segs.length) { toast('Analyze the video first — nothing to auto-edit yet.', true); return; }
+  // Apply the auto-edit rules: silence + static → removed.
+  let removed = 0, deadAir = 0;
+  (state.segments || []).forEach((s) => {
+    if (s.reason === 'silence' || s.reason === 'static') { if (s.state !== 'ghost') removed++; s.state = 'ghost'; deadAir += s.end - s.start; }
+  });
+  renderGhosts(); updatePhantasmSummary(); draw();
+  logEdit('auto_edit', { removedSections: removed, deadAir: +deadAir.toFixed(1) });
+  btn.disabled = true; const orig = btn.innerHTML; btn.innerHTML = 'Editing…';
+  try {
+    $('#longMode').value = 'phantasm';
+    await renderLongCut('Auto-edit');   // green segments only → silence + static gone
+  } finally {
+    btn.disabled = false; btn.innerHTML = orig;
+  }
+}
+$('#autoEditBtn')?.addEventListener('click', autoEdit);

@@ -1361,3 +1361,12 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
 .ciBar b{ font-family:ui-monospace,monospace; font-weight:500; text-align:right; color:var(--px-text,#ececec); }
 .ciWhy{ font-size:11px; color:#a78bfa; line-height:1.4; }
 .ciDebt{ font-size:11px; color:#f4c08a; margin-top:8px; line-height:1.4; }
+
+/* "Edit for Me" — one-click auto-edit button in the timeline toolbar */
+.autoEditBtn{ display:inline-flex; align-items:center; gap:7px; padding:6px 14px !important;
+  font-size:12px !important; font-weight:600 !important; color:#fff !important; cursor:pointer;
+  border:0 !important; border-radius:8px !important;
+  background:linear-gradient(135deg,#2d76ff,#1d4ed8) !important;
+  box-shadow:0 4px 14px -6px rgba(45,118,255,.6); transition:transform .12s, box-shadow .15s; }
+.autoEditBtn:hover{ transform:translateY(-1px); box-shadow:0 7px 20px -6px rgba(45,118,255,.75); }
+.autoEditBtn:disabled{ opacity:.6; cursor:not-allowed; transform:none; }
