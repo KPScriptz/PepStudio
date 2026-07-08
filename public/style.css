@@ -1059,3 +1059,83 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
 [data-theme="dark"] .nle-center,
 [data-theme="dark"] .nle-right,
 [data-theme="dark"] .nle-bottom > .card{ border-radius:0; }
+
+/* ==========================================================================
+   PREMIUM — unifying design system (dark). One cohesive language over the
+   accumulated layers: refined near-black palette, consistent 3px seams, tracked
+   micro-caps + tabular mono data, subtle elevation, one accent. Real selectors,
+   dark-scoped (light keeps Liquid Glass). Softer 6px rounding reads premium.
+   ========================================================================== */
+[data-theme="dark"]{
+  --px-bg:#0a0a0c; --px-panel:#151517; --px-raised:#1c1c20;
+  --px-line:rgba(255,255,255,.06); --px-line2:rgba(255,255,255,.11);
+  --px-text:#f3f3f5; --px-muted:#9b9ba3; --px-faint:#66666e;
+  --px-accent:#3b9dff; --px-accent-dim:rgba(59,157,255,.16);
+}
+/* frame + seams */
+[data-theme="dark"] #editor.nleGrid:not(.hidden){ background:var(--px-bg); gap:3px; padding:3px; }
+[data-theme="dark"] .nle-body,[data-theme="dark"] .nle-left,[data-theme="dark"] .nle-bottom{ gap:3px; }
+
+/* panes: subtle elevation + gentle rounding */
+[data-theme="dark"] .nle-pane,
+[data-theme="dark"] .nle-center,
+[data-theme="dark"] .nle-right,
+[data-theme="dark"] .nle-bottom > .card{
+  background:var(--px-panel); border:1px solid var(--px-line); border-radius:6px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.02), 0 8px 24px -14px rgba(0,0,0,.9);
+}
+
+/* header / toolbar */
+[data-theme="dark"] header{ background:var(--px-panel); border-bottom:1px solid var(--px-line2); }
+[data-theme="dark"] .window-title-tab{ color:var(--px-text); font-size:12px; font-weight:600; letter-spacing:-.01em; }
+[data-theme="dark"] .sub{ color:var(--px-faint); font-size:12px; }
+
+/* pane header labels → tracked micro-caps */
+[data-theme="dark"] .paneTab{
+  background:transparent; color:var(--px-faint);
+  font-size:10px; font-weight:600; letter-spacing:.1em; text-transform:uppercase;
+  padding:9px 14px; border-bottom:1px solid var(--px-line);
+}
+
+/* Effect Controls inspector: dense + refined */
+[data-theme="dark"] .fxGroup{ color:var(--px-text); font-size:11px; font-weight:600; padding:8px 0 4px; border-top:1px solid var(--px-line); margin-top:4px; }
+[data-theme="dark"] .fxInspector .fxGroup:first-child{ border-top:0; margin-top:0; }
+[data-theme="dark"] .fxRow{ display:flex; justify-content:space-between; align-items:center; font-size:11px; padding:3px 0 3px 12px; color:var(--px-muted); }
+[data-theme="dark"] .fxVal{ color:var(--px-accent); font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11px; font-variant-numeric:tabular-nums; }
+
+/* cards + headings */
+[data-theme="dark"] .card{ background:var(--px-raised); border:1px solid var(--px-line); border-radius:6px; }
+[data-theme="dark"] .panelHead strong{ font-size:13px; font-weight:600; letter-spacing:-.01em; color:var(--px-text); }
+[data-theme="dark"] .panelHead .muted,[data-theme="dark"] .hint,[data-theme="dark"] .orDivider{ color:var(--px-faint); }
+[data-theme="dark"] label{ color:var(--px-muted); font-size:11px; }
+[data-theme="dark"] .hint{ font-size:11px; line-height:1.5; }
+
+/* inputs: inset well + refined focus ring */
+[data-theme="dark"] input[type=text],[data-theme="dark"] select,[data-theme="dark"] .ovText{
+  background:#0c0c0e; border:1px solid var(--px-line2); color:var(--px-text);
+  border-radius:6px; font-size:12px; padding:8px 11px;
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.4); transition:border-color .12s, box-shadow .12s;
+}
+[data-theme="dark"] input[type=text]:focus,[data-theme="dark"] select:focus,[data-theme="dark"] .ovText:focus{
+  border-color:var(--px-accent); box-shadow:inset 0 1px 2px rgba(0,0,0,.4), 0 0 0 3px var(--px-accent-dim);
+}
+
+/* controls: refined neutral + one accent (leave .danger/.big variants intact) */
+[data-theme="dark"] button:not(.big){ border-radius:6px; font-size:12px; font-weight:500; transition:.12s; }
+[data-theme="dark"] button:not(.primary):not(.danger):not(.big){
+  background:linear-gradient(180deg,#232327,#191a1d); border:1px solid var(--px-line2); color:var(--px-text);
+}
+[data-theme="dark"] button:not(.primary):not(.danger):not(.big):hover{ background:linear-gradient(180deg,#2c2c31,#202024); border-color:rgba(255,255,255,.22); }
+[data-theme="dark"] button.primary,[data-theme="dark"] #funnyBtn,[data-theme="dark"] .picker-new{
+  background:linear-gradient(180deg,#3b9dff,#1a7fe6) !important; border:1px solid #1a7fe6 !important; color:#fff !important; font-weight:600;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.18), 0 4px 14px -6px rgba(59,157,255,.55);
+}
+[data-theme="dark"] button.primary:hover,[data-theme="dark"] #funnyBtn:hover,[data-theme="dark"] .picker-new:hover{
+  background:linear-gradient(180deg,#4ba6ff,#2288ee) !important; border-color:#2288ee !important;
+}
+
+/* monitor: deep stage + refined empty state */
+[data-theme="dark"] .monitor{ background:#050506; border:1px solid var(--px-line); border-radius:6px; }
+[data-theme="dark"] .monitorPlaceholder{ color:var(--px-faint); font-size:12px; font-weight:500; letter-spacing:.02em; text-transform:none; }
+[data-theme="dark"] .tpBtn{ background:var(--px-raised); border:1px solid var(--px-line2); border-radius:6px; }
+[data-theme="dark"] .tpBtn:hover{ border-color:var(--px-accent); }
