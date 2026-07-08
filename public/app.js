@@ -1352,3 +1352,24 @@ $('#aiSuggest')?.addEventListener('click', (e) => {
   const t = parseFloat(b.dataset.seek); if (!Number.isNaN(t)) player.currentTime = t;
 });
 renderAIAssistant();
+
+// ---- Icon rail: collapse the 250px left column to a 48px rail; each icon flies out ONE
+// panel (Media or Inspector — the two real left sections). Reclaims the width for preview.
+(() => {
+  const rail = $('#railNav'); const left = document.querySelector('.nle-left');
+  if (!rail || !left) return;
+  const fx = left.querySelector('.fxPane'); const media = left.querySelector('.nle-pane.grow');
+  let cur = 'media';   // open on Media by default so import is reachable
+  const apply = () => {
+    left.classList.toggle('railCollapsed', !cur);
+    if (fx) fx.classList.toggle('hidden', cur !== 'inspector');
+    if (media) media.classList.toggle('hidden', cur !== 'media');
+    rail.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.panel === cur));
+  };
+  rail.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-panel]'); if (!b) return;
+    cur = (cur === b.dataset.panel) ? null : b.dataset.panel;   // click active → collapse
+    apply();
+  });
+  apply();
+})();

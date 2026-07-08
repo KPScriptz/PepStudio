@@ -1277,3 +1277,33 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
 .aiAdvanced summary::before{ content:'▸ '; }
 .aiAdvanced[open] summary::before{ content:'▾ '; }
 .aiAdvanced .aiLog{ margin-top:8px; }
+
+/* ==========================================================================
+   ICON RAIL + IA cleanup — collapse the left column, float the preview, soften
+   the BIOS typography. dark-scoped. (product IA, not just paint)
+   ========================================================================== */
+.rail{ flex:0 0 48px; display:flex; flex-direction:column; align-items:center; gap:4px; padding:10px 0; background:#141518; }
+.rail button{ width:36px; height:36px; display:flex; align-items:center; justify-content:center; padding:0 !important;
+  background:transparent !important; border:0 !important; border-radius:10px !important; color:var(--px-muted,#8c919b) !important;
+  cursor:pointer; transition:background .12s, color .12s; }
+.rail button:hover{ background:var(--px-hover,#22252a) !important; color:var(--px-text,#ececec) !important; transform:none !important; }
+.rail button.active{ background:rgba(45,118,255,.16) !important; color:#2d76ff !important; }
+.nle-left.railCollapsed{ display:none !important; }
+[data-theme="dark"] .nle-left{ flex:0 0 288px; }
+
+/* float the preview: no monitor title, no borders, pure-black stage */
+[data-theme="dark"] .nle-center > .paneTab{ display:none; }
+[data-theme="dark"] .nle-center{ background:#000; }
+[data-theme="dark"] .monitor{ background:#000 !important; }
+[data-theme="dark"] .transport{ border:0; }
+
+/* softer typography — sentence case, not all-caps BIOS */
+[data-theme="dark"] .paneTab{ text-transform:none; letter-spacing:0; font-size:13px; font-weight:600; color:var(--px-muted,#8c919b); }
+[data-theme="dark"] .aiSuggestHead{ text-transform:none; letter-spacing:0; font-size:11px; }
+
+/* rail + floating preview in light theme too (structural, both themes) */
+[data-theme="light"] .rail{ background:#e8ebf2; }
+[data-theme="light"] .rail button{ color:#5b616e !important; }
+[data-theme="light"] .rail button:hover{ background:rgba(0,0,0,.06) !important; color:#18181b !important; }
+[data-theme="light"] .rail button.active{ background:rgba(45,118,255,.14) !important; color:#2d76ff !important; }
+[data-theme="light"] .nle-center > .paneTab{ display:none; }
