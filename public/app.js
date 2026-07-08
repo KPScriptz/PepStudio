@@ -513,14 +513,29 @@ function renderTracks() {
   const maxScore = Math.max(0.0001, ...seq.map(({ h }) => h.score || 0));
   $('#seqDur').textContent = fmt(total);
   const pct = (t) => (t / total) * 100;
-  const blk = (cls, left, width, label, title) =>
-    `<div class="tblk ${cls}" style="left:${left}%;width:${Math.max(0.6, width)}%"${title ? ` title="${title}"` : ''}>${label ? `<span>${label}</span>` : ''}</div>`;
+  const blk = (cls, left, width, label, title, extra) =>
+    `<div class="tblk ${cls}" style="left:${left}%;width:${Math.max(0.6, width)}%;${extra || ''}"${title ? ` title="${title}"` : ''}>${label ? `<span>${label}</span>` : ''}</div>`;
+
+  // FCP-style filmstrip: 3 real frames (start/mid/end of the clip's SOURCE range) under a
+  // cobalt tint so the label stays legible. Frames come from GET /api/thumb (real ffmpeg
+  // grabs) — only when a project id is loaded; otherwise clips fall back to the flat fill.
+  const filmstrip = (h) => {
+    if (!state.proj || !state.proj.id) return '';
+    const id = encodeURIComponent(state.proj.id);
+    const dur = Math.max(0.1, h.end - h.start);
+    const ts = [0.1, 0.5, 0.9].map((f) => Math.max(0, h.start + dur * f).toFixed(1));
+    const imgs = ts.map((t) => `url('/api/thumb?id=${id}&t=${t}')`).join(',');
+    return `background-image:linear-gradient(rgba(20,40,90,.40),rgba(20,40,90,.68)),${imgs};`
+      + 'background-position:center,0% center,50% center,100% center;'
+      + 'background-size:cover,33.34% 100%,33.34% 100%,33.34% 100%;'
+      + 'background-repeat:no-repeat;';
+  };
 
   const vOv = [], vClip = [], aSpeech = [], aMusic = [], aSfx = [];
   for (const { h, s, d } of seq) {
     const sc = h.score || 0;
     const tier = sc >= maxScore * 0.8 ? 'hot' : sc >= maxScore * 0.5 ? 'warm' : 'cool';
-    vClip.push(blk('clip ' + tier, pct(s), pct(d), escapeHtml((h.title || h.id || '').slice(0, 24))));
+    vClip.push(blk('clip ' + tier, pct(s), pct(d), escapeHtml((h.title || h.id || '').slice(0, 24)), null, filmstrip(h)));
     aSpeech.push(blk('speech', pct(s), pct(d), ''));
     const auto = h.automation || {};
     if (auto.bgMusic && auto.bgMusic.path) aMusic.push(blk('music', pct(s), pct(d), 'music'));
