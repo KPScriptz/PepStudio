@@ -1370,3 +1370,12 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
   box-shadow:0 4px 14px -6px rgba(45,118,255,.6); transition:transform .12s, box-shadow .15s; }
 .autoEditBtn:hover{ transform:translateY(-1px); box-shadow:0 7px 20px -6px rgba(45,118,255,.75); }
 .autoEditBtn:disabled{ opacity:.6; cursor:not-allowed; transform:none; }
+
+/* One-Button Story Cut — prominent auto-assemble action at the top of Curate */
+.storyCutBtn{ display:flex; align-items:center; justify-content:center; gap:8px; width:100%;
+  margin-bottom:10px; padding:11px 0 !important; font-size:13px !important; font-weight:700 !important;
+  color:#fff !important; cursor:pointer; border:0 !important; border-radius:9px !important;
+  background:linear-gradient(135deg,#2d76ff,#0056b3) !important;
+  box-shadow:0 6px 18px -6px rgba(45,118,255,.6); transition:transform .12s, box-shadow .15s; letter-spacing:.01em; }
+.storyCutBtn:hover{ transform:translateY(-1px); box-shadow:0 9px 24px -6px rgba(45,118,255,.75); }
+.storyCutBtn:disabled{ opacity:.65; cursor:not-allowed; transform:none; }

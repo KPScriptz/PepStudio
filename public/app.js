@@ -1559,3 +1559,37 @@ async function autoEdit() {
   }
 }
 $('#autoEditBtn')?.addEventListener('click', autoEdit);
+
+// ---- One-Button Story Cut: auto-assemble the sequence from the ranked highlights.
+// Selects story clips (setup/payoff/callback) + strong reactions, drops filler, holds
+// payoffs 1.2s for the reaction, orders chronologically (setups precede payoffs), then
+// lets renderHighlights/renderTracks rebuild state.seqMap and DRAW the finished timeline.
+// Works WITH the architecture — no seqMap overwrite (that would break playhead/scrub).
+function oneButtonStoryCut() {
+  const btn = $('#storyCutBtn');
+  if (!state.proj || !(state.highlights && state.highlights.length)) {
+    toast('Analyze (and ideally Rank funny moments) first, then hit Story Cut.', true); return;
+  }
+  buildStory(state.highlights);   // maps setups → payoffs → callbacks + scores
+  let kept = 0;
+  state.highlights.forEach((h) => {
+    const s = h.story || {};
+    const isStory = s.intent === 'setup' || s.intent === 'payoff' || s.setupAt != null || s.payoffAt != null || s.callbackOf != null;
+    const isStrong = (h.reactionScore || 0) > 1.8 || (h.scores && h.scores.retention >= 0.6);
+    h.keep = !!(isStory || isStrong);
+    // pacing: hold the reaction on payoffs (extend end 1.2s, clamped to the source)
+    if (h.keep && s.intent === 'payoff' && state.proj.duration) h.end = Math.min(state.proj.duration, h.end + 1.2);
+    if (h.keep) kept++;
+  });
+  if (!kept) {   // nothing matched → relax: keep the top 3 by score
+    [...state.highlights].sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 3).forEach((h) => { h.keep = true; kept++; });
+  }
+  // order: kept first, chronological by source time (setups naturally precede their payoffs)
+  state.highlights.sort((a, b) => (a.keep === b.keep ? a.start - b.start : (a.keep ? -1 : 1)));
+  logEdit('one_button_story_cut', { kept, dropped: state.highlights.length - kept });
+  if (btn) { btn.disabled = true; const o = btn.innerHTML; btn.innerHTML = 'Assembling…'; setTimeout(() => { btn.disabled = false; btn.innerHTML = o; }, 400); }
+  renderHighlights(); draw();   // renderTracks rebuilds seqMap from kept clips → draws the cut
+  const total = (state.seqMap && state.seqMap.total) || 0;
+  toast(`Story cut assembled — ${kept} clips (${fmt(total)}), filler dropped.`);
+}
+$('#storyCutBtn')?.addEventListener('click', oneButtonStoryCut);
