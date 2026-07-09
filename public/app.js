@@ -813,8 +813,13 @@ function draw() {
     const x = X(s.start), w = Math.max(1, X(s.end) - X(s.start));
     ctx.fillStyle = s.state === 'keep' ? SEG_FILL.keep : (SEG_FILL[s.reason] || SEG_FILL.silence);
     ctx.fillRect(x, TOP, w, H - TOP);
-    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(x, TOP); ctx.lineTo(x, H); ctx.stroke();
+    // Segment divider — only when the segment is wide enough to resolve. On a long VOD the
+    // segments are a few px each, so per-segment dividers were turning the band into a
+    // barcode of black lines; skip them below ~6px and let the colour fills read cleanly.
+    if (w >= 6) {
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, TOP); ctx.lineTo(x, H); ctx.stroke();
+    }
     if (s.state === 'ghost' && s.risky) { // amber outline = silent-but-moving (check it)
       ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 2;
       ctx.strokeRect(x + 1, TOP + 1, w - 2, H - TOP - 2);
