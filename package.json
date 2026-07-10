@@ -1,6 +1,6 @@
 {
   "name": "pepstudio",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": true,
   "description": "Local, free, AI-assisted gameplay editor: paste a VOD -> TikTok clips + YouTube cut, long cut, captions, thumbnails",
   "type": "module",
@@ -26,7 +26,9 @@
     "appId": "com.kpscriptz.pepstudio",
     "productName": "PepStudio",
     "asar": false,
-    "directories": { "output": "dist" },
+    "directories": {
+      "output": "dist"
+    },
     "files": [
       "server.js",
       "lib/**/*",
