@@ -788,10 +788,20 @@ const EDGE_PX = 6;    // grab tolerance for a clip's trim edges
 function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth || canvas.parentElement.clientWidth;
-  canvas.width = w * dpr; canvas.height = 240 * dpr;
+  // Height follows the canvas's actual flexed display height (it shrinks to whatever the panel
+  // leaves after the header + phantasm bar + tip) — falls back to 240 before the flex settles.
+  const h = canvas.clientHeight || 240;
+  canvas.width = w * dpr; canvas.height = h * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
-window.addEventListener('resize', () => { resizeCanvas(); draw(); });
+// Coalesce a burst of resize events (dragging the window fires dozens/sec) into ONE redraw on the
+// next animation frame — the Phantasm canvas redraw is heavy, so redrawing per-event janks the
+// resize itself. Trailing frame = final size, drawn once.
+let _resizeRaf = 0;
+window.addEventListener('resize', () => {
+  if (_resizeRaf) return;
+  _resizeRaf = requestAnimationFrame(() => { _resizeRaf = 0; resizeCanvas(); draw(); });
+});
 
 const X = (t) => (t / state.proj.duration) * canvas.clientWidth;
 const T = (x) => (x / canvas.clientWidth) * state.proj.duration;
@@ -805,7 +815,7 @@ const SEG_FILL = {
 
 function draw() {
   if (!state.proj) return;
-  const W = canvas.clientWidth, H = 240;
+  const W = canvas.clientWidth, H = canvas.clientHeight || 240;
   ctx.clearRect(0, 0, W, H);
 
   // Phantasm band: contiguous keep/ghost blocks
@@ -1545,27 +1555,42 @@ function renderClipInsight() {
   box.querySelector('.ciClose')?.addEventListener('click', () => { state.selClip = null; box.classList.add('hidden'); renderTracks(); });
 }
 
-// ---- "Edit for Me": one-click auto-edit. Marks silence + static screens for removal
-// (the real auto-edit rules), then exports the clean Phantasm cut via the EXISTING
-// pipeline (renderLongCut -> /api/export/longcut). No fake endpoint, no hardcoded ids.
+// ---- "Edit for Me": the one-click auto-pilot. Assembles the best moments (the Story Cut
+// brain) and RENDERS them into a tight highlight cut via the existing sequence pipeline
+// (/api/export/sequence). On a real long VOD this yields a few-minute watchable reel — NOT
+// a 45-minute de-silenced dump (what the old silence-strip longcut produced, which hung at
+// "Editing…" for many minutes and felt broken). No fake endpoint, no hardcoded ids.
 async function autoEdit() {
   const btn = $('#autoEditBtn'); if (!btn) return;
   if (!state.proj) { toast('Load and analyze a video first.', true); return; }
-  const segs = (state.segments || []).filter((s) => s.reason !== 'active');
-  if (!segs.length) { toast('Analyze the video first — nothing to auto-edit yet.', true); return; }
-  // Apply the auto-edit rules: silence + static → removed.
-  let removed = 0, deadAir = 0;
-  (state.segments || []).forEach((s) => {
-    if (s.reason === 'silence' || s.reason === 'static') { if (s.state !== 'ghost') removed++; s.state = 'ghost'; deadAir += s.end - s.start; }
-  });
-  renderGhosts(); updatePhantasmSummary(); draw();
-  logEdit('auto_edit', { removedSections: removed, deadAir: +deadAir.toFixed(1) });
+  if (!(state.highlights && state.highlights.length)) {
+    toast('Rank funny moments first, then hit Edit for Me.', true); return;
+  }
+  const { kept, total } = assembleStoryCut();   // pick + order the best moments
+  const clips = state.highlights.filter((h) => h.keep).sort((a, b) => a.start - b.start).map((h) => ({
+    start: h.start, end: h.end,
+    overlays: (h.overlays || []).filter((o) => o.content && o.content.trim()),
+  }));
+  if (!clips.length) { toast('No strong moments found to edit — try Rank funny moments first.', true); return; }
+  logEdit('auto_edit', { keptClips: kept, cutLength: +total.toFixed(1) });
   btn.disabled = true; const orig = btn.innerHTML; btn.innerHTML = 'Editing…';
+  showProgress(`Editing for you — ${kept} best moments (${fmt(total)})…`);
   try {
-    $('#longMode').value = 'phantasm';
-    await renderLongCut('Auto-edit');   // green segments only → silence + static gone
+    const res = await fetch('/api/export/sequence', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      // zoom:false = skip the batched whisper pass + per-frame emphasis-zoom rescale
+      // (that eval=frame lanczos caps encode at ~14fps). The one-click stays fast + clean;
+      // the manual "Render sequence" keeps the polished punch-ins.
+      body: JSON.stringify({ id: state.proj.id, clips, vertical: true, zoom: false }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Export failed.');
+    addOutput('Edit for Me', data, 'sequence');
+    toast(`Your cut is ready — ${kept} moments, ${fmt(total)} ✓`);
+  } catch (e) {
+    toast(e.message, true);
   } finally {
-    btn.disabled = false; btn.innerHTML = orig;
+    hideProgress(); btn.disabled = false; btn.innerHTML = orig;
   }
 }
 $('#autoEditBtn')?.addEventListener('click', autoEdit);
@@ -1575,11 +1600,11 @@ $('#autoEditBtn')?.addEventListener('click', autoEdit);
 // payoffs 1.2s for the reaction, orders chronologically (setups precede payoffs), then
 // lets renderHighlights/renderTracks rebuild state.seqMap and DRAW the finished timeline.
 // Works WITH the architecture — no seqMap overwrite (that would break playhead/scrub).
-function oneButtonStoryCut() {
-  const btn = $('#storyCutBtn');
-  if (!state.proj || !(state.highlights && state.highlights.length)) {
-    toast('Analyze (and ideally Rank funny moments) first, then hit Story Cut.', true); return;
-  }
+// Shared assembly brain: pick the best moments (story beats + strong reactions; fill to a
+// floor of 3 with the top remaining by score), set keep + chronological order on
+// state.highlights, and rebuild the sequence. Returns { kept, total }. Used by Story Cut
+// (assemble only) and Edit for Me (assemble → export).
+function assembleStoryCut() {
   buildStory(state.highlights);   // maps setups → payoffs → callbacks + scores
   let kept = 0;
   state.highlights.forEach((h) => {
@@ -1591,15 +1616,24 @@ function oneButtonStoryCut() {
     if (h.keep && s.intent === 'payoff' && state.proj.duration) h.end = Math.min(state.proj.duration, h.end + 1.2);
     if (h.keep) kept++;
   });
-  if (!kept) {   // nothing matched → relax: keep the top 3 by score
-    [...state.highlights].sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 3).forEach((h) => { h.keep = true; kept++; });
+  if (kept < 3) {   // too few matched → relax: fill up to 3 with the top remaining by score
+    [...state.highlights].filter((h) => !h.keep).sort((a, b) => (b.score || 0) - (a.score || 0))
+      .slice(0, 3 - kept).forEach((h) => { h.keep = true; kept++; });
   }
   // order: kept first, chronological by source time (setups naturally precede their payoffs)
   state.highlights.sort((a, b) => (a.keep === b.keep ? a.start - b.start : (a.keep ? -1 : 1)));
+  renderHighlights(); draw();   // renderTracks rebuilds seqMap from kept clips → draws the cut
+  return { kept, total: (state.seqMap && state.seqMap.total) || 0 };
+}
+
+function oneButtonStoryCut() {
+  const btn = $('#storyCutBtn');
+  if (!state.proj || !(state.highlights && state.highlights.length)) {
+    toast('Analyze (and ideally Rank funny moments) first, then hit Story Cut.', true); return;
+  }
+  const { kept, total } = assembleStoryCut();
   logEdit('one_button_story_cut', { kept, dropped: state.highlights.length - kept });
   if (btn) { btn.disabled = true; const o = btn.innerHTML; btn.innerHTML = 'Assembling…'; setTimeout(() => { btn.disabled = false; btn.innerHTML = o; }, 400); }
-  renderHighlights(); draw();   // renderTracks rebuilds seqMap from kept clips → draws the cut
-  const total = (state.seqMap && state.seqMap.total) || 0;
   toast(`Story cut assembled — ${kept} clips (${fmt(total)}), filler dropped.`);
 }
 $('#storyCutBtn')?.addEventListener('click', oneButtonStoryCut);

@@ -280,7 +280,10 @@ body.reordering .hlRow, body.reordering .card { transition: none; }
 .trk.aud { background: rgba(52,211,153,0.05); }
 .trackLanes { flex: 1; position: relative; }
 .lane { position: relative; height: 30px; border-bottom: 1px solid rgba(255,255,255,0.05);
-  background: repeating-linear-gradient(90deg, transparent, transparent calc(10% - 1px), rgba(255,255,255,0.05) 10%); }
+  background: repeating-linear-gradient(90deg, transparent, transparent calc(10% - 1px), rgba(255,255,255,0.05) 10%);
+  /* Isolate each lane's layout/paint: a clip block moving or restyling in one lane can't force
+     reflow/repaint of other lanes. Safe because .tblk children stay within the lane's box. */
+  contain: layout paint style; }
 .tblk { position: absolute; top: 3px; height: 24px; border-radius: 4px; display: flex; align-items: center; overflow: hidden; font-size: 10px; font-weight: 600; color: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.45); }
 .tblk span { padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tblk.clip { background: linear-gradient(180deg, #6d7bf0, #4756c8); border: 1px solid #8b97ff; }
@@ -466,7 +469,7 @@ body.reordering .hlRow, body.reordering .card { transition: none; }
 .nle-bottom > .card{ margin:0; overflow:auto; }
 .nle-bottom .timelineWrap{ flex:2 1 0; }
 .nle-bottom .trackPanel{ flex:1 1 0; }
-.nle-bottom #timeline{ width:100%; }
+.nle-bottom #timeline{ width:100%; flex:1 1 0; min-height:60px; display:block; }
 
 /* header title chip */
 .window-title-tab{ font-size:12px; color:var(--muted); padding:3px 10px;
@@ -1330,7 +1333,13 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
 /* one card at a time, full-width, filling the zone */
 .nle-bottom > .card{ flex:1 1 auto !important; width:100% !important; min-height:0; margin:0 !important; }
 .nle-bottom .timelineWrap{ display:none; }
-.nle-bottom.view-phantasm .timelineWrap{ display:block; }
+/* Column flex so the canvas can shrink to the leftover height and the header/phantasm-bar/tip
+   (incl. the "Banish all red" button) stay pinned + visible instead of overflowing the fixed
+   240px panel. */
+.nle-bottom.view-phantasm .timelineWrap{ display:flex; flex-direction:column; min-height:0; }
+.nle-bottom.view-phantasm .timelineWrap > .tlHead,
+.nle-bottom.view-phantasm .timelineWrap > .phantasmBar,
+.nle-bottom.view-phantasm .timelineWrap > .tlTip{ flex:0 0 auto; }
 .nle-bottom.view-phantasm .trackPanel{ display:none; }
 
 /* editorial feedback recorder: "N decisions recorded" indicator */

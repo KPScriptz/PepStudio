@@ -5,11 +5,11 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { exec } from 'node:child_process';
+import { execFile } from 'node:child_process';
 
 import { analyze, analyzeAudio, analyzeVideo } from './lib/analyze.js';
-import { exportLongCut, exportShort, grabFrame, burnSubs, canBurnCaptions, exportSequence } from './lib/exporter.js';
-import { generateCaptions, captionsReady, transcribeRange, transcribeWindows, emphasisChunks } from './lib/captions.js';
+import { exportLongCut, exportShort, grabFrame, canBurnCaptions, exportSequence } from './lib/exporter.js';
+import { generateCaptions, generateCutCaptions, captionsReady, transcribeRange, transcribeWindows, emphasisChunks } from './lib/captions.js';
 import { scoreWindow } from './lib/reactions.js';
 import { heuristicMeta } from './lib/titles.js';
 import { pepaiReady, generateClipMeta, chatWithPepAI } from './lib/pepai.js';
@@ -29,6 +29,64 @@ const DOWNLOADS = process.env.CLIPFORGE_DOWNLOADS || path.join(__dirname, 'downl
 await fsp.mkdir(DATA, { recursive: true });
 await fsp.mkdir(RENDERS, { recursive: true });
 await fsp.mkdir(DOWNLOADS, { recursive: true });
+
+// Pack render concurrency. Each clip runs an independent whisper→zoom→encode pipeline; running
+// them all at once on a 6-perf-core Mac oversubscribes the CPU and thrashes. A small pool keeps
+// every core busy without context-switch churn — measured sweet spot is ~3 (see CLAUDE.md).
+const PACK_CONCURRENCY = Math.max(1, Number(process.env.PEP_PACK_CONCURRENCY) || 3);
+
+// Hard ceiling on how many clips/segments/frames one export request may enqueue. Without it a
+// single body (8MB limit = thousands of tiny clip objects) could spawn thousands of ffmpeg/whisper
+// pipelines, run for hours, and fill the disk. No real project exceeds this.
+const MAX_BATCH = Math.max(1, Number(process.env.PEP_MAX_BATCH) || 200);
+const capBatch = (arr) => (Array.isArray(arr) ? arr.slice(0, MAX_BATCH) : []);
+
+// Run async `fn` over `items` with at most `limit` in flight; results keep input order.
+// Rejections propagate (Promise.all semantics) so a failed clip still surfaces its error.
+async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+// A standing concurrency gate for AD-HOC async work (not a fixed array). Used to bound the
+// on-demand `/api/thumb` frame grabs: the timeline fires a burst of them on load, each a cold
+// ffmpeg spawn — without a cap, a big project's filmstrip could launch dozens at once and thrash.
+function makeGate(max) {
+  let active = 0;
+  const queue = [];
+  const pump = () => {
+    if (active >= max || !queue.length) return;
+    active++;
+    const run = queue.shift();
+    run();
+  };
+  return (fn) => new Promise((resolve, reject) => {
+    queue.push(() => Promise.resolve().then(fn).then(resolve, reject).finally(() => { active--; pump(); }));
+    pump();
+  });
+}
+const thumbGate = makeGate(Math.max(2, PACK_CONCURRENCY));
+
+// Coerce + validate a clip's [start, end] before it reaches ffmpeg. Returns a clamped [s, e] or
+// null when unusable (NaN/Infinity, or shorter than a frame or two) — callers skip null clips
+// instead of spawning ffmpeg on garbage, which otherwise emits a broken file or hangs.
+function cleanRange(start, end) {
+  const s = Number(start);
+  const e = Number(end);
+  if (!Number.isFinite(s) || !Number.isFinite(e)) return null;
+  const a = Math.max(0, s);
+  if (e - a < 0.05) return null;
+  return [a, e];
+}
 
 const app = express();
 app.use(express.json({ limit: '8mb' }));
@@ -90,12 +148,24 @@ app.get('/api/feedback/count', async (req, res) => {
 // ---- Import a VOD from a URL (YouTube / Twitch). Long-running → job + polling. ----
 const jobs = new Map(); // jobId -> { status, progress, stage, error, project }
 
+// Evict the oldest finished jobs once the map grows past a cap. Map preserves insertion order, so
+// the first still-terminal entries are the oldest — drop those (each `done` job also pins a full
+// analysis object, so this is a real memory bound, not just housekeeping).
+function pruneJobs(max = 50) {
+  if (jobs.size <= max) return;
+  for (const [id, j] of jobs) {
+    if (jobs.size <= max) break;
+    if (j.status === 'done' || j.status === 'error') jobs.delete(id);
+  }
+}
+
 app.post('/api/import-url', async (req, res) => {
   const url = (req.body.url || '').trim();
   if (!url) return res.status(400).json({ error: 'Paste a YouTube or Twitch link.' });
   if (!ytdlpBin()) return res.status(500).json({ error: 'yt-dlp not installed. Run: brew install yt-dlp' });
   if (!SUPPORTED_URL.test(url)) return res.status(400).json({ error: 'Only YouTube and Twitch links are supported.' });
 
+  pruneJobs();
   const jobId = crypto.randomBytes(6).toString('hex');
   jobs.set(jobId, { status: 'downloading', progress: 0, stage: 'starting' });
   res.json({ jobId });
@@ -177,28 +247,60 @@ app.get('/api/analysis/:id', async (req, res) => {
   }
 });
 
-// Range-aware video streaming.
+// Stream a byte range to the client with a stream-level error handler so a mid-read failure
+// (file truncated/removed while playing) ends the response instead of throwing an uncaught
+// exception that crashes the process.
+function pipeRange(res, file, opts) {
+  const s = fs.createReadStream(file, opts);
+  s.on('error', () => { if (!res.headersSent) res.status(500); res.end(); });
+  s.pipe(res);
+}
+
+// Range-aware video streaming. Parses ALL three RFC 7233 range forms — `bytes=N-M`, open
+// `bytes=N-`, and suffix `bytes=-N` (last N bytes) — clamps to the file, and answers an
+// out-of-range request with 416 instead of throwing (`m[1]` on a null match) or emitting a
+// negative Content-Length. A browser <video> and download managers all send these forms.
 app.get('/api/video', async (req, res) => {
-  const file = await sourceFor(req.query.id);
-  if (!file || !fs.existsSync(file)) return res.status(404).end('not found');
-  const stat = fs.statSync(file);
-  const range = req.headers.range;
-  const type = file.toLowerCase().endsWith('.webm') ? 'video/webm'
-    : file.toLowerCase().endsWith('.mov') ? 'video/quicktime' : 'video/mp4';
-  if (!range) {
-    res.writeHead(200, { 'Content-Length': stat.size, 'Content-Type': type });
-    return fs.createReadStream(file).pipe(res);
+  try {
+    const file = await sourceFor(req.query.id);
+    if (!file || !fs.existsSync(file)) return res.status(404).end('not found');
+    const stat = fs.statSync(file);
+    const size = stat.size;
+    const type = file.toLowerCase().endsWith('.webm') ? 'video/webm'
+      : file.toLowerCase().endsWith('.mov') ? 'video/quicktime' : 'video/mp4';
+    const range = req.headers.range;
+    if (!range) {
+      res.writeHead(200, { 'Content-Length': size, 'Content-Type': type, 'Accept-Ranges': 'bytes' });
+      return pipeRange(res, file);
+    }
+    const m = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+    if (!m || (m[1] === '' && m[2] === '')) {
+      res.writeHead(416, { 'Content-Range': `bytes */${size}` });
+      return res.end();
+    }
+    let start; let end;
+    if (m[1] === '') {                       // suffix: last N bytes
+      const n = Math.min(parseInt(m[2], 10), size);
+      start = size - n; end = size - 1;
+    } else {
+      start = parseInt(m[1], 10);
+      end = m[2] ? parseInt(m[2], 10) : Math.min(start + 4 * 1024 * 1024, size - 1);
+    }
+    end = Math.min(end, size - 1);
+    if (!Number.isFinite(start) || start > end || start >= size || start < 0) {
+      res.writeHead(416, { 'Content-Range': `bytes */${size}` });
+      return res.end();
+    }
+    res.writeHead(206, {
+      'Content-Range': `bytes ${start}-${end}/${size}`,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': end - start + 1,
+      'Content-Type': type,
+    });
+    pipeRange(res, file, { start, end });
+  } catch (e) {
+    if (!res.headersSent) res.status(500).end(String(e.message || e));
   }
-  const m = /bytes=(\d+)-(\d*)/.exec(range);
-  const start = parseInt(m[1], 10);
-  const end = m[2] ? parseInt(m[2], 10) : Math.min(start + 4 * 1024 * 1024, stat.size - 1);
-  res.writeHead(206, {
-    'Content-Range': `bytes ${start}-${end}/${stat.size}`,
-    'Accept-Ranges': 'bytes',
-    'Content-Length': end - start + 1,
-    'Content-Type': type,
-  });
-  fs.createReadStream(file, { start, end }).pipe(res);
 });
 
 // On-demand frame for timeline previews / thumbnails.
@@ -209,7 +311,7 @@ app.get('/api/thumb', async (req, res) => {
     const t = Math.max(0, parseFloat(req.query.t) || 0);
     const dir = path.join(RENDERS, req.query.id, 'thumbs');
     const out = path.join(dir, `${t.toFixed(1)}.jpg`);
-    if (!fs.existsSync(out)) await grabFrame(file, t, out, { width: 480 });
+    if (!fs.existsSync(out)) await thumbGate(() => grabFrame(file, t, out, { width: 480 }));
     res.sendFile(out);
   } catch (e) { res.status(500).end(String(e.message || e)); }
 });
@@ -404,7 +506,7 @@ app.post('/api/export/sequence', async (req, res) => {
   try {
     const file = await sourceFor(req.body.id);
     if (!file) return res.status(404).json({ error: 'Unknown project id' });
-    const clips = Array.isArray(req.body.clips) ? req.body.clips : [];
+    const clips = capBatch(req.body.clips);
     if (!clips.length) return res.status(400).json({ error: 'No clips in the sequence.' });
 
     // Zoom parity with the TikTok pack: ONE batched whisper pass over the clips → per-clip
@@ -434,7 +536,7 @@ app.post('/api/export/longcut', async (req, res) => {
   try {
     const file = await sourceFor(req.body.id);
     if (!file) return res.status(404).json({ error: 'Unknown project id' });
-    const segments = (req.body.segments || []).map((s) => [s.start, s.end]);
+    const segments = capBatch(req.body.segments).map((s) => [s.start, s.end]);
     if (!segments.length) return res.status(400).json({ error: 'No segments selected' });
     const out = path.join(RENDERS, req.body.id, 'longcut.mp4');
     const subs = req.body.captions ? path.join(RENDERS, req.body.id, 'captions.ass') : undefined;
@@ -450,18 +552,27 @@ app.post('/api/export/shorts', async (req, res) => {
   try {
     const file = await sourceFor(req.body.id);
     if (!file) return res.status(404).json({ error: 'Unknown project id' });
-    const clips = req.body.clips || [];
+    const clips = capBatch(req.body.clips);
     if (!clips.length) return res.status(400).json({ error: 'No clips selected' });
     const subs = req.body.captions ? path.join(RENDERS, req.body.id, 'captions.ass') : undefined;
-    const results = [];
-    for (let i = 0; i < clips.length; i++) {
-      const out = path.join(RENDERS, req.body.id, `short-${i + 1}.mp4`);
-      await exportShort(file, clips[i].start, clips[i].end, out, {
-        subs: subs && fs.existsSync(subs) ? subs : undefined,
-      });
-      results.push({ file: out, url: `/renders/${req.body.id}/short-${i + 1}.mp4` });
-    }
-    res.json({ shorts: results, captionsBurned: !!(subs && fs.existsSync(subs)) && await canBurnCaptions() });
+    const useSubs = subs && fs.existsSync(subs) ? subs : undefined;
+    // Bounded-parallel + partial-success: each short is an independent encode (per-call
+    // mkdtemp/output path); a single bad clip is isolated so the rest still come back.
+    const settled = await mapLimit(clips, PACK_CONCURRENCY, async (clip, i) => {
+      try {
+        const r = cleanRange(clip.start, clip.end);
+        if (!r) throw new Error(`Invalid clip range [${clip.start}, ${clip.end}]`);
+        const out = path.join(RENDERS, req.body.id, `short-${i + 1}.mp4`);
+        await exportShort(file, r[0], r[1], out, { subs: useSubs });
+        return { ok: true, value: { file: out, url: `/renders/${req.body.id}/short-${i + 1}.mp4` } };
+      } catch (err) {
+        return { ok: false, index: i, error: String(err.message || err) };
+      }
+    });
+    const results = settled.filter((r) => r.ok).map((r) => r.value);
+    const failed = settled.filter((r) => !r.ok).map((r) => ({ clip: r.index + 1, error: r.error }));
+    if (!results.length) return res.status(500).json({ error: 'All shorts failed to render', failed });
+    res.json({ shorts: results, captionsBurned: !!(subs && fs.existsSync(subs)) && await canBurnCaptions(), failed });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }
@@ -472,35 +583,48 @@ app.post('/api/export/tiktok', async (req, res) => {
   try {
     const file = await sourceFor(req.body.id);
     if (!file) return res.status(404).json({ error: 'Unknown project id' });
-    const clips = req.body.clips || [];
+    const clips = capBatch(req.body.clips);
     if (!clips.length) return res.status(400).json({ error: 'No clips selected' });
     const wantCaps = req.body.captions !== false && captionsReady().bin && captionsReady().model;
     const burn = wantCaps && await canBurnCaptions();
     const zoomOn = req.body.zoom !== false;   // beat-synced punch-ins on emphasis words
     const dir = path.join(RENDERS, req.body.id);
-    const results = new Array(clips.length);
     let zoomed = false;
-    // Render the pack in PARALLEL — each clip's transcribe→zoom→encode pipeline is fully
-    // independent (whisper + exportShort both use per-call mkdtemp/output paths), so the
-    // pack's wall time ≈ the slowest single clip instead of the sum of all clips.
-    await Promise.all(clips.map(async ({ start, end }, i) => {
-      let subs; let zoomFilter = null;
-      if (wantCaps) {
-        const ass = path.join(dir, `tiktok-${i + 1}.ass`);
-        // clip-relative timestamps so captions line up with the -ss-trimmed vertical clip
-        const { chunks } = await generateCaptions(file, ass, { range: [start, end], clipRelative: true, punchy: req.body.punchy !== false });
-        if (burn) subs = ass;
-        // Punch-in zooms keyed to the emphasis caption blocks (already clip-relative → clipStart 0).
-        if (zoomOn) { const z = buildTimelineZoomExpression(chunks || [], 0); zoomFilter = z.filter; if (z.hasZoom) zoomed = true; }
+    // Render the pack in BOUNDED PARALLEL — each clip's transcribe→zoom→encode pipeline is fully
+    // independent (whisper + exportShort both use per-call mkdtemp/output paths). A pool of
+    // PACK_CONCURRENCY keeps every core saturated without the context-switch thrash that
+    // unbounded fan-out causes on large packs, so wall time ≈ slowest few clips, not the sum.
+    // Partial-success: one bad clip must NOT nuke the whole pack (the old throw-through lost every
+    // successful render). Each clip is isolated in try/catch; survivors come back in `clips`, the
+    // rest in `failed` so the caller can retry or report them.
+    const settled = await mapLimit(clips, PACK_CONCURRENCY, async (clip, i) => {
+      try {
+        const r = cleanRange(clip.start, clip.end);
+        if (!r) throw new Error(`Invalid clip range [${clip.start}, ${clip.end}]`);
+        const [start, end] = r;
+        let subs; let zoomFilter = null;
+        if (wantCaps) {
+          const ass = path.join(dir, `tiktok-${i + 1}.ass`);
+          // clip-relative timestamps so captions line up with the -ss-trimmed vertical clip
+          const { chunks } = await generateCaptions(file, ass, { range: [start, end], clipRelative: true, punchy: req.body.punchy !== false });
+          if (burn) subs = ass;
+          // Punch-in zooms keyed to the emphasis caption blocks (already clip-relative → clipStart 0).
+          if (zoomOn) { const z = buildTimelineZoomExpression(chunks || [], 0); zoomFilter = z.filter; if (z.hasZoom) zoomed = true; }
+        }
+        const out = path.join(dir, `tiktok-${i + 1}.mp4`);
+        await exportShort(file, start, end, out, { subs, zoomFilter });
+        return { ok: true, value: {
+          file: out, url: `/renders/${req.body.id}/tiktok-${i + 1}.mp4`,
+          srtUrl: wantCaps ? `/renders/${req.body.id}/tiktok-${i + 1}.srt` : null,
+        } };
+      } catch (err) {
+        return { ok: false, index: i, error: String(err.message || err) };
       }
-      const out = path.join(dir, `tiktok-${i + 1}.mp4`);
-      await exportShort(file, start, end, out, { subs, zoomFilter });
-      results[i] = {
-        file: out, url: `/renders/${req.body.id}/tiktok-${i + 1}.mp4`,
-        srtUrl: wantCaps ? `/renders/${req.body.id}/tiktok-${i + 1}.srt` : null,
-      };
-    }));
-    res.json({ clips: results, captionsBurned: burn, zoomed });
+    });
+    const results = settled.filter((r) => r.ok).map((r) => r.value);
+    const failed = settled.filter((r) => !r.ok).map((r) => ({ clip: r.index + 1, error: r.error }));
+    if (!results.length) return res.status(500).json({ error: 'All clips failed to render', failed });
+    res.json({ clips: results, captionsBurned: burn, zoomed, failed });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }
@@ -511,30 +635,28 @@ app.post('/api/export/youtube', async (req, res) => {
   try {
     const file = await sourceFor(req.body.id);
     if (!file) return res.status(404).json({ error: 'Unknown project id' });
-    const keep = (req.body.segments || []).map((s) => [s.start, s.end]);
+    const keep = capBatch(req.body.segments).map((s) => [s.start, s.end]);
     if (!keep.length) return res.status(400).json({ error: 'No segments to export' });
     const hook = req.body.hook && req.body.hook.length === 2 ? [req.body.hook[0], req.body.hook[1]] : null;
     const segs = hook ? [hook, ...keep] : keep;
     const dir = path.join(RENDERS, req.body.id);
 
-    const raw = path.join(dir, 'youtube_raw.mp4');
-    await exportLongCut(file, segs, raw); // render first, no captions
-
-    let outUrl = `/renders/${req.body.id}/youtube_raw.mp4`;
-    let outFile = raw;
-    let captionsBurned = false;
+    // SINGLE-PASS: transcribe the cut from an audio-only concat extraction (cheap, no video decode)
+    // so the captions align to the re-timed cut WITHOUT rendering a throwaway `raw` first. Then
+    // concat + burn in one video encode. Old path did two full video encodes (raw, then re-burn).
+    let subs;
     let srtUrl = null;
+    let captionsBurned = false;
     if (req.body.captions !== false && captionsReady().bin && captionsReady().model) {
       const ass = path.join(dir, 'youtube.ass');
-      await generateCaptions(raw, ass); // transcribe the RENDERED cut → perfectly aligned
+      await generateCutCaptions(file, ass, segs); // 0-based timing matches exportLongCut's concat
       srtUrl = `/renders/${req.body.id}/youtube.srt`;
-      if (await canBurnCaptions()) {
-        const burned = path.join(dir, 'youtube.mp4');
-        await burnSubs(raw, ass, burned);
-        outFile = burned; outUrl = `/renders/${req.body.id}/youtube.mp4`; captionsBurned = true;
-      }
+      if (await canBurnCaptions()) { subs = ass; captionsBurned = true; }
     }
-    res.json({ file: outFile, url: outUrl, captionsBurned, srtUrl, hook: !!hook });
+
+    const out = path.join(dir, 'youtube.mp4');
+    await exportLongCut(file, segs, out, { subs }); // one encode, captions burned inline when able
+    res.json({ file: out, url: `/renders/${req.body.id}/youtube.mp4`, captionsBurned, srtUrl, hook: !!hook });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }
@@ -545,7 +667,7 @@ app.post('/api/export/premiere', async (req, res) => {
   try {
     const file = await sourceFor(req.body.id);
     if (!file) return res.status(404).json({ error: 'Unknown project id' });
-    const segments = (req.body.segments || []).filter((s) => s && s.end > s.start);
+    const segments = capBatch(req.body.segments).filter((s) => s && s.end > s.start);
     if (!segments.length) return res.status(400).json({ error: 'No segments to hand off' });
 
     // Meta (fps/dims) from cached analysis if present, else probe.
@@ -579,25 +701,35 @@ app.post('/api/export/thumbs', async (req, res) => {
   try {
     const file = await sourceFor(req.body.id);
     if (!file) return res.status(404).json({ error: 'Unknown project id' });
-    const times = req.body.times || [];
+    const times = capBatch(req.body.times);
     if (!times.length) return res.status(400).json({ error: 'No times provided' });
-    const results = [];
-    for (let i = 0; i < times.length; i++) {
-      const name = `thumb-${i + 1}.jpg`;
-      const out = path.join(RENDERS, req.body.id, name);
-      await grabFrame(file, times[i], out, { width: 1280 });
-      results.push({ file: out, url: `/renders/${req.body.id}/${name}` });
-    }
-    res.json({ thumbs: results });
+    // Single-frame grabs are cheap and independent — grab them in parallel, isolating failures.
+    const settled = await mapLimit(times, PACK_CONCURRENCY, async (t, i) => {
+      try {
+        const tt = Number(t);
+        if (!Number.isFinite(tt) || tt < 0) throw new Error(`Invalid time ${t}`);
+        const name = `thumb-${i + 1}.jpg`;
+        const out = path.join(RENDERS, req.body.id, name);
+        await grabFrame(file, tt, out, { width: 1280 });
+        return { ok: true, value: { file: out, url: `/renders/${req.body.id}/${name}` } };
+      } catch (err) {
+        return { ok: false, index: i, error: String(err.message || err) };
+      }
+    });
+    const results = settled.filter((r) => r.ok).map((r) => r.value);
+    const failed = settled.filter((r) => !r.ok).map((r) => ({ frame: r.index + 1, error: r.error }));
+    if (!results.length) return res.status(500).json({ error: 'All thumbnails failed', failed });
+    res.json({ thumbs: results, failed });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }
 });
 
-// Reveal a rendered file in Finder.
+// Reveal a rendered file in Finder. execFile (no shell) with the path as a discrete argv entry —
+// a filename containing shell metacharacters (backticks, $(), ;) can't be interpreted as a command.
 app.post('/api/reveal', async (req, res) => {
   const p = req.body.path;
-  if (p && fs.existsSync(p)) exec(`open -R "${p.replace(/"/g, '')}"`);
+  if (p && typeof p === 'string' && fs.existsSync(p)) execFile('open', ['-R', p], () => {});
   res.json({ ok: true });
 });
 
