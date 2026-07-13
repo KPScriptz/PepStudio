@@ -93,6 +93,21 @@ app.use(express.json({ limit: '8mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/renders', express.static(RENDERS));
 
+// Refuse an export up front when the render volume is nearly full, rather than filling the disk
+// and failing mid-encode with a cryptic ffmpeg error. Scoped to /api/export/* so it guards every
+// render route in one place. PEP_MIN_FREE_GB overrides (default 2GB); statfs failure never blocks.
+const MIN_FREE_GB = Math.max(0, Number(process.env.PEP_MIN_FREE_GB) || 2);
+app.use('/api/export', async (req, res, next) => {
+  try {
+    const st = await fsp.statfs(RENDERS);
+    const freeGB = (st.bsize * st.bavail) / 1e9;
+    if (freeGB < MIN_FREE_GB) {
+      return res.status(507).json({ error: `Low disk space: ${freeGB.toFixed(1)}GB free, need ${MIN_FREE_GB}GB. Free up space and retry.` });
+    }
+  } catch { /* statfs unsupported/unreadable — don't block the render on a check we can't make */ }
+  next();
+});
+
 // id <-> source path registry (kept in memory + persisted per project)
 const sources = new Map();
 const idFor = (p) => crypto.createHash('sha1').update(path.resolve(p)).digest('hex').slice(0, 12);
