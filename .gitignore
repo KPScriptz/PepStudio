@@ -10,3 +10,6 @@ sample/
 .DS_Store
 tmp/
 data/
+
+# compiled Swift OCR helper (build artifact)
+native/pep-ocr

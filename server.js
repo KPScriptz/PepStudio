@@ -19,6 +19,10 @@ import { hookPenalty, pacingTag, triggerBoost } from './lib/retention.js';
 import { downloadUrl, probeUrl, ytdlpBin, SUPPORTED_URL } from './lib/fetch.js';
 import { buildEDL, buildFcp7Xml } from './lib/interchange.js';
 import { probe } from './lib/ff.js';
+import { ocrAvailable } from './lib/ocr.js';
+import { analyzeNBA } from './lib/nba2k.js';
+import { analyzePalworld } from './lib/palworld.js';
+import { applyGameEvents } from './lib/gameEvents.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Writable dirs — overridable so the Electron app can point them at userData
@@ -432,9 +436,25 @@ app.post('/api/highlights/funny', async (req, res) => {
       };
     });
 
-    scored.sort((a, b) => b.score - a.score);
-    const top = scored.slice(0, keepN).sort((a, b) => a.start - b.start);
-    res.json({ highlights: top, scoredCount: scored.length, audioSentSec: +budget.toFixed(1) });
+    // Optional game-adapter boost. When the caller tags the VOD's game, OCR the HUD across the VOD
+    // (Apple Vision), turn scoreboard/notification tokens into events, and fold them into the score
+    // via applyGameEvents (one more additive term). No game tag → skipped entirely, so normal
+    // ranking is byte-identical. OCR failure never breaks ranking. NOTE: the scan is inline here;
+    // for a long VOD it belongs in the Analyze phase later — fine as an opt-in for now.
+    let gameEvents = [];
+    const game = (req.body.game || '').toLowerCase();
+    if (game && ocrAvailable() && duration) {
+      try {
+        const everySec = req.body.ocrEverySec;
+        if (game === 'nba' || game === 'nba2k') ({ events: gameEvents } = await analyzeNBA(file, { duration, everySec: everySec || 4 }));
+        else if (game === 'palworld' || game === 'pal') ({ events: gameEvents } = await analyzePalworld(file, { duration, everySec: everySec || 3 }));
+      } catch { gameEvents = []; }
+    }
+    const ranked = gameEvents.length ? applyGameEvents(scored, gameEvents) : scored;
+
+    ranked.sort((a, b) => b.score - a.score);
+    const top = ranked.slice(0, keepN).sort((a, b) => a.start - b.start);
+    res.json({ highlights: top, scoredCount: ranked.length, gameEvents: gameEvents.length, game: game || null, audioSentSec: +budget.toFixed(1) });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }
