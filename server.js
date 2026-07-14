@@ -23,6 +23,7 @@ import { ocrAvailable } from './lib/ocr.js';
 import { analyzeNBA } from './lib/nba2k.js';
 import { analyzePalworld } from './lib/palworld.js';
 import { applyGameEvents } from './lib/gameEvents.js';
+import { selectStoryboard } from './lib/storyboard.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Writable dirs — overridable so the Electron app can point them at userData
@@ -372,10 +373,13 @@ app.post('/api/highlights/funny', async (req, res) => {
     if (!pool.length) return res.status(400).json({ error: 'No candidate moments — run Analyze first.' });
 
     const duration = analysis.duration || (await probe(file)).duration || 0;
-    const keepN = req.body.keep || 8;
+    // Storyboard mode needs a MUCH bigger candidate pool — an 8-10 min cut is ~15-25 clips, so the
+    // default keep=8 / 9-min budget would starve it. Scale both up when the caller asks for it.
+    const storyboard = req.body.storyboard === true;
+    const keepN = req.body.keep || (storyboard ? 40 : 8);
     const pad = 1.5;
-    const minScore = req.body.minScore ?? 0.5;     // energy gate: skip flat/quiet candidates (candidates are already peaks)
-    const budgetSec = req.body.budgetSec ?? 540;   // hard cap on audio sent to whisper (~9 min)
+    const minScore = req.body.minScore ?? (storyboard ? 0.3 : 0.5);  // lower gate → more candidates survive
+    const budgetSec = req.body.budgetSec ?? (storyboard ? 1500 : 540); // audio sent to whisper (~25 min vs ~9)
     const tighten = req.body.tighten !== false;    // snap clips to the reaction beat (default on)
 
     // Energy gate + budget — this is what keeps a 2-hour VOD fast: rank candidates by
@@ -455,6 +459,26 @@ app.post('/api/highlights/funny', async (req, res) => {
     ranked.sort((a, b) => b.score - a.score);
     const top = ranked.slice(0, keepN).sort((a, b) => a.start - b.start);
     res.json({ highlights: top, scoredCount: ranked.length, gameEvents: gameEvents.length, game: game || null, audioSentSec: +budget.toFixed(1) });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
+// ---- Storyboard: compile scored highlights into an 8-10 min hook-driven plan. The frontend can't
+// import lib/ (plain script), so it POSTs its highlights here and gets back { hook, body, totalSec }.
+// The frontend then sets keep on the body clips (rebuilding seqMap natively) and stashes the hook
+// for the export-time prepend. Pure compile — no ffmpeg, fast. ----
+app.post('/api/storyboard', (req, res) => {
+  try {
+    const highlights = req.body.highlights;
+    if (!Array.isArray(highlights) || !highlights.length) {
+      return res.status(400).json({ error: 'Provide a non-empty highlights array.' });
+    }
+    const opts = {};
+    if (Number.isFinite(req.body.minSec)) opts.minSec = req.body.minSec;
+    if (Number.isFinite(req.body.maxSec)) opts.maxSec = req.body.maxSec;
+    if (Number.isFinite(req.body.hookSec)) opts.hookSec = req.body.hookSec;
+    res.json(selectStoryboard(highlights, opts));
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }

@@ -1595,6 +1595,67 @@ async function autoEdit() {
 }
 $('#autoEditBtn')?.addEventListener('click', autoEdit);
 
+// ---- Storyboard Cut: an 8-10 min HOOK-LED narrative package (vs autoEdit's short reel). Ranks a
+// WIDE candidate pool (storyboard:true → keep≈40, bigger audio budget) so there's enough to fill
+// 8-10 min, asks the backend /api/storyboard to compile the plan, sets keep on the chosen body
+// clips (native seqMap rebuild — NO overwrite), then exports with the cold-open hook PREPENDED as
+// the first clip (hard smash-cut into the chronological body). Reuses autoEdit's export path.
+async function storyboardCut() {
+  const btn = $('#storyboardBtn');
+  if (!state.proj) { toast('Load and analyze a video first.', true); return; }
+  try {
+    if (btn) btn.disabled = true;
+    // 1. Rank with the wide pool so the storyboard doesn't starve.
+    showProgress('Finding your best 8–10 minutes — ranking a wide candidate pool…');
+    const rank = await fetch('/api/highlights/funny', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: state.proj.id, storyboard: true }),
+    });
+    const rankData = await rank.json();
+    if (!rank.ok) throw new Error(rankData.error || 'Ranking failed.');
+    if (!rankData.highlights || !rankData.highlights.length) { toast('No standout moments found.', true); return; }
+    state.highlights = rankData.highlights.map((h) => ({ ...h }));
+
+    // 2. Compile the hook-driven plan on the backend (the frontend can't import lib/).
+    showProgress('Compiling the hook-driven storyboard…');
+    const sbRes = await fetch('/api/storyboard', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ highlights: state.highlights }),
+    });
+    const plan = await sbRes.json();
+    if (!sbRes.ok) throw new Error(plan.error || 'Storyboard compile failed.');
+
+    // 3. Keep only the body clips — set keep flags, let renderHighlights/draw rebuild seqMap NATIVELY.
+    const bodyIds = new Set((plan.body || []).map((h) => h.id));
+    state.highlights.forEach((h) => { h.keep = bodyIds.has(h.id); });
+    renderHighlights(); draw();
+
+    // 4. Export clip list = cold-open HOOK first, then the chronological body (hard-cut concat).
+    const body = state.highlights.filter((h) => h.keep).sort((a, b) => a.start - b.start)
+      .map((h) => ({ start: h.start, end: h.end, overlays: (h.overlays || []).filter((o) => o.content && o.content.trim()) }));
+    const clips = [];
+    if (plan.hook) clips.push({ start: plan.hook.start, end: plan.hook.end });   // cold-open teaser
+    clips.push(...body);
+    if (!clips.length) { toast('Not enough moments to build a storyboard.', true); return; }
+
+    showProgress(`Editing your ${fmt(plan.totalSec)} story package${plan.reachedMin ? '' : ' (short — not enough footage for 8 min)'}…`);
+    const res = await fetch('/api/export/sequence', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: state.proj.id, clips, vertical: false, zoom: false }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Export failed.');
+    addOutput('Storyboard Cut', data, 'sequence');
+    logEdit('storyboard_cut', { body: body.length, totalSec: +(+plan.totalSec).toFixed(1), reachedMin: !!plan.reachedMin });
+    toast(`Story package ready — hook + ${body.length} moments, ${fmt(plan.totalSec)} ✓`);
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    if (btn) btn.disabled = false; hideProgress();
+  }
+}
+$('#storyboardBtn')?.addEventListener('click', storyboardCut);
+
 // ---- One-Button Story Cut: auto-assemble the sequence from the ranked highlights.
 // Selects story clips (setup/payoff/callback) + strong reactions, drops filler, holds
 // payoffs 1.2s for the reaction, orders chronologically (setups precede payoffs), then
