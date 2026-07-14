@@ -24,6 +24,7 @@ import { analyzeNBA } from './lib/nba2k.js';
 import { analyzePalworld } from './lib/palworld.js';
 import { applyGameEvents } from './lib/gameEvents.js';
 import { selectStoryboard } from './lib/storyboard.js';
+import { consumeFeedback } from './lib/feedbackConsumer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Writable dirs — overridable so the Electron app can point them at userData
@@ -163,6 +164,17 @@ app.get('/api/feedback/count', async (req, res) => {
     const txt = await fsp.readFile(path.join(DATA, 'feedback.jsonl'), 'utf8').catch(() => '');
     res.json({ count: txt ? txt.trimEnd().split('\n').filter(Boolean).length : 0 });
   } catch { res.json({ count: 0 }); }
+});
+
+// Consume accumulated correction chips → nudge the live ranking weights (gaming_heuristics.json).
+// The "learning half": turns tapped feedback into behavior. Idempotent (cursor), bounded, clamped.
+app.post('/api/feedback/apply', (req, res) => {
+  try {
+    res.json(consumeFeedback({
+      feedbackPath: path.join(DATA, 'feedback.jsonl'),
+      heuristicsPath: path.join(DATA, 'gaming_heuristics.json'),
+    }));
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
 
 // ---- Import a VOD from a URL (YouTube / Twitch). Long-running → job + polling. ----
@@ -802,6 +814,14 @@ export function start(port = process.env.PORT || 4178) {
       const actual = server.address().port;
       console.log(`PepStudio running -> http://localhost:${actual}`);
       if (process.send) { try { process.send({ type: 'pepstudio-port', port: actual }); } catch {} }
+      // Learning loop: apply any correction chips tapped since last boot to the ranking weights.
+      // Idempotent (cursor) + bounded, and logged so the shift is never silent. PEP_NO_FEEDBACK=1 to skip.
+      if (process.env.PEP_NO_FEEDBACK !== '1') {
+        try {
+          const r = consumeFeedback({ feedbackPath: path.join(DATA, 'feedback.jsonl'), heuristicsPath: path.join(DATA, 'gaming_heuristics.json') });
+          if (r.applied) console.log(`[feedback] applied corrections ${JSON.stringify(r.counts)} → weights ${JSON.stringify(r.changes)}`);
+        } catch (e) { console.log('[feedback] skip:', String(e.message || e)); }
+      }
       resolve(server);
     });
   });
