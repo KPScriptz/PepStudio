@@ -1601,7 +1601,7 @@ $('#autoEditBtn')?.addEventListener('click', autoEdit);
 // clips (native seqMap rebuild — NO overwrite), then exports with the cold-open hook PREPENDED as
 // the first clip (hard smash-cut into the chronological body). Reuses autoEdit's export path.
 async function storyboardCut() {
-  const btn = $('#storyboardBtn');
+  const btn = $('#storyCutBtn');
   if (!state.proj) { toast('Load and analyze a video first.', true); return; }
   try {
     if (btn) btn.disabled = true;
@@ -1654,7 +1654,6 @@ async function storyboardCut() {
     if (btn) btn.disabled = false; hideProgress();
   }
 }
-$('#storyboardBtn')?.addEventListener('click', storyboardCut);
 
 // ---- One-Button Story Cut: auto-assemble the sequence from the ranked highlights.
 // Selects story clips (setup/payoff/callback) + strong reactions, drops filler, holds
@@ -1697,7 +1696,10 @@ function oneButtonStoryCut() {
   if (btn) { btn.disabled = true; const o = btn.innerHTML; btn.innerHTML = 'Assembling…'; setTimeout(() => { btn.disabled = false; btn.innerHTML = o; }, 400); }
   toast(`Story cut assembled — ${kept} clips (${fmt(total)}), filler dropped.`);
 }
-$('#storyCutBtn')?.addEventListener('click', oneButtonStoryCut);
+// The single primary auto-edit control now runs the 8-10 min Storyboard Cut (the old One-Button
+// Story Cut / Edit for Me buttons were redundant and confusing). oneButtonStoryCut/autoEdit remain
+// defined for reuse but are no longer wired to a button.
+$('#storyCutBtn')?.addEventListener('click', storyboardCut);
 
 // ---- Step 5: Correction Capture. After a MANUAL override (trim/keep/reorder/segment),
 // surface a one-tap "why?" popover. The base action already logged; tapping a reason
