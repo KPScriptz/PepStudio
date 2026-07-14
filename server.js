@@ -392,7 +392,10 @@ app.post('/api/highlights/funny', async (req, res) => {
     const pad = 1.5;
     const minScore = req.body.minScore ?? (storyboard ? 0.3 : 0.5);  // lower gate → more candidates survive
     const budgetSec = req.body.budgetSec ?? (storyboard ? 1500 : 540); // audio sent to whisper (~25 min vs ~9)
-    const tighten = req.body.tighten !== false;    // snap clips to the reaction beat (default on)
+    // Snap clips to the tight reaction beat — default ON, but OFF for storyboard mode: an 8-10 min
+    // narrative package needs the WIDE, contextual windows (the setup + build-up), not 5s snippets.
+    // Tightening there starved the cut (24 clips × ~5s ≈ 2 min instead of ~8). Explicit override wins.
+    const tighten = req.body.tighten !== undefined ? req.body.tighten !== false : !storyboard;
 
     // Energy gate + budget — this is what keeps a 2-hour VOD fast: rank candidates by
     // audio score, drop anything below the gate, and keep only the hottest windows until
