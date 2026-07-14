@@ -57,7 +57,12 @@ function download(url, dest, onPct) {
 async function ensureDeps(ud) {
   const binDir = path.join(ud, 'bin');
   fs.mkdirSync(binDir, { recursive: true });
-  process.env.PATH = ['/opt/homebrew/bin', '/usr/local/bin', binDir, process.env.PATH || ''].join(':');
+  // A Finder-launched GUI app inherits a bare PATH (/usr/bin:/bin) — NOT the shell's — so ffprobe/
+  // ffmpeg/whisper-cli/yt-dlp installed in ~/.local/bin are invisible and spawn with ENOENT. Add
+  // the common user/Homebrew bin dirs (incl. ~/.local/bin) so all four external tools resolve.
+  const homeBin = process.env.HOME ? path.join(process.env.HOME, '.local', 'bin') : '';
+  process.env.PATH = ['/opt/homebrew/bin', '/usr/local/bin', homeBin, binDir, process.env.PATH || '']
+    .filter(Boolean).join(':');
 
   // yt-dlp — single standalone binary, no Homebrew required.
   if (!which('yt-dlp') && !process.env.YTDLP_BIN) {
