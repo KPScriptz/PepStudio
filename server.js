@@ -9,7 +9,7 @@ import { execFile } from 'node:child_process';
 
 import { analyze, analyzeAudio, analyzeVideo } from './lib/analyze.js';
 import { exportLongCut, exportShort, grabFrame, canBurnCaptions, exportSequence } from './lib/exporter.js';
-import { generateCaptions, generateCutCaptions, captionsReady, transcribeRange, transcribeWindows, emphasisChunks } from './lib/captions.js';
+import { generateCaptions, generateCutCaptions, captionsReady, transcribeRange, transcribeWindows, emphasisChunks, whisperFastModel } from './lib/captions.js';
 import { scoreWindow } from './lib/reactions.js';
 import { heuristicMeta } from './lib/titles.js';
 import { pepaiReady, generateClipMeta, chatWithPepAI } from './lib/pepai.js';
@@ -404,8 +404,9 @@ app.post('/api/highlights/funny', async (req, res) => {
       return res.json({ highlights: [], scoredCount: 0, note: 'No candidates above the energy gate.' });
     }
 
-    // ONE ffmpeg concat + ONE whisper pass across every gated window (model loads once).
-    const transcribed = await transcribeWindows(file, gated);
+    // Parallel chunked whisper across the gated windows, using the small/fast model (tiny.en) —
+    // ranking only needs keyword-level accuracy, so this is a big speed win for zero quality cost.
+    const transcribed = await transcribeWindows(file, gated, { model: whisperFastModel() });
     const scored = transcribed.map((w) => {
       const r = scoreWindow(w.words || []);
       const audioScore = Number(w.score) || 0;
