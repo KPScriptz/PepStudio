@@ -616,7 +616,7 @@ app.post('/api/export/sequence', async (req, res) => {
 
     const out = path.join(RENDERS, req.body.id, 'sequence.mp4');
     await fsp.mkdir(path.dirname(out), { recursive: true });
-    await exportSequence(file, segs, out, { vertical: req.body.vertical !== false });
+    await exportSequence(file, segs, out, { vertical: req.body.vertical !== false, draft: req.body.draft === true, fps: req.body.fps });
     res.json({ url: `/renders/${req.body.id}/sequence.mp4`, file: out, clips: clips.length, zoomed });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
