@@ -421,7 +421,23 @@ app.post('/api/highlights/funny', async (req, res) => {
 
     // Parallel chunked whisper across the gated windows, using the small/fast model (tiny.en) —
     // ranking only needs keyword-level accuracy, so this is a big speed win for zero quality cost.
-    const transcribed = await transcribeWindows(file, gated, { model: whisperFastModel() });
+    // Transcription cache: keyed on source+mtime+model+window-ranges, so re-running Storyboard Cut
+    // on the same VOD skips whisper entirely (~1-2min saved per iteration). Only the TRANSCRIPTION
+    // is cached — scoring/tightening/weights re-apply every run, so correction-driven weight changes
+    // still take effect without a re-transcribe.
+    let transcribed;
+    const fastModel = whisperFastModel();
+    let mtime = 0; try { mtime = fs.statSync(file).mtimeMs; } catch {}
+    const rankKey = crypto.createHash('sha1')
+      .update([path.resolve(file), mtime, path.basename(fastModel || ''), gated.map((g) => `${g.start}-${g.end}`).join(',')].join('|'))
+      .digest('hex').slice(0, 16);
+    const rankCacheFile = path.join(DATA, 'rankcache', `${rankKey}.json`);
+    try { transcribed = JSON.parse(await fsp.readFile(rankCacheFile, 'utf8')); } catch { /* miss */ }
+    if (!transcribed) {
+      transcribed = await transcribeWindows(file, gated, { model: fastModel });
+      fsp.mkdir(path.dirname(rankCacheFile), { recursive: true })
+        .then(() => fsp.writeFile(rankCacheFile, JSON.stringify(transcribed), 'utf8')).catch(() => {});
+    }
     const scored = transcribed.map((w) => {
       const r = scoreWindow(w.words || []);
       const audioScore = Number(w.score) || 0;
