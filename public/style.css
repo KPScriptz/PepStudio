@@ -123,6 +123,9 @@ button.primary:hover { border-color: var(--accent); box-shadow: 0 0 0 2px #6ee7f
 .muted { color: var(--muted); }
 .right { margin-left: auto; }
 .hidden { display: none !important; }
+/* Right-column tab visibility — separate from `hidden` so tab switching doesn't reveal
+   content-gated panes (#hookLab / #clipInsight / #correctionShelf) that manage their own `hidden`. */
+.paneOff { display: none !important; }
 
 #progress { display: flex; align-items: center; gap: 12px; }
 .spinner {

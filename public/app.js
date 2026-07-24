@@ -120,6 +120,7 @@ function newProject() {
   { const t = $('#activeProjectTitle'); if (t) t.textContent = 'Untitled Sequence *'; }
   renderMediaAsset();   // clears the bin's asset card (no project)
   renderHighlights();
+  if (typeof renderHookLab === 'function') renderHookLab({});   // clear any stale cold-open health
   $('#pathInput').focus();
 }
 $('#btnNewProject')?.addEventListener('click', newProject);
@@ -285,6 +286,7 @@ function loadProject(data) {
   updatePhantasmSummary();
   resizeCanvas();
   draw();
+  if (typeof renderHookLab === 'function') renderHookLab({});   // reset cold-open health for the new project
   if (data.videoReady) {
     const st = data.phantasmStats || {};
     toast(`Phantasm: ${st.ghostCount || 0} ghosts (${fmt(st.ghostDuration || 0)} dead air) → cut ≈ ${fmt(st.cutDuration || 0)}.`);
@@ -1296,7 +1298,11 @@ $('#pepaiChatInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter'
   const panes = [...document.querySelectorAll('.nle-right .rtabPane')];
   const show = (name) => {
     strip.querySelectorAll('.rtab').forEach((t) => t.classList.toggle('active', t.dataset.rtab === name));
-    panes.forEach((p) => p.classList.toggle('hidden', p.dataset.rtab !== name));
+    // Toggle a DEDICATED tab-visibility class — NOT `hidden` — so switching tabs never clobbers the
+    // panes that gate their OWN visibility with `hidden` (#hookLab / #clipInsight / #correctionShelf,
+    // shown only once their render code fills them). Overloading `hidden` here was force-showing
+    // those as empty boxes / a premature correction shelf whenever the Curate tab was active.
+    panes.forEach((p) => p.classList.toggle('paneOff', p.dataset.rtab !== name));
   };
   strip.addEventListener('click', (e) => {
     const t = e.target.closest('.rtab');
