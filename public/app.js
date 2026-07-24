@@ -34,20 +34,35 @@ const IC_PLAY = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentCo
 (() => {
   const mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
   const systemTheme = () => (mq && mq.matches ? 'light' : 'dark');
+  const apply = (t) => { document.documentElement.setAttribute('data-theme', t); if (state.proj) draw(); };
   const saved = localStorage.getItem('pepstudio-theme');
-  document.documentElement.setAttribute('data-theme', saved || systemTheme());
-  if (!saved && mq) {
+  apply(saved || systemTheme());   // instant paint from the fast local cache (no flash)
+  let chosen = !!saved;            // has the user explicitly picked (locally)?
+
+  // Server-side prefs are AUTHORITATIVE across relaunches: the packaged app binds a new random
+  // port each launch (PORT=0), which wipes localStorage (origin:port-keyed) — so the durable
+  // choice lives in /api/prefs. Adopt it once it arrives; keep localStorage as the fast cache.
+  fetch('/api/prefs').then((r) => r.json()).then((p) => {
+    if (p && (p.theme === 'light' || p.theme === 'dark')) {
+      chosen = true;
+      localStorage.setItem('pepstudio-theme', p.theme);
+      apply(p.theme);
+    }
+  }).catch(() => {});
+
+  if (mq) {
     mq.addEventListener('change', () => {
-      if (localStorage.getItem('pepstudio-theme')) return;   // user has since chosen; stop following
-      document.documentElement.setAttribute('data-theme', systemTheme());
-      if (state.proj) draw();
+      if (chosen || localStorage.getItem('pepstudio-theme')) return;   // user has chosen; stop following
+      apply(systemTheme());
     });
   }
   $('#themeToggle')?.addEventListener('click', () => {
     const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
-    document.documentElement.setAttribute('data-theme', next);
-    localStorage.setItem('pepstudio-theme', next);   // explicit choice — sticky from now on
-    if (state.proj) draw();   // canvas stays dark, but redraw to be safe
+    chosen = true;
+    apply(next);
+    localStorage.setItem('pepstudio-theme', next);   // fast local cache
+    // Durable: survives the packaged app's per-launch port change (localStorage would not).
+    fetch('/api/prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ theme: next }) }).catch(() => {});
   });
 })();
 

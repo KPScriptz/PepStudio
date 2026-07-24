@@ -135,6 +135,25 @@ async function sourceFor(id) {
 
 const tildeExpand = (p) => (p && p.startsWith('~') ? path.join(process.env.HOME, p.slice(1)) : p);
 
+// User preferences (theme, etc.) persisted server-side in the DATA dir. The packaged app binds a
+// fresh random port every launch (PORT=0), which wipes localStorage (keyed by origin:port) — so a
+// client-only preference never survives a relaunch. This file does. Tiny + best-effort.
+const PREFS_FILE = path.join(DATA, 'prefs.json');
+app.get('/api/prefs', async (req, res) => {
+  try { res.json(JSON.parse(await fsp.readFile(PREFS_FILE, 'utf8'))); } catch { res.json({}); }
+});
+app.post('/api/prefs', async (req, res) => {
+  try {
+    let cur = {};
+    try { cur = JSON.parse(await fsp.readFile(PREFS_FILE, 'utf8')); } catch {}
+    const next = { ...cur };
+    if (req.body.theme === 'light' || req.body.theme === 'dark') next.theme = req.body.theme;   // whitelist
+    await fsp.mkdir(DATA, { recursive: true });
+    await fsp.writeFile(PREFS_FILE, JSON.stringify(next), 'utf8');
+    res.json(next);
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
 app.get('/api/status', async (req, res) => {
   const cap = captionsReady();
   const pep = await pepaiReady();
