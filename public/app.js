@@ -1313,6 +1313,7 @@ $('#pepaiChatInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter'
 // ==========================================================================
 const SVG_CHK = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.4l3 3 6-7"/></svg>';
 const SVG_ARR = '<svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor"><path d="M6 3.5L10.5 8 6 12.5z"/></svg>';
+const SVG_LINK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M6.6 9.4a3 3 0 0 0 4.2 0l1.7-1.7a3 3 0 1 0-4.2-4.2l-1 1"/><path d="M9.4 6.6a3 3 0 0 0-4.2 0L3.5 8.3a3 3 0 1 0 4.2 4.2l1-1"/></svg>';
 
 function aiSilences() {
   return (state.segments || []).filter((s) => s.reason === 'silence' || s.reason === 'static' || s.state === 'ghost');
@@ -1357,6 +1358,49 @@ function aiSuggestions() {
   if (env.length) { const loud = env.reduce((m, e) => ((e.v || 0) > (m.v || 0) ? e : m), env[0]); out.push({ t: loud.t, label: `Loud reaction at ${fmt(loud.t)}` }); }
   return out.slice(0, 3);
 }
+// Callback suggestions: mine the story graph for setup↔payoff arcs + shared-topic callbacks
+// (already tracked by buildStory) and offer to build a tight back-to-back edit of the pair.
+// Reads existing h.story; lazily builds it once if snippets exist but the graph isn't computed yet.
+function aiCallbacks() {
+  const hs = state.highlights || [];
+  if (hs.length < 2) return [];
+  if (typeof buildStory === 'function' && hs.some((h) => (h.snippet || h.title)) && !hs.some((h) => h.story)) buildStory(hs);
+  const find = (t) => hs.find((x) => Number.isFinite(x.start) && Math.abs(x.start - t) < 0.5);
+  const out = [];
+  const seen = new Set();
+  for (const h of hs) {
+    const s = h.story || {};
+    // shared-topic callback: h calls back to an earlier moment.
+    if (s.callbackOf != null) {
+      const setup = find(s.callbackOf);
+      const key = setup && `${setup.id}>${h.id}`;
+      if (setup && setup.id !== h.id && !seen.has(key)) { seen.add(key);
+        out.push({ kind: 'callback', setupId: setup.id, payoffId: h.id, setupT: setup.start, payoffT: h.start, topic: s.callbackTopic || '' }); }
+    }
+    // setup → payoff arc.
+    if (s.intent === 'setup' && s.payoffAt != null) {
+      const payoff = find(s.payoffAt);
+      const key = payoff && `${h.id}>${payoff.id}`;
+      if (payoff && payoff.id !== h.id && !seen.has(key)) { seen.add(key);
+        out.push({ kind: 'payoff', setupId: h.id, payoffId: payoff.id, setupT: h.start, payoffT: payoff.start, topic: '' }); }
+    }
+  }
+  return out.slice(0, 3);
+}
+// Build the callback edit: keep JUST the setup + payoff so they play back-to-back (chronological,
+// setup first). Uses the sanctioned keep→renderHighlights path (renderTracks rebuilds seqMap — no
+// overwrite). Reversible: re-rank or Story Cut restores the full set.
+function buildCallbackEdit(aId, bId) {
+  const a = (state.highlights || []).find((h) => h.id === aId);
+  const b = (state.highlights || []).find((h) => h.id === bId);
+  if (!a || !b) { toast('That callback pair is no longer available.', true); return; }
+  state.highlights.forEach((h) => { h.keep = (h.id === aId || h.id === bId); });
+  renderHighlights(); draw();   // renderTracks rebuilds seqMap from the two kept clips
+  logEdit('callback_edit', { setup: aId, payoff: bId, gap: +(b.start - a.end).toFixed(1) });
+  if (player && Number.isFinite(a.start)) { try { player.currentTime = a.start; } catch (_) {} }
+  toast(`Callback edit — setup + payoff kept back-to-back (${fmt((a.end - a.start) + (b.end - b.start))}). Re-rank to restore the full set.`);
+}
+
 function renderAIAssistant() {
   const box = $('#aiActions'); if (!box) return;
   box.innerHTML = aiActionSet().map((a) =>
@@ -1372,6 +1416,18 @@ function renderAIAssistant() {
           `<button class="aiSuggestRow" data-seek="${s.t}">${SVG_ARR}<span>${escapeHtml(s.label)}</span></button>`).join('')
       : '';
   }
+  const cbox = $('#aiCallbacks');
+  if (cbox) {
+    const cbs = aiCallbacks();
+    cbox.innerHTML = cbs.length
+      ? '<div class="aiSuggestHead">Callbacks</div>' + cbs.map((c) =>
+          `<button class="aiCallback" data-a="${c.setupId}" data-b="${c.payoffId}" title="Keep just these two, back-to-back">`
+          + `<span class="aiCbIcon">${SVG_LINK}</span>`
+          + `<span class="aiCbBody"><span class="aiCbLabel">${c.kind === 'callback' ? 'Callback' : 'Setup → payoff'}${c.topic ? `: “${escapeHtml(c.topic)}”` : ''}</span>`
+          + `<span class="aiCbMeta">${fmt(c.setupT)} → ${fmt(c.payoffT)} · build back-to-back</span></span></button>`).join('')
+      : '';
+    cbox.classList.toggle('hidden', !cbs.length);
+  }
   const st = $('#aiStatus');
   if (st) st.textContent = state.pepaiReady ? 'local model ✓' : '';
 }
@@ -1382,6 +1438,10 @@ $('#aiActions')?.addEventListener('click', (e) => {
 $('#aiSuggest')?.addEventListener('click', (e) => {
   const b = e.target.closest('.aiSuggestRow'); if (!b) return;
   const t = parseFloat(b.dataset.seek); if (!Number.isNaN(t)) { logEdit('suggestion_followed', { t }); player.currentTime = t; }
+});
+$('#aiCallbacks')?.addEventListener('click', (e) => {
+  const b = e.target.closest('.aiCallback'); if (!b) return;
+  buildCallbackEdit(b.dataset.a, b.dataset.b);
 });
 renderAIAssistant();
 

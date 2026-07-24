@@ -1274,6 +1274,18 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
   color:var(--px-muted,#8c919b) !important; font-size:12px; border-radius:6px !important; transition:background .12s, color .12s; }
 .aiSuggestRow:hover{ background:var(--px-hover,#22252a) !important; color:var(--px-text,#ececec) !important; transform:none !important; }
 .aiSuggestRow svg{ flex:0 0 auto; color:#a78bfa; }
+/* Callback suggestion cards — actionable (build a back-to-back callback edit), so a bit louder
+   than the seek-only suggestion rows. */
+.aiCallbacks{ display:flex; flex-direction:column; }
+.aiCallback{ display:flex; align-items:center; gap:9px; width:100%; text-align:left; cursor:pointer;
+  margin:4px 6px 0; padding:8px 9px !important; border-radius:7px !important;
+  background:var(--px-hover,#22252a) !important; border:1px solid var(--px-divider,rgba(255,255,255,.06)) !important;
+  color:var(--px-text,#ececec) !important; transition:border-color .12s, transform .1s; }
+.aiCallback:hover{ border-color:#a78bfa !important; transform:translateY(-1px); }
+.aiCbIcon{ flex:0 0 auto; display:flex; color:#a78bfa; }
+.aiCbBody{ display:flex; flex-direction:column; min-width:0; }
+.aiCbLabel{ font-size:12px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.aiCbMeta{ font-size:11px; color:var(--px-muted,#8c919b); }
 .aiAdvanced{ margin-top:10px; border-top:1px solid var(--px-divider, rgba(255,255,255,.05)); padding-top:8px; }
 .aiAdvanced summary{ cursor:pointer; font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--px-muted,#8c919b); list-style:none; padding:4px 2px; }
 .aiAdvanced summary::-webkit-details-marker{ display:none; }
