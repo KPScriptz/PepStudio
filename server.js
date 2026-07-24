@@ -24,6 +24,7 @@ import { analyzeNBA } from './lib/nba2k.js';
 import { analyzePalworld } from './lib/palworld.js';
 import { applyGameEvents } from './lib/gameEvents.js';
 import { selectStoryboard } from './lib/storyboard.js';
+import { scoreHook, hookCandidates } from './lib/hooks.js';
 import { consumeFeedback } from './lib/feedbackConsumer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -511,7 +512,18 @@ app.post('/api/storyboard', (req, res) => {
     if (Number.isFinite(req.body.maxSec)) opts.maxSec = req.body.maxSec;
     if (Number.isFinite(req.body.hookSec)) opts.hookSec = req.body.hookSec;
     if (typeof req.body.blueprint === 'string') opts.blueprint = req.body.blueprint;
-    res.json(selectStoryboard(highlights, opts));
+    const plan = selectStoryboard(highlights, opts);
+    // Hook health + audition candidates — only when the client sends the signals (envelope /
+    // sceneCuts from the loaded analysis). Uses the SAME blueprint ranking via plan.ranked.
+    const envelope = Array.isArray(req.body.envelope) ? req.body.envelope : [];
+    const sceneCuts = Array.isArray(req.body.sceneCuts) ? req.body.sceneCuts : [];
+    if (envelope.length || sceneCuts.length) {
+      plan.hookCandidates = hookCandidates(plan.ranked || [], { hookSec: plan.hookSec, envelope, sceneCuts, count: 3 });
+      const topH = highlights.find((h) => plan.hook && h.id === plan.hook.source) || {};
+      plan.hookScore = plan.hook ? scoreHook(plan.hook, { envelope, sceneCuts, reactionScore: topH.reactionScore || 0 }).score : null;
+    }
+    delete plan.ranked;
+    res.json(plan);
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }

@@ -1618,14 +1618,20 @@ async function storyboardCut() {
 
     // 2. Compile the hook-driven plan on the backend (the frontend can't import lib/).
     // Blueprint reweights which moments lead + the cold-open length (default 'balanced').
+    // Send envelope + sceneCuts so the backend can score the cold-open's health + candidates.
     const blueprint = ($('#blueprintSel') && $('#blueprintSel').value) || 'balanced';
     showProgress(`Compiling the ${blueprint} storyboard…`);
     const sbRes = await fetch('/api/storyboard', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ highlights: state.highlights, blueprint }),
+      body: JSON.stringify({
+        highlights: state.highlights, blueprint,
+        envelope: (state.proj && state.proj.envelope) || [],
+        sceneCuts: (state.proj && state.proj.sceneCuts) || [],
+      }),
     });
     const plan = await sbRes.json();
     if (!sbRes.ok) throw new Error(plan.error || 'Storyboard compile failed.');
+    renderHookLab(plan);   // Hook Health Score + audition candidates
 
     // 3. Keep only the body clips — set keep flags, let renderHighlights/draw rebuild seqMap NATIVELY.
     const bodyIds = new Set((plan.body || []).map((h) => h.id));
@@ -1648,7 +1654,7 @@ async function storyboardCut() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Export failed.');
     addOutput('Storyboard Cut', data, 'sequence');
-    logEdit('storyboard_cut', { body: body.length, totalSec: +(+plan.totalSec).toFixed(1), reachedMin: !!plan.reachedMin, blueprint });
+    logEdit('storyboard_cut', { body: body.length, totalSec: +(+plan.totalSec).toFixed(1), reachedMin: !!plan.reachedMin, blueprint, hookScore: plan.hookScore ?? null });
     toast(`Story package ready — hook + ${body.length} moments, ${fmt(plan.totalSec)} ✓`);
   } catch (e) {
     toast(e.message, true);
@@ -1656,6 +1662,41 @@ async function storyboardCut() {
     if (btn) btn.disabled = false; hideProgress();
   }
 }
+
+// ---- Hook Toolkit: rate the cold open (1–10) + audition the alternatives in the monitor.
+// Heuristic health (audio peak/rise + scene-cut motion + reaction intrigue) — an honest pre-export
+// estimate, NOT a retention prediction (nothing's uploaded to learn from). ----
+function hookScoreClass(s) { return s >= 8 ? 'good' : s >= 5 ? 'ok' : 'weak'; }
+function renderHookLab(plan) {
+  const lab = $('#hookLab'); if (!lab) return;
+  const score = plan && plan.hookScore;
+  const cands = (plan && plan.hookCandidates) || [];
+  if (!Number.isFinite(score) && !cands.length) { lab.classList.add('hidden'); lab.innerHTML = ''; return; }
+  const chosen = plan.hook ? plan.hook.source : null;
+  const play = '<svg viewBox="0 0 10 10" width="9" height="9" fill="currentColor" aria-hidden="true"><path d="M2 1l6 4-6 4z"/></svg>';
+  lab.innerHTML =
+    `<div class="hookLabHead">Cold-open health<span class="hookScore ${hookScoreClass(score || 0)}">${Number.isFinite(score) ? score : '–'}<i>/10</i></span></div>` +
+    '<div class="hookCands">' +
+    cands.map((c) => `<button class="hookCand${c.source === chosen ? ' pick' : ''}" data-start="${c.start}" data-end="${c.end}" title="Audition this cold open in the monitor">` +
+      `<span class="hookCandScore ${hookScoreClass(c.score)}">${c.score}</span>` +
+      `<span class="hookCandMeta">${c.source === chosen ? 'in your cut · ' : ''}${fmt(c.end - c.start)} teaser</span>` +
+      `<span class="hookCandPlay">${play}Audition</span></button>`).join('') +
+    '</div>';
+  lab.classList.remove('hidden');
+}
+// Audition = seek the monitor to the candidate and play just its window (cheap, no re-export).
+let _hookStopTimer = null;
+$('#hookLab')?.addEventListener('click', (e) => {
+  const b = e.target.closest('.hookCand'); if (!b || !player) return;
+  const start = +b.dataset.start; const end = +b.dataset.end;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return;
+  clearTimeout(_hookStopTimer);
+  try {
+    player.currentTime = start;
+    player.play();
+    _hookStopTimer = setTimeout(() => { try { player.pause(); } catch (_) {} }, (end - start) * 1000);
+  } catch (_) {}
+});
 
 // ---- One-Button Story Cut: auto-assemble the sequence from the ranked highlights.
 // Selects story clips (setup/payoff/callback) + strong reactions, drops filler, holds
