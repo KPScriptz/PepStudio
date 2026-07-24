@@ -510,6 +510,7 @@ app.post('/api/storyboard', (req, res) => {
     if (Number.isFinite(req.body.minSec)) opts.minSec = req.body.minSec;
     if (Number.isFinite(req.body.maxSec)) opts.maxSec = req.body.maxSec;
     if (Number.isFinite(req.body.hookSec)) opts.hookSec = req.body.hookSec;
+    if (typeof req.body.blueprint === 'string') opts.blueprint = req.body.blueprint;
     res.json(selectStoryboard(highlights, opts));
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });

@@ -1617,10 +1617,12 @@ async function storyboardCut() {
     state.highlights = rankData.highlights.map((h) => ({ ...h }));
 
     // 2. Compile the hook-driven plan on the backend (the frontend can't import lib/).
-    showProgress('Compiling the hook-driven storyboard…');
+    // Blueprint reweights which moments lead + the cold-open length (default 'balanced').
+    const blueprint = ($('#blueprintSel') && $('#blueprintSel').value) || 'balanced';
+    showProgress(`Compiling the ${blueprint} storyboard…`);
     const sbRes = await fetch('/api/storyboard', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ highlights: state.highlights }),
+      body: JSON.stringify({ highlights: state.highlights, blueprint }),
     });
     const plan = await sbRes.json();
     if (!sbRes.ok) throw new Error(plan.error || 'Storyboard compile failed.');
@@ -1646,7 +1648,7 @@ async function storyboardCut() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Export failed.');
     addOutput('Storyboard Cut', data, 'sequence');
-    logEdit('storyboard_cut', { body: body.length, totalSec: +(+plan.totalSec).toFixed(1), reachedMin: !!plan.reachedMin });
+    logEdit('storyboard_cut', { body: body.length, totalSec: +(+plan.totalSec).toFixed(1), reachedMin: !!plan.reachedMin, blueprint });
     toast(`Story package ready — hook + ${body.length} moments, ${fmt(plan.totalSec)} ✓`);
   } catch (e) {
     toast(e.message, true);

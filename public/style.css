@@ -1388,6 +1388,14 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
   box-shadow:0 6px 18px -6px rgba(45,118,255,.6); transition:transform .12s, box-shadow .15s; letter-spacing:.01em; }
 .storyCutBtn:hover{ transform:translateY(-1px); box-shadow:0 9px 24px -6px rgba(45,118,255,.75); }
 .storyCutBtn:disabled{ opacity:.65; cursor:not-allowed; transform:none; }
+/* Narrative blueprint picker under the Storyboard Cut button. */
+.blueprintRow{ display:flex; align-items:center; gap:8px; width:100%; margin:-2px 0 12px;
+  font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+.blueprintRow > span{ flex:0 0 auto; }
+.blueprintSel{ flex:1 1 auto; min-width:0; padding:6px 8px; font-size:12px; text-transform:none;
+  letter-spacing:0; color:var(--text); background:var(--panel2); border:1px solid var(--line);
+  border-radius:7px; cursor:pointer; }
+.blueprintSel:focus{ outline:2px solid rgba(45,118,255,.5); outline-offset:1px; }
 
 /* ===== Step 5: Correction Capture popover ===== */
 .correctionShelf{ background:rgba(37,37,42,.96); border:1px solid #2d76ff; border-radius:8px; padding:10px 12px; margin-bottom:10px; box-shadow:0 6px 20px -6px rgba(0,0,0,.6); }
