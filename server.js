@@ -26,6 +26,7 @@ import { applyGameEvents } from './lib/gameEvents.js';
 import { selectStoryboard } from './lib/storyboard.js';
 import { scoreHook, hookCandidates } from './lib/hooks.js';
 import { buildChapters, suggestHashtags, buildDescription } from './lib/publishkit.js';
+import { coverCandidates } from './lib/thumbnails.js';
 import { consumeFeedback } from './lib/feedbackConsumer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -392,6 +393,36 @@ app.get('/api/thumb', async (req, res) => {
     const dir = path.join(RENDERS, req.query.id, 'thumbs');
     const out = path.join(dir, `${t.toFixed(1)}.jpg`);
     if (!fs.existsSync(out)) await thumbGate(() => grabFrame(file, t, out, { width: 480 }));
+    res.sendFile(out);
+  } catch (e) { res.status(500).end(String(e.message || e)); }
+});
+
+// Cover-frame candidates for a clip (peak reaction / loudest / scene change). Pure compile — the
+// client renders each returned `t` as an <img src="/api/cover?...">.
+app.post('/api/covers', (req, res) => {
+  try {
+    const clip = req.body.clip;
+    if (!clip) return res.status(400).json({ error: 'No clip provided.' });
+    const candidates = coverCandidates(clip, {
+      envelope: Array.isArray(req.body.envelope) ? req.body.envelope : [],
+      sceneCuts: Array.isArray(req.body.sceneCuts) ? req.body.sceneCuts : [],
+      count: Number(req.body.count) || 3,
+    });
+    res.json({ candidates });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
+// Full-res cover still at time t (vs /api/thumb's 480px filmstrip frames). Cached by t+width in a
+// covers/ dir so a picked cover downloads instantly.
+app.get('/api/cover', async (req, res) => {
+  try {
+    const file = await sourceFor(req.query.id);
+    if (!file) return res.status(404).end();
+    const t = Math.max(0, parseFloat(req.query.t) || 0);
+    const w = Math.min(1920, Math.max(320, parseInt(req.query.w, 10) || 1280));
+    const dir = path.join(RENDERS, req.query.id, 'covers');
+    const out = path.join(dir, `${t.toFixed(2)}_${w}.jpg`);
+    if (!fs.existsSync(out)) await thumbGate(() => grabFrame(file, t, out, { width: w }));
     res.sendFile(out);
   } catch (e) { res.status(500).end(String(e.message || e)); }
 });

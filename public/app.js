@@ -807,6 +807,40 @@ async function autoTitleClips() {
 }
 $('#pkTitleBtn')?.addEventListener('click', autoTitleClips);
 $('#pkGenBtn')?.addEventListener('click', generatePublishKit);
+
+// ---- Thumbnail Cover Selector: peak-frame candidates for the top moment. The picker asks the
+// backend for candidate timestamps (reaction peak / loudest / scene change) then renders each as a
+// preview still; clicking opens the full-res JPG (right-click → Save, or it downloads). ----
+async function suggestCovers() {
+  const btn = $('#cpBtn'); if (!btn) return;
+  if (!state.proj) { toast('Load and analyze a video first.', true); return; }
+  const kept = (state.highlights || []).filter((h) => h.keep);
+  const pool = (kept.length ? kept : (state.highlights || []));
+  const clip = pool.slice().sort((a, b) => (b.score || 0) - (a.score || 0))[0];
+  if (!clip) { toast('No moments yet — analyze / rank first.', true); return; }
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Grabbing…';
+  try {
+    const res = await fetch('/api/covers', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clip: { start: clip.start, end: clip.end, t: clip.t },
+        envelope: (state.proj.envelope) || [], sceneCuts: (state.proj.sceneCuts) || [],
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Covers failed.');
+    const id = encodeURIComponent(state.proj.id);
+    const grid = $('#cpGrid');
+    grid.innerHTML = (data.candidates || []).map((c) =>
+      `<a class="cpCard" href="/api/cover?id=${id}&t=${c.t}&w=1280" download="cover-${c.t}.jpg" title="Open / save full-res">`
+      + `<img src="/api/cover?id=${id}&t=${c.t}&w=480" alt="${escapeHtml(c.label)}"/>`
+      + `<span class="cpLabel">${escapeHtml(c.label)} · ${fmt(c.t)}</span></a>`).join('');
+    grid.classList.toggle('hidden', !(data.candidates || []).length);
+    logEdit('cover_suggest', { clip: clip.id, candidates: (data.candidates || []).length });
+    toast(`${(data.candidates || []).length} cover frame${(data.candidates || []).length === 1 ? '' : 's'} for your top moment.`);
+  } catch (e) { toast(e.message, true); } finally { btn.disabled = false; btn.textContent = orig; }
+}
+$('#cpBtn')?.addEventListener('click', suggestCovers);
 $('#pkCopyBtn')?.addEventListener('click', async () => {
   const ta = $('#pkText'); if (!ta || !ta.value) return;
   try { await navigator.clipboard.writeText(ta.value); } catch { ta.select(); document.execCommand('copy'); }
