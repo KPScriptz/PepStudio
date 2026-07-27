@@ -1328,6 +1328,12 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
 .paceStat{ margin-top:9px; padding:8px 10px; font-size:12px; color:var(--text); background:var(--bg);
   border:1px solid var(--line); border-radius:8px; line-height:1.5; }
 .paceCut{ color:#f59e0b; font-weight:700; }
+/* One-Shot Publish button — the marquee publishing action. */
+.publishAllBtn{ width:100%; margin:0 0 12px; background:linear-gradient(135deg,#8b5cf6,#6d28d9) !important; color:#fff !important;
+  border:0 !important; box-shadow:0 6px 18px -6px rgba(139,92,246,.55); }
+.publishAllBtn:hover{ filter:brightness(1.06); }
+.publishAllBtn:disabled{ opacity:.7; cursor:not-allowed; filter:none; }
+.publishAllBtn small{ opacity:.85; }
 .pkBody{ margin-top:9px; display:flex; flex-direction:column; gap:8px; }
 .pkText{ width:100%; box-sizing:border-box; resize:vertical; font:12px/1.5 ui-monospace,"SF Mono",Menlo,monospace;
   color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:9px 10px; }

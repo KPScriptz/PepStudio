@@ -814,9 +814,7 @@ $('#pkGenBtn')?.addEventListener('click', generatePublishKit);
 async function suggestCovers() {
   const btn = $('#cpBtn'); if (!btn) return;
   if (!state.proj) { toast('Load and analyze a video first.', true); return; }
-  const kept = (state.highlights || []).filter((h) => h.keep);
-  const pool = (kept.length ? kept : (state.highlights || []));
-  const clip = pool.slice().sort((a, b) => (b.score || 0) - (a.score || 0))[0];
+  const clip = activeClip();
   if (!clip) { toast('No moments yet — analyze / rank first.', true); return; }
   const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Grabbing…';
   try {
@@ -844,11 +842,16 @@ $('#cpBtn')?.addEventListener('click', suggestCovers);
 
 // ---- Micro-cut Pacing: jump-cut internal dead air out of the top moment. Preview shows the gain
 // per level; export renders the tightened sub-segments through the existing sequence pipeline. ----
-function pacingTargetClip() {
-  const pool = (state.highlights || []).filter((h) => h.keep);
-  const list = pool.length ? pool : (state.highlights || []);
-  const sel = list.find((h) => h.id === state.selected);
-  return sel || list.slice().sort((a, b) => (b.score || 0) - (a.score || 0))[0] || null;
+// The clip the context tools (Covers, Micro-Cut) act on: the clip explicitly SELECTED on the
+// timeline (even if it isn't "kept" — that's what the user is pointing at), else the top-scoring
+// kept clip, else the top moment overall. Shared so Covers + Pacing target the same clip.
+function activeClip() {
+  const hs = state.highlights || [];
+  const sel = hs.find((h) => h.id === state.selected && Number.isFinite(h.start) && Number.isFinite(h.end) && h.end > h.start);
+  if (sel) return sel;
+  const kept = hs.filter((h) => h.keep);
+  const pool = kept.length ? kept : hs;
+  return pool.slice().sort((a, b) => (b.score || 0) - (a.score || 0))[0] || null;
 }
 function pacingIsSequence() { return !!($('#paceSeq') && $('#paceSeq').checked); }
 // One shared pacing fetch for both scopes → { label, origSec, tightSec, removedSec, cuts, segments, scopeLabel }.
@@ -864,7 +867,7 @@ async function fetchPacing(level) {
     if (d.error) throw new Error(d.error);
     return { ...d, scopeLabel: `${d.clips} clips` };
   }
-  const clip = pacingTargetClip(); if (!clip) throw new Error('No moments yet — analyze / rank first.');
+  const clip = activeClip(); if (!clip) throw new Error('No moments yet — analyze / rank first.');
   const d = await (await fetch('/api/pacing/preview', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id: state.proj.id, clip: { start: clip.start, end: clip.end }, level }),
@@ -912,6 +915,23 @@ async function exportTightPacing() {
 }
 $('#pacePreviewBtn')?.addEventListener('click', previewPacing);
 $('#paceExportBtn')?.addEventListener('click', exportTightPacing);
+
+// ---- One-Shot Publish: run the whole publishing handoff in one pass — Auto-Titles → Upload Kit
+// → Cover frames. Each sub-step handles its own errors/toasts (never throws), so the chain always
+// completes; the button label narrates progress. ----
+async function publishEverything() {
+  const btn = $('#publishAllBtn'); if (!btn) return;
+  if (!state.proj) { toast('Load and analyze a video first.', true); return; }
+  if (!(state.highlights || []).some((h) => h.keep)) { toast('Rank or Story Cut first, then Publish Everything.', true); return; }
+  const o = btn.innerHTML; btn.disabled = true;
+  try {
+    btn.textContent = 'Auto-titling…'; await autoTitleClips();
+    btn.textContent = 'Building upload kit…'; await generatePublishKit();
+    btn.textContent = 'Grabbing covers…'; await suggestCovers();
+    toast('Publish kit ready — titles, chapters, hashtags + cover frames ✓');
+  } finally { btn.disabled = false; btn.innerHTML = o; }
+}
+$('#publishAllBtn')?.addEventListener('click', publishEverything);
 $('#pkCopyBtn')?.addEventListener('click', async () => {
   const ta = $('#pkText'); if (!ta || !ta.value) return;
   try { await navigator.clipboard.writeText(ta.value); } catch { ta.select(); document.execCommand('copy'); }
