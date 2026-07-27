@@ -401,6 +401,19 @@ app.get('/api/thumb', async (req, res) => {
 // Micro-cut pacing preview: detect a clip's FINE internal silences (audio-only, fast -ss seek) at the
 // chosen aggression level, then jump-cut them out. Returns the keep sub-segments + pacing stats; the
 // client renders those through /api/export/sequence to produce the tightened clip. No render here.
+// Detect a clip's FINE internal silences (audio-only, fast -ss seek) at the level's threshold, then
+// jump-cut them → the keep sub-segments + stats. Shared by the single-clip + whole-sequence routes.
+async function paceClip(file, s, e, lvl) {
+  let stderr = '';
+  await ffmpeg([
+    '-nostdin', '-ss', String(s), '-t', String((e - s).toFixed(3)), '-i', file, '-vn',
+    '-af', `silencedetect=noise=${lvl.db}dB:d=${lvl.minSilence}`, '-f', 'null', '-',
+  ], { onStderr: (x) => { stderr += x; } }).catch(() => {});
+  // silencedetect times are clip-relative (the -ss reset PTS to 0) → offset back to source time.
+  const silences = parseSilences(stderr).map(([a, b]) => [s + a, s + b]);
+  return tightenClip({ start: s, end: e }, silences, { minSilence: lvl.minSilence });
+}
+
 app.post('/api/pacing/preview', async (req, res) => {
   try {
     const file = await sourceFor(req.body.id);
@@ -409,15 +422,32 @@ app.post('/api/pacing/preview', async (req, res) => {
     const e = Number(req.body.clip && req.body.clip.end);
     if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) return res.status(400).json({ error: 'Invalid clip.' });
     const lvl = PACING_LEVELS[req.body.level] || PACING_LEVELS.tight;
-    let stderr = '';
-    await ffmpeg([
-      '-nostdin', '-ss', String(s), '-t', String((e - s).toFixed(3)), '-i', file, '-vn',
-      '-af', `silencedetect=noise=${lvl.db}dB:d=${lvl.minSilence}`, '-f', 'null', '-',
-    ], { onStderr: (x) => { stderr += x; } }).catch(() => {});
-    // silencedetect times are clip-relative (the -ss reset PTS to 0) → offset back to source time.
-    const silences = parseSilences(stderr).map(([a, b]) => [s + a, s + b]);
-    const result = tightenClip({ start: s, end: e }, silences, { minSilence: lvl.minSilence });
+    const result = await paceClip(file, s, e, lvl);
     res.json({ level: req.body.level || 'tight', label: lvl.label, ...result });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
+// Whole-sequence micro-cut: tighten EVERY kept clip (bounded-parallel silence scans), then flatten
+// all the keep sub-segments into one ordered list the client renders via /api/export/sequence. A
+// 5-min raw assembly collapses into a zero-fluff master in one pass. Returns the segments + totals.
+app.post('/api/pacing/sequence', async (req, res) => {
+  try {
+    const file = await sourceFor(req.body.id);
+    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const clips = capBatch(req.body.clips)
+      .map((c) => [Number(c.start), Number(c.end)])
+      .filter(([s, e]) => Number.isFinite(s) && Number.isFinite(e) && e > s)
+      .sort((a, b) => a[0] - b[0]);
+    if (!clips.length) return res.status(400).json({ error: 'No clips in the sequence.' });
+    const lvl = PACING_LEVELS[req.body.level] || PACING_LEVELS.tight;
+    const results = await mapLimit(clips, PACK_CONCURRENCY, ([s, e]) => paceClip(file, s, e, lvl));
+    const segments = [];
+    let origSec = 0, tightSec = 0, cuts = 0;
+    for (const r of results) { segments.push(...r.segments); origSec += r.origSec; tightSec += r.tightSec; cuts += r.cuts; }
+    res.json({
+      level: req.body.level || 'tight', label: lvl.label, segments, clips: clips.length,
+      origSec: +origSec.toFixed(1), tightSec: +tightSec.toFixed(1), removedSec: +(origSec - tightSec).toFixed(1), cuts,
+    });
   } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
 

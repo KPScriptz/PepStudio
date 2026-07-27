@@ -850,22 +850,38 @@ function pacingTargetClip() {
   const sel = list.find((h) => h.id === state.selected);
   return sel || list.slice().sort((a, b) => (b.score || 0) - (a.score || 0))[0] || null;
 }
+function pacingIsSequence() { return !!($('#paceSeq') && $('#paceSeq').checked); }
+// One shared pacing fetch for both scopes → { label, origSec, tightSec, removedSec, cuts, segments, scopeLabel }.
+async function fetchPacing(level) {
+  if (pacingIsSequence()) {
+    const clips = (state.highlights || []).filter((h) => h.keep).sort((a, b) => a.start - b.start)
+      .map((h) => ({ start: h.start, end: h.end }));
+    if (!clips.length) throw new Error('Keep some clips (Rank or Story Cut) first.');
+    const d = await (await fetch('/api/pacing/sequence', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: state.proj.id, clips, level }),
+    })).json();
+    if (d.error) throw new Error(d.error);
+    return { ...d, scopeLabel: `${d.clips} clips` };
+  }
+  const clip = pacingTargetClip(); if (!clip) throw new Error('No moments yet — analyze / rank first.');
+  const d = await (await fetch('/api/pacing/preview', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: state.proj.id, clip: { start: clip.start, end: clip.end }, level }),
+  })).json();
+  if (d.error) throw new Error(d.error);
+  return { ...d, scopeLabel: clip.title || `Clip ${fmt(clip.start)}` };
+}
 async function previewPacing() {
   const btn = $('#pacePreviewBtn'); if (!btn) return;
   if (!state.proj) { toast('Load and analyze a video first.', true); return; }
-  const clip = pacingTargetClip(); if (!clip) { toast('No moments yet — analyze / rank first.', true); return; }
   const level = ($('#paceLevel') && $('#paceLevel').value) || 'tight';
   const o = btn.textContent; btn.disabled = true; btn.textContent = 'Scanning…';
   try {
-    const res = await fetch('/api/pacing/preview', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: state.proj.id, clip: { start: clip.start, end: clip.end }, level }),
-    });
-    const d = await res.json();
-    if (!res.ok) throw new Error(d.error || 'Pacing scan failed.');
+    const d = await fetchPacing(level);
     const st = $('#paceStat');
     if (st) {
-      st.innerHTML = `<b>${escapeHtml(clip.title || `Clip ${fmt(clip.start)}`)}</b> · ${d.origSec}s → <b>${d.tightSec}s</b>`
+      st.innerHTML = `<b>${escapeHtml(d.scopeLabel)}</b> · ${d.origSec}s → <b>${d.tightSec}s</b>`
         + ` · ${d.cuts} jump-cut${d.cuts === 1 ? '' : 's'} · <span class="paceCut">−${d.removedSec}s dead air</span>`;
       st.classList.remove('hidden');
     }
@@ -875,25 +891,23 @@ async function previewPacing() {
 async function exportTightPacing() {
   const btn = $('#paceExportBtn'); if (!btn) return;
   if (!state.proj) { toast('Load and analyze a video first.', true); return; }
-  const clip = pacingTargetClip(); if (!clip) { toast('No moments yet — analyze / rank first.', true); return; }
   const level = ($('#paceLevel') && $('#paceLevel').value) || 'tight';
-  const o = btn.textContent; btn.disabled = true; btn.textContent = 'Tightening…'; showProgress('Rendering the tightened short…');
+  const seq = pacingIsSequence();
+  const o = btn.textContent; btn.disabled = true; btn.textContent = 'Tightening…';
+  showProgress(seq ? 'Tightening every clip into one master cut…' : 'Rendering the tightened short…');
   try {
-    const pr = await (await fetch('/api/pacing/preview', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: state.proj.id, clip: { start: clip.start, end: clip.end }, level }),
-    })).json();
+    const pr = await fetchPacing(level);
     if (!pr.segments || !pr.segments.length) { toast('No dead air to cut at this level.', true); return; }
     const clips = pr.segments.map((g) => ({ start: g.start, end: g.end, overlays: [] }));
     const res = await fetch('/api/export/sequence', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: state.proj.id, vertical: true, zoom: false, clips }),
+      body: JSON.stringify({ id: state.proj.id, vertical: !seq, zoom: false, clips }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Export failed.');
-    addOutput('Tight short', data, 'sequence');
-    logEdit('micro_cut', { clip: clip.id, level, cuts: pr.cuts, removedSec: pr.removedSec });
-    toast(`Tight short ready — ${pr.origSec}s → ${pr.tightSec}s ✓`);
+    addOutput(seq ? 'Tight sequence' : 'Tight short', data, 'sequence');
+    logEdit('micro_cut', { scope: seq ? 'sequence' : 'clip', level, cuts: pr.cuts, removedSec: pr.removedSec });
+    toast(`${seq ? 'Tight master cut' : 'Tight short'} ready — ${pr.origSec}s → ${pr.tightSec}s ✓`);
   } catch (e) { toast(e.message, true); } finally { hideProgress(); btn.disabled = false; btn.textContent = o; }
 }
 $('#pacePreviewBtn')?.addEventListener('click', previewPacing);
