@@ -1322,6 +1322,12 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
 .cpCard:hover{ border-color:var(--px-accent,#2d76ff); transform:translateY(-1px); }
 .cpCard img{ display:block; width:100%; aspect-ratio:16/9; object-fit:cover; background:#000; }
 .cpLabel{ font-size:10px; color:var(--muted); padding:3px 5px 5px; line-height:1.2; }
+/* Micro-cut Pacing control. */
+.pacingBox{ margin:10px 0 6px; padding:11px; border:1px solid var(--line); border-radius:10px; background:var(--panel2); }
+.pacingSel{ max-width:140px; }
+.paceStat{ margin-top:9px; padding:8px 10px; font-size:12px; color:var(--text); background:var(--bg);
+  border:1px solid var(--line); border-radius:8px; line-height:1.5; }
+.paceCut{ color:#f59e0b; font-weight:700; }
 .pkBody{ margin-top:9px; display:flex; flex-direction:column; gap:8px; }
 .pkText{ width:100%; box-sizing:border-box; resize:vertical; font:12px/1.5 ui-monospace,"SF Mono",Menlo,monospace;
   color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:9px 10px; }

@@ -186,6 +186,22 @@
               <div id="cpGrid" class="cpGrid hidden"></div>
               <div class="hint">Peak-frame candidates for your top moment — reaction peak, loudest beat, scene change. Click one to open the full-res still.</div>
             </div>
+
+            <div class="pacingBox">
+              <div class="pkHead"><span>Micro-cut Pacing</span>
+                <select id="paceLevel" class="blueprintSel pacingSel">
+                  <option value="natural">Natural</option>
+                  <option value="tight" selected>Tight</option>
+                  <option value="relentless">Relentless</option>
+                </select>
+              </div>
+              <div id="paceStat" class="paceStat hidden"></div>
+              <div class="pkBtns" style="margin-top:9px">
+                <button id="pacePreviewBtn" class="pkGhost">Preview</button>
+                <button id="paceExportBtn" class="pkGen">Export tight short</button>
+              </div>
+              <div class="hint">Jump-cuts internal dead air out of your top moment for relentless pacing. Preview the gain, then export the tightened short.</div>
+            </div>
             <div class="field">
               <label>TikTok clips</label>
               <select id="tiktokCount">

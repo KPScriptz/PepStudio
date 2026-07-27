@@ -18,7 +18,8 @@ import { buildTimelineZoomExpression } from './lib/zooms.js';
 import { hookPenalty, pacingTag, triggerBoost } from './lib/retention.js';
 import { downloadUrl, probeUrl, ytdlpBin, SUPPORTED_URL } from './lib/fetch.js';
 import { buildEDL, buildFcp7Xml } from './lib/interchange.js';
-import { probe } from './lib/ff.js';
+import { probe, ffmpeg } from './lib/ff.js';
+import { tightenClip, parseSilences, PACING_LEVELS } from './lib/pacing.js';
 import { ocrAvailable } from './lib/ocr.js';
 import { analyzeNBA } from './lib/nba2k.js';
 import { analyzePalworld } from './lib/palworld.js';
@@ -395,6 +396,29 @@ app.get('/api/thumb', async (req, res) => {
     if (!fs.existsSync(out)) await thumbGate(() => grabFrame(file, t, out, { width: 480 }));
     res.sendFile(out);
   } catch (e) { res.status(500).end(String(e.message || e)); }
+});
+
+// Micro-cut pacing preview: detect a clip's FINE internal silences (audio-only, fast -ss seek) at the
+// chosen aggression level, then jump-cut them out. Returns the keep sub-segments + pacing stats; the
+// client renders those through /api/export/sequence to produce the tightened clip. No render here.
+app.post('/api/pacing/preview', async (req, res) => {
+  try {
+    const file = await sourceFor(req.body.id);
+    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const s = Number(req.body.clip && req.body.clip.start);
+    const e = Number(req.body.clip && req.body.clip.end);
+    if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) return res.status(400).json({ error: 'Invalid clip.' });
+    const lvl = PACING_LEVELS[req.body.level] || PACING_LEVELS.tight;
+    let stderr = '';
+    await ffmpeg([
+      '-nostdin', '-ss', String(s), '-t', String((e - s).toFixed(3)), '-i', file, '-vn',
+      '-af', `silencedetect=noise=${lvl.db}dB:d=${lvl.minSilence}`, '-f', 'null', '-',
+    ], { onStderr: (x) => { stderr += x; } }).catch(() => {});
+    // silencedetect times are clip-relative (the -ss reset PTS to 0) → offset back to source time.
+    const silences = parseSilences(stderr).map(([a, b]) => [s + a, s + b]);
+    const result = tightenClip({ start: s, end: e }, silences, { minSilence: lvl.minSilence });
+    res.json({ level: req.body.level || 'tight', label: lvl.label, ...result });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
 
 // Cover-frame candidates for a clip (peak reaction / loudest / scene change). Pure compile — the
