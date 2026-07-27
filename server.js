@@ -25,6 +25,7 @@ import { analyzePalworld } from './lib/palworld.js';
 import { applyGameEvents } from './lib/gameEvents.js';
 import { selectStoryboard } from './lib/storyboard.js';
 import { scoreHook, hookCandidates } from './lib/hooks.js';
+import { buildChapters, suggestHashtags, buildDescription } from './lib/publishkit.js';
 import { consumeFeedback } from './lib/feedbackConsumer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -134,6 +135,20 @@ async function sourceFor(id) {
 }
 
 const tildeExpand = (p) => (p && p.startsWith('~') ? path.join(process.env.HOME, p.slice(1)) : p);
+
+// Publish Kit: turn a finished cut (kept clips, in order) into upload-ready copy — YouTube
+// chapters, hashtags, and a description block. Pure compile, no ffmpeg, fast.
+app.post('/api/publishkit', (req, res) => {
+  try {
+    const clips = Array.isArray(req.body.clips) ? req.body.clips : [];
+    if (!clips.length) return res.status(400).json({ error: 'No clips — build a cut first.' });
+    const hookSec = Number(req.body.hookSec) || 0;
+    const chapters = buildChapters(clips, { hookSec });
+    const hashtags = suggestHashtags(clips, { game: req.body.game || '' });
+    const description = buildDescription({ title: req.body.title || '', chapters, hashtags });
+    res.json({ chapters, hashtags, description });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
 
 // User preferences (theme, etc.) persisted server-side in the DATA dir. The packaged app binds a
 // fresh random port every launch (PORT=0), which wipes localStorage (keyed by origin:port) — so a

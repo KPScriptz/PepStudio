@@ -755,6 +755,36 @@ $('#seqExportBtn')?.addEventListener('click', async () => {
   } catch (e) { toast(e.message, true); } finally { hideProgress(); $('#seqExportBtn').disabled = false; }
 });
 
+// ---- Publish Kit: turn the kept cut into upload-ready copy (YouTube chapters + hashtags +
+// description). Nothing is posted — it fills a textarea the creator copies. ----
+async function generatePublishKit() {
+  const btn = $('#pkGenBtn'); if (!btn) return;
+  if (!state.proj) { toast('Load and analyze a video first.', true); return; }
+  const clips = (state.highlights || []).filter((h) => h.keep).sort((a, b) => a.start - b.start)
+    .map((h) => ({ start: h.start, end: h.end, title: h.title || '', snippet: h.snippet || '' }));
+  if (!clips.length) { toast('Keep some clips (Rank or Story Cut) first, then generate the kit.', true); return; }
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Building…';
+  try {
+    const res = await fetch('/api/publishkit', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clips, game: state.proj.name || '', title: state.proj.name || '' }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Kit failed.');
+    const ta = $('#pkText'); if (ta) ta.value = data.description || '';
+    $('#pkBody')?.classList.remove('hidden');
+    const nCh = (data.chapters && data.chapters.chapters || []).length;
+    logEdit('publish_kit', { clips: clips.length, chapters: nCh, tags: (data.hashtags || []).length });
+    toast(`Upload kit ready — ${nCh} chapter${nCh === 1 ? '' : 's'}, ${(data.hashtags || []).length} hashtags.`);
+  } catch (e) { toast(e.message, true); } finally { btn.disabled = false; btn.textContent = orig; }
+}
+$('#pkGenBtn')?.addEventListener('click', generatePublishKit);
+$('#pkCopyBtn')?.addEventListener('click', async () => {
+  const ta = $('#pkText'); if (!ta || !ta.value) return;
+  try { await navigator.clipboard.writeText(ta.value); } catch { ta.select(); document.execCommand('copy'); }
+  toast('Description copied ✓');
+});
+
 // stop preview/verify playback at the marked end time (highlight or ghost segment)
 player.addEventListener('timeupdate', () => {
   const stoppers = [...state.highlights, ...(state.segments || [])];

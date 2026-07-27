@@ -1299,6 +1299,20 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
 .aiCbBody{ display:flex; flex-direction:column; min-width:0; }
 .aiCbLabel{ font-size:12px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .aiCbMeta{ font-size:11px; color:var(--px-muted,#8c919b); }
+/* Publish Kit — upload-ready chapters/description/hashtags card. */
+.publishKit{ margin:12px 0 6px; padding:11px; border:1px solid var(--line); border-radius:10px; background:var(--panel2); }
+.pkHead{ display:flex; align-items:center; justify-content:space-between; font-size:11px; font-weight:800;
+  text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+.pkGen{ padding:6px 12px; font-size:12px; font-weight:700; color:#fff; border:0; border-radius:7px; cursor:pointer;
+  background:linear-gradient(135deg,#2d76ff,#0056b3); }
+.pkGen:hover{ filter:brightness(1.08); }
+.pkGen:disabled{ opacity:.6; cursor:not-allowed; }
+.pkBody{ margin-top:9px; display:flex; flex-direction:column; gap:8px; }
+.pkText{ width:100%; box-sizing:border-box; resize:vertical; font:12px/1.5 ui-monospace,"SF Mono",Menlo,monospace;
+  color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:9px 10px; }
+.pkCopy{ align-self:flex-start; padding:6px 12px; font-size:12px; font-weight:600; cursor:pointer;
+  color:var(--text); background:var(--panel); border:1px solid var(--line); border-radius:7px; }
+.pkCopy:hover{ border-color:var(--px-accent,#2d76ff); }
 .aiAdvanced{ margin-top:10px; border-top:1px solid var(--px-divider, rgba(255,255,255,.05)); padding-top:8px; }
 .aiAdvanced summary{ cursor:pointer; font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--px-muted,#8c919b); list-style:none; padding:4px 2px; }
 .aiAdvanced summary::-webkit-details-marker{ display:none; }
