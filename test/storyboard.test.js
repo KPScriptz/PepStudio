@@ -51,6 +51,15 @@ function run() {
   assert.deepStrictEqual(selectStoryboard([]), { hook: null, body: [], totalSec: 0, reachedMin: false }, 'empty input safe');
   console.log('✅ under-min is honest (no padding).');
 
+  // --- Fast-Cut blueprint: snappier hook + reaction-dominant vs Balanced ---
+  const reactHeavy = wide(40).map((h, i) => ({ ...h, reactionScore: i % 4 === 0 ? 7 : 0.5 }));
+  const bal = selectStoryboard(reactHeavy, { blueprint: 'balanced' });
+  const fast = selectStoryboard(reactHeavy, { blueprint: 'fast' });
+  assert.ok(fast.hookSec <= 5, `Fast-Cut hook is snappy (<=5s), got ${fast.hookSec}`);
+  assert.ok(fast.hookSec < bal.hookSec, 'Fast-Cut hook shorter than Balanced');
+  assert.strictEqual(fast.blueprint, 'fast', 'echoes the fast blueprint');
+  console.log(`✅ Fast-Cut blueprint: ${fast.hookSec}s hook (vs Balanced ${bal.hookSec}s), reaction-led.`);
+
   // --- Palworld rules: static HUD level text must NOT fire (the false-positive fix) ---
   const hud = [['LV 02'], ['Lv04', 'LV07'], ['Lv5 Mama Car 1'], ['3 Cattiva']];
   const falsePos = hud.reduce((n, lines) => n + matchTextEvents(lines.map((t) => ({ text: t })), PAL_RULES).length, 0);

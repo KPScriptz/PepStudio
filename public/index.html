@@ -125,10 +125,11 @@
           <label id="blueprintRow" class="blueprintRow rtabPane" data-rtab="curate" title="Narrative blueprint: which kind of moments lead the cut, and how long the cold-open hook runs.">
             <span>Blueprint</span>
             <select id="blueprintSel" class="blueprintSel">
-              <option value="balanced" selected>Balanced</option>
-              <option value="chaos">Chaos — laughter-led, snappy</option>
-              <option value="clutch">Clutch vs Fail — tension → payoff</option>
-              <option value="story">Storytime — narrative arc</option>
+              <option value="balanced" data-pace="natural" selected>Balanced</option>
+              <option value="chaos" data-pace="tight">Chaos — laughter-led, snappy</option>
+              <option value="clutch" data-pace="natural">Clutch vs Fail — tension → payoff</option>
+              <option value="story" data-pace="natural">Storytime — narrative arc</option>
+              <option value="fast" data-pace="relentless">Fast-Cut — high-density, reaction-led</option>
             </select>
           </label>
           <div id="hookLab" class="hookLab hidden rtabPane" data-rtab="curate"></div>

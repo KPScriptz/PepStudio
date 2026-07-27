@@ -805,6 +805,13 @@ async function autoTitleClips() {
     toast(`Auto-titled ${n} clip${n === 1 ? '' : 's'}.`);
   } catch (e) { toast(e.message, true); } finally { btn.disabled = false; btn.textContent = orig; }
 }
+// Picking a Storyboard blueprint pre-sets the Micro-Cut level to the pace that matches its style
+// (e.g. Fast-Cut → Relentless) — a suggestion the user can still override in the Publish pane.
+$('#blueprintSel')?.addEventListener('change', (e) => {
+  const pace = e.target.selectedOptions[0] && e.target.selectedOptions[0].dataset.pace;
+  const paceSel = $('#paceLevel');
+  if (pace && paceSel) paceSel.value = pace;
+});
 $('#pkTitleBtn')?.addEventListener('click', autoTitleClips);
 $('#pkGenBtn')?.addEventListener('click', generatePublishKit);
 
