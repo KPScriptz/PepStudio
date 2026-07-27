@@ -1307,6 +1307,11 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
   background:linear-gradient(135deg,#2d76ff,#0056b3); }
 .pkGen:hover{ filter:brightness(1.08); }
 .pkGen:disabled{ opacity:.6; cursor:not-allowed; }
+.pkBtns{ display:flex; gap:6px; }
+.pkGhost{ padding:6px 10px; font-size:12px; font-weight:600; cursor:pointer; color:var(--text);
+  background:var(--panel); border:1px solid var(--line); border-radius:7px; }
+.pkGhost:hover{ border-color:var(--px-accent,#2d76ff); }
+.pkGhost:disabled{ opacity:.6; cursor:not-allowed; }
 .pkBody{ margin-top:9px; display:flex; flex-direction:column; gap:8px; }
 .pkText{ width:100%; box-sizing:border-box; resize:vertical; font:12px/1.5 ui-monospace,"SF Mono",Menlo,monospace;
   color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:9px 10px; }

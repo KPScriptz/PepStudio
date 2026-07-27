@@ -761,7 +761,8 @@ async function generatePublishKit() {
   const btn = $('#pkGenBtn'); if (!btn) return;
   if (!state.proj) { toast('Load and analyze a video first.', true); return; }
   const clips = (state.highlights || []).filter((h) => h.keep).sort((a, b) => a.start - b.start)
-    .map((h) => ({ start: h.start, end: h.end, title: h.title || '', snippet: h.snippet || '' }));
+    .map((h) => ({ start: h.start, end: h.end, title: h.title || '', snippet: h.snippet || '',
+      reactionScore: h.reactionScore || 0, tag: (h.hits && h.hits[0] && h.hits[0].tag) || '' }));
   if (!clips.length) { toast('Keep some clips (Rank or Story Cut) first, then generate the kit.', true); return; }
   const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Building…';
   try {
@@ -778,6 +779,33 @@ async function generatePublishKit() {
     toast(`Upload kit ready — ${nCh} chapter${nCh === 1 ? '' : 's'}, ${(data.hashtags || []).length} hashtags.`);
   } catch (e) { toast(e.message, true); } finally { btn.disabled = false; btn.textContent = orig; }
 }
+// Auto-title clips: punchy Title-Cased names from each kept clip's snippet (offline). Updates the
+// highlight list AND sharpens the Publish Kit chapters. Titles from clips that lack a transcript
+// snippet fall back to editorial labels; clips with a snippet get a real phrase.
+async function autoTitleClips() {
+  const btn = $('#pkTitleBtn'); if (!btn) return;
+  if (!state.proj) { toast('Load and analyze a video first.', true); return; }
+  const kept = (state.highlights || []).filter((h) => h.keep);
+  if (!kept.length) { toast('Keep some clips first, then auto-title.', true); return; }
+  if (!kept.some((h) => h.snippet)) { toast('Rank funny moments first — titles come from the transcript.', true); return; }
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Titling…';
+  try {
+    const clips = kept.map((h) => ({ id: h.id, snippet: h.snippet || '', title: h.title || '',
+      reactionScore: h.reactionScore || 0, tag: (h.hits && h.hits[0] && h.hits[0].tag) || '' }));
+    const res = await fetch('/api/autotitles', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clips }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Auto-title failed.');
+    const byId = Object.fromEntries((data.titles || []).map((t) => [t.id, t.title]));
+    let n = 0;
+    state.highlights.forEach((h) => { if (byId[h.id]) { h.title = byId[h.id]; n++; } });
+    renderHighlights(); draw();
+    logEdit('auto_titles', { titled: n });
+    toast(`Auto-titled ${n} clip${n === 1 ? '' : 's'}.`);
+  } catch (e) { toast(e.message, true); } finally { btn.disabled = false; btn.textContent = orig; }
+}
+$('#pkTitleBtn')?.addEventListener('click', autoTitleClips);
 $('#pkGenBtn')?.addEventListener('click', generatePublishKit);
 $('#pkCopyBtn')?.addEventListener('click', async () => {
   const ta = $('#pkText'); if (!ta || !ta.value) return;

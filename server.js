@@ -11,7 +11,7 @@ import { analyze, analyzeAudio, analyzeVideo } from './lib/analyze.js';
 import { exportLongCut, exportShort, grabFrame, canBurnCaptions, exportSequence } from './lib/exporter.js';
 import { generateCaptions, generateCutCaptions, captionsReady, transcribeRange, transcribeWindows, emphasisChunks, whisperFastModel } from './lib/captions.js';
 import { scoreWindow } from './lib/reactions.js';
-import { heuristicMeta } from './lib/titles.js';
+import { heuristicMeta, smartTitle } from './lib/titles.js';
 import { pepaiReady, generateClipMeta, chatWithPepAI } from './lib/pepai.js';
 import { tightBounds } from './lib/trim.js';
 import { buildTimelineZoomExpression } from './lib/zooms.js';
@@ -135,6 +135,19 @@ async function sourceFor(id) {
 }
 
 const tildeExpand = (p) => (p && p.startsWith('~') ? path.join(process.env.HOME, p.slice(1)) : p);
+
+// Auto-titles: punchy Title-Cased clip names from each clip's transcript snippet (offline,
+// no model). Feeds the highlight list + the Publish Kit chapters. Pure compile.
+app.post('/api/autotitles', (req, res) => {
+  try {
+    const clips = Array.isArray(req.body.clips) ? req.body.clips : [];
+    const titles = clips.map((c) => ({
+      id: c.id,
+      title: smartTitle(c.snippet || c.title || '', { tag: c.tag || '', reactionScore: c.reactionScore || 0 }),
+    }));
+    res.json({ titles });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
 
 // Publish Kit: turn a finished cut (kept clips, in order) into upload-ready copy — YouTube
 // chapters, hashtags, and a description block. Pure compile, no ffmpeg, fast.
