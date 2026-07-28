@@ -13,6 +13,9 @@
   /* Digital-counter mono stack (system fonts only — no external downloads). SF Mono ships on
      macOS; JetBrains Mono / Menlo are fallbacks. tabular-nums is applied at each counter. */
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  /* Neon accent for the playhead + active-clip keyline (NLE studio cue). */
+  --accent-cyan: #00e5ff;
+  --accent-focus: rgba(0,229,255,.20);
   /* Liquid Glass */
   --glass-bg: rgba(22, 24, 30, 0.62);
   --glass-border: rgba(255, 255, 255, 0.08);
@@ -129,6 +132,13 @@ button.primary:hover { border-color: var(--accent); box-shadow: 0 0 0 2px #6ee7f
 /* Right-column tab visibility — separate from `hidden` so tab switching doesn't reveal
    content-gated panes (#hookLab / #clipInsight / #correctionShelf) that manage their own `hidden`. */
 .paneOff { display: none !important; }
+/* Neon focus rings — keyboard/intentional focus only (:focus-visible so a plain click doesn't
+   ring), outline-based so it never fights the existing :focus box-shadows on inputs. */
+button:focus-visible, select:focus-visible, .rtab:focus-visible, .cpCard:focus-visible,
+.hookCand:focus-visible, .aiCallback:focus-visible, .recent-card:focus-visible, [tabindex]:focus-visible {
+  outline:2px solid var(--accent-cyan,#00e5ff); outline-offset:2px;
+  box-shadow:0 0 0 4px var(--accent-focus, rgba(0,229,255,.2));
+}
 
 #progress { display: flex; align-items: center; gap: 12px; }
 .spinner {
@@ -856,11 +866,12 @@ input[type=text]{ font-family:ui-monospace, "SF Mono", monospace; font-size:12.5
 .trackHeaders .trk:nth-child(4){ border-left:3px solid var(--a2-color, #e76f51); }
 .trackHeaders .trk:nth-child(5){ border-left:3px solid var(--a3-color, #f4a261); }
 
-/* Hardware-editor playhead: 1px rule + diamond head marker */
-.seqPlayhead{ width:1px; background:#eab308; box-shadow:none; }
+/* Hardware-editor playhead: glowing neon-cyan rule + diamond head (NLE studio cue) */
+.seqPlayhead{ width:2px; background:var(--accent-cyan,#00e5ff); box-shadow:0 0 8px 1px rgba(0,229,255,.5); }
 .seqPlayhead::before{
   content:''; position:absolute; top:-3px; left:-4px; width:8px; height:8px;
-  border:0; background:#eab308; transform:rotate(45deg); border-radius:1px;
+  border:0; background:var(--accent-cyan,#00e5ff); transform:rotate(45deg); border-radius:1px;
+  box-shadow:0 0 6px rgba(0,229,255,.6);
 }
 
 /* ======================================================================
@@ -1062,7 +1073,8 @@ input[type=text]{ font-family:ui-monospace, "SF Mono", monospace; font-size:12.5
 .tpTime{ font-family:ui-monospace,"SF Mono",Menlo,monospace; letter-spacing:.2px; font-variant-numeric:tabular-nums; }
 
 /* FCP clip selection: click a sequence clip → Apple-blue selection outline */
-.tblk.clip.sel{ outline:2px solid var(--fcp-blue, #007aff); outline-offset:-1px; z-index:7; }
+.tblk.clip.sel{ outline:2px solid var(--accent-cyan,#00e5ff); outline-offset:-1px; z-index:7;
+  box-shadow:0 0 0 1px rgba(0,229,255,.35), 0 0 12px rgba(0,229,255,.3); }
 
 /* ======================================================================
    FCP FULL-BLEED — edge-to-edge flush frame. Kills the web-app outer margin
@@ -1176,10 +1188,10 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
 [data-theme="dark"]{
   /* Layered for DEPTH: bg (deepest) < panel < card (raised) — so sections read as distinct,
      not one flat muddy field. Dividers/text bumped for contrast + legibility. */
-  --px-bg:#0d0e11; --px-panel:#191a1e; --px-tl:#141518;
-  --px-accent:#2d76ff; --px-hover:#24272d;
+  --px-bg:#0a0b0d; --px-panel:#141519; --px-tl:#111216;
+  --px-accent:#2d76ff; --px-hover:#22242a;
   --px-text:#f1f2f4; --px-muted:#a3a8b3; --px-divider:rgba(255,255,255,.09);
-  --px-card:#1f2126; --px-card-border:rgba(255,255,255,.11);
+  --px-card:#1f2127; --px-card-border:rgba(255,255,255,.11);
 }
 /* frame: hairline seams (bg shows through), no padding */
 [data-theme="dark"] #editor.nleGrid:not(.hidden){ background:var(--px-bg); gap:1px; padding:0; }
