@@ -1136,9 +1136,21 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
 }
 
 /* header / toolbar */
-[data-theme="dark"] header{ background:var(--px-panel); border-bottom:1px solid var(--px-line2); }
-[data-theme="dark"] .window-title-tab{ color:var(--px-text); font-size:12px; font-weight:600; letter-spacing:-.01em; }
-[data-theme="dark"] .sub{ color:var(--px-faint); font-size:12px; }
+/* NLE header strip (dark): minimal flat bar with the SEQUENCE TITLE CENTERED (the Premiere/
+   Resolve signature) — title is absolutely centered so surrounding controls don't shift it;
+   the marketing tagline is hidden here (no NLE header carries one). */
+[data-theme="dark"] header{ background:var(--px-panel); border-bottom:1px solid var(--px-line2);
+  position:relative; align-items:center; border-radius:0; }
+[data-theme="dark"] .window-title-tab{
+  position:absolute; left:50%; transform:translateX(-50%);
+  color:var(--px-text); font-size:12px; font-weight:600; letter-spacing:-.01em;
+  background:transparent; border:0; max-width:38vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+[data-theme="dark"] .sub{ display:none; }
+/* keep the status badge clear of the centered title — dock it hard right, beside the theme
+   toggle (margin-left:auto can't work here: the toggle's own auto margin would split the free
+   space and park the badge mid-header, colliding with the absolute-centered title). */
+[data-theme="dark"] header #capStatus{ position:absolute; right:52px; top:50%; transform:translateY(-50%); }
 
 /* pane header labels → tracked micro-caps */
 [data-theme="dark"] .paneTab{
@@ -1220,16 +1232,30 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
 [data-theme="dark"] .nle-right{ background:var(--px-panel); border:0; border-radius:0; box-shadow:none; }
 [data-theme="dark"] .nle-bottom > .card{ background:var(--px-tl); border:0; border-radius:0; box-shadow:none; }
 [data-theme="dark"] .card{ background:transparent; border:0; box-shadow:none; padding:16px; }
-[data-theme="dark"] .nle-right .panels{ padding:6px; }
-/* Right-pane sections read as DEFINED cards (raised bg + hairline border + depth), so the
-   Curate/Publish column has the same polish as light mode instead of a flat muddy strip.
-   Tightened padding/gap (~15-20%) buys back vertical room so more fits without scrolling. */
+[data-theme="dark"] .nle-right .panels{ padding:0; }
+/* RESOLVE-STYLE DOCKED INSPECTOR (dark): sections are flat, edge-to-edge panels separated by
+   strong 1px dividers — no rounded floating cards. Legibility comes from crisp uppercase
+   section headers + the divider grid, not raised card boxes (this is how Resolve avoids the
+   "flat = muddy" trap: structure via seams + type, not elevation). Light keeps Liquid Glass. */
 [data-theme="dark"] .nle-right .panels > .card{
-  background:var(--px-card); border:1px solid var(--px-card-border); border-radius:9px;
-  margin:0 0 6px; padding:10px 12px;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.045), 0 1px 3px rgba(0,0,0,.28);
+  background:transparent; border:0; border-radius:0;
+  margin:0; padding:10px 12px 12px;
+  box-shadow:none;
+  border-bottom:1px solid var(--px-divider);
 }
-[data-theme="dark"] .nle-right .panels > .card + .card{ border-top:1px solid var(--px-card-border); }
+[data-theme="dark"] .nle-right .panels > .card + .card{ border-top:0; }
+[data-theme="dark"] .nle-right .panels > .card:last-child{ border-bottom:0; }
+/* Resolve-style section headers: small, uppercase, letterspaced — the docked-panel label. */
+[data-theme="dark"] .nle-right .panelHead strong{
+  font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--px-muted);
+}
+/* Inner tool groups (Upload Kit / Thumbnail Cover / Micro-cut Pacing / Hook Lab) flatten into
+   sub-sections of the docked panel: hairline top rule instead of boxed cards. */
+[data-theme="dark"] .publishKit, [data-theme="dark"] .coverPicker,
+[data-theme="dark"] .pacingBox, [data-theme="dark"] .hookLab{
+  background:transparent; border:0; border-radius:0; padding:10px 0 2px;
+  border-top:1px solid var(--px-divider); margin:10px 0 0;
+}
 
 /* quiet section labels (no heavy header bars) */
 [data-theme="dark"] .paneTab{ background:transparent; border-bottom:1px solid var(--px-divider);
