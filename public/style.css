@@ -276,7 +276,19 @@ body.reordering .hlRow, body.reordering .card { transition: none; }
 .trackTabs { display: flex; align-items: center; gap: 10px; padding: 7px 12px; background: rgba(0,0,0,0.28); border-bottom: 1px solid var(--line); }
 .ttab { font-size: 12px; font-weight: 700; color: var(--text); }
 .trackTabs .right { margin-left: auto; font-family: ui-monospace, monospace; color: var(--muted); }
-.trackBody { display: flex; background: var(--lg-track-bg, #0a0c11); }
+/* Lanes scroll within the timeline pane so no track (e.g. A3 · SFX) is ever clipped when the
+   window is short. flex:1 + min-height:0 lets it fill the pane below the Sequence header and
+   shrink; overflow-y:auto reveals the rest on scroll. */
+.trackBody { display: flex; background: var(--lg-track-bg, #0a0c11); flex:1 1 0; min-height:0; overflow-y:auto; }
+.trackPanel.card { display:flex; flex-direction:column; min-height:0; }
+/* Thin, discoverable scrollbars on the two scroll regions so it's obvious there's more
+   below (fixes the "content looks cut off" perception on shorter windows). */
+.trackBody::-webkit-scrollbar, .nle-right .panels::-webkit-scrollbar { width:9px; height:9px; }
+.trackBody::-webkit-scrollbar-track, .nle-right .panels::-webkit-scrollbar-track { background:transparent; }
+.trackBody::-webkit-scrollbar-thumb, .nle-right .panels::-webkit-scrollbar-thumb {
+  background:var(--lg-scroll, rgba(140,140,150,.35)); border-radius:9px; border:2px solid transparent; background-clip:padding-box; }
+.trackBody::-webkit-scrollbar-thumb:hover, .nle-right .panels::-webkit-scrollbar-thumb:hover {
+  background:var(--lg-scroll-hover, rgba(140,140,150,.55)); background-clip:padding-box; }
 .trackHeaders { width: 122px; flex: none; border-right: 1px solid var(--line); }
 .trk { height: 30px; display: flex; align-items: center; padding: 0 10px; font-size: 10px; font-weight: 700; letter-spacing: .3px; color: var(--muted); border-bottom: 1px solid rgba(255,255,255,0.05); }
 .trk.vid { background: rgba(110,231,255,0.05); }
@@ -423,7 +435,10 @@ body.reordering .hlRow, body.reordering .card { transition: none; }
 
 #editor.nleGrid:not(.hidden){
   display:flex; flex-direction:column; gap:6px;
-  height: calc(100vh - 62px);         /* fill below the header ribbon */
+  /* Fill the flex column exactly (body is flex-column: header + this). A hardcoded
+     calc(100vh - 62px) mismatched the real 56px header and overflowed the viewport,
+     clipping the bottom timeline lane. */
+  flex:1 1 auto; min-height:0;
   max-width:none; width:100%; margin:0;
   padding:6px; box-sizing:border-box; overflow:hidden;
 }
