@@ -329,7 +329,12 @@ function renderMediaAsset() {
   let card = $('#mediaAsset');
   if (!state.proj) { if (card) card.remove(); bar.classList.remove('has-asset'); return; }
   const m = state.proj.meta || {};
-  const html = `<div class="assetName">${escapeHtml(state.proj.name || 'source')}</div>
+  // Premiere-style media tile: thumbnail with a duration badge (bottom-right) + blue
+  // selection ring. Reuses the same /api/thumb frame grabs the timeline filmstrip uses.
+  const html = `<div class="assetThumb" style="background-image:url('/api/thumb?id=${encodeURIComponent(state.proj.id)}&t=1')">
+        <span class="assetDur">${fmt(state.proj.duration)}</span>
+      </div>
+      <div class="assetName">${escapeHtml(state.proj.name || 'source')}</div>
       <div class="assetMeta">${m.width || '?'}×${m.height || '?'} · ${m.fps || '?'}fps · ${fmt(state.proj.duration)}</div>`;
   if (!card) {
     card = document.createElement('div');
@@ -1180,6 +1185,22 @@ window.addEventListener('mouseup', () => {
 // Razor: double-click a clip to split it in two — at the playhead if it's inside the clip,
 // otherwise at the click point. Both halves inherit the parent's title/tags and stay kept.
 let _splitSeq = 0;
+// Shared razor: split `clip` at source-time `cut`. Both halves inherit title/tags and stay
+// kept. Used by the phantasm-canvas double-click AND the timeline Razor tool (single click).
+function splitClipAt(clip, cut) {
+  const MIN = 0.4;
+  cut = +cut.toFixed(3);
+  if (cut - clip.start < MIN || clip.end - cut < MIN) { toast('Too close to an edge to split.', true); return false; }
+  const idx = state.highlights.indexOf(clip);
+  const right = { ...clip, id: `m${++_splitSeq}`, start: cut, snapped: false };
+  clip.end = cut; clip.snapped = false;
+  state.highlights.splice(idx + 1, 0, right);
+  logEdit('split', { id: clip.id, at: cut });
+  state.selected = right.id;
+  renderHighlights(); draw();
+  toast(`Split into 2 clips at ${fmt(cut)}.`);
+  return true;
+}
 canvas.addEventListener('dblclick', (e) => {
   if (!state.proj) return;
   const rect = canvas.getBoundingClientRect();
@@ -1189,18 +1210,8 @@ canvas.addEventListener('dblclick', (e) => {
   const clip = state.highlights.find((h) => h.keep && t > h.start && t < h.end);
   if (!clip) return;
   e.preventDefault();
-  const MIN = 0.4;
   const pt = player.currentTime;
-  let cut = +(pt > clip.start && pt < clip.end ? pt : t).toFixed(3);
-  if (cut - clip.start < MIN || clip.end - cut < MIN) return toast('Too close to an edge to split.', true);
-  const idx = state.highlights.indexOf(clip);
-  const right = { ...clip, id: `m${++_splitSeq}`, start: cut, snapped: false };
-  clip.end = cut; clip.snapped = false;
-  state.highlights.splice(idx + 1, 0, right);
-  logEdit('split', { id: clip.id, at: cut });
-  state.selected = right.id;
-  renderHighlights(); draw();
-  toast(`Split into 2 clips at ${fmt(cut)}.`);
+  splitClipAt(clip, pt > clip.start && pt < clip.end ? pt : t);
 });
 
 // keyboard: G toggle keep/ghost, V verify (play 2s), B banish-export
@@ -1483,8 +1494,19 @@ $('#pepaiChatInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter'
   };
   lanes.addEventListener('mousedown', (e) => {
     e.preventDefault();
-    // Click a clip → select it (FCP-blue outline); drag still scrubs.
     const clip = e.target.closest('.tblk.clip');
+    // Razor tool (C): single-click a clip → split at the click point (Premiere behavior).
+    // No select, no scrub — the razor only cuts.
+    if (clip && clip.dataset.hid && state.tool === 'razor') {
+      const h = state.highlights.find((x) => String(x.id) === clip.dataset.hid);
+      if (h) {
+        const r = clip.getBoundingClientRect();
+        const frac = Math.min(1, Math.max(0, (e.clientX - r.left) / Math.max(1, r.width)));
+        splitClipAt(h, h.start + frac * (h.end - h.start));
+      }
+      return;
+    }
+    // Click a clip → select it (FCP-blue outline); drag still scrubs.
     if (clip && clip.dataset.hid) {
       state.selClip = clip.dataset.hid;
       lanes.querySelectorAll('.tblk.clip.sel').forEach((c) => c.classList.remove('sel'));
@@ -1498,6 +1520,24 @@ $('#pepaiChatInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter'
     window.addEventListener('mouseup', up);
   });
 })();
+
+// ---- Timeline tool strip: Selection / Razor (C). Only tools with REAL behavior ship —
+// Selection = the existing click-to-select; Razor = single-click split (splitClipAt).
+// C toggles razor <-> selection (V stays bound to the existing verify shortcut).
+state.tool = 'select';
+function setTool(tool) {
+  state.tool = tool;
+  document.querySelectorAll('#toolStrip button').forEach((b) => b.classList.toggle('active', b.dataset.tool === tool));
+  $('#trackLanes')?.classList.toggle('razorMode', tool === 'razor');
+}
+$('#toolStrip')?.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-tool]');
+  if (b) setTool(b.dataset.tool);
+});
+window.addEventListener('keydown', (e) => {
+  if (!state.proj || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+  if (e.key === 'c' || e.key === 'C') setTool(state.tool === 'razor' ? 'select' : 'razor');
+});
 
 // ---- Right-column tabs (Curate / Publish): pure show/hide by data-rtab. Cards stay in
 // the DOM (display:none), so every listener/value in the hidden tab still works — this is

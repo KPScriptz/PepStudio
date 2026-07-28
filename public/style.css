@@ -1152,6 +1152,26 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
    space and park the badge mid-header, colliding with the absolute-centered title). */
 [data-theme="dark"] header #capStatus{ position:absolute; right:52px; top:50%; transform:translateY(-50%); }
 
+/* ---- Premiere pass: tool strip, media tile, blue numerics ---- */
+/* Timeline tool strip (Selection / Razor) — compact icon group beside the view toggle. */
+.toolStrip{ display:inline-flex; gap:2px; margin-left:8px; padding:2px; border-radius:7px;
+  background:var(--panel2, rgba(0,0,0,.25)); border:1px solid var(--line, rgba(255,255,255,.09)); }
+.toolStrip button{ display:flex; align-items:center; justify-content:center; width:26px; height:22px;
+  border:0; border-radius:5px; background:transparent; color:var(--muted); cursor:pointer; }
+.toolStrip button:hover{ color:var(--text); background:rgba(127,127,127,.15); }
+.toolStrip button.active{ color:#fff; background:var(--px-accent, #2d76ff); }
+/* Razor mode: crosshair over the lanes so the active tool is obvious. */
+#trackLanes.razorMode, #trackLanes.razorMode .tblk.clip{ cursor:crosshair !important; }
+/* Media bin tile: thumbnail + duration badge + Premiere-blue ring. */
+.mediaAsset .assetThumb{ position:relative; width:100%; aspect-ratio:16/9; border-radius:6px;
+  background-size:cover; background-position:center; background-color:#000; margin-bottom:6px;
+  outline:2px solid var(--px-accent, #2d76ff); outline-offset:-1px; box-shadow:0 0 10px rgba(45,118,255,.25); }
+.mediaAsset .assetDur{ position:absolute; right:5px; bottom:5px; padding:1px 6px; border-radius:5px;
+  font-family:var(--font-mono); font-size:10.5px; font-variant-numeric:tabular-nums;
+  color:#fff; background:rgba(0,0,0,.72); }
+/* Premiere-blue digital timecodes (dark). */
+[data-theme="dark"] #tlTime, [data-theme="dark"] .tpTime, [data-theme="dark"] #seqDur{ color:#3a96ff; }
+
 /* pane header labels → tracked micro-caps */
 [data-theme="dark"] .paneTab{
   background:transparent; color:var(--px-faint);
