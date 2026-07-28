@@ -543,6 +543,23 @@ body.reordering .hlRow, body.reordering .card { transition: none; }
 .tpScrub::-webkit-slider-thumb:hover{ box-shadow:0 0 11px rgba(0,229,255,.85), 0 1px 3px rgba(0,0,0,.4); }
 .tpScrub:focus{ outline:none; }
 .tpScrub:focus-visible{ outline:2px solid var(--accent-cyan,#00e5ff); outline-offset:3px; }
+/* Scrub wrapper hosts the marker/in-out rail overlay; the scrub itself fills it. */
+.scrubWrap{ position:relative; flex:1; min-width:0; display:flex; align-items:center; }
+.scrubWrap .tpScrub{ width:100%; flex:none; }
+.tpRail{ position:absolute; inset:0; pointer-events:none; }
+/* Marker pin: small green flag above the rail (click to seek). */
+.tpMark{ position:absolute; top:-3px; width:3px; height:10px; margin-left:-1px; border-radius:1px;
+  background:#22c55e; box-shadow:0 0 4px rgba(34,197,94,.6); pointer-events:auto; cursor:pointer; }
+.tpMark:hover{ background:#4ade80; }
+/* In→Out region: Premiere-blue band across the rail; lone tick while half-set. */
+.ioRange{ position:absolute; top:30%; height:40%; background:rgba(58,150,255,.4);
+  border-left:2px solid #3a96ff; border-right:2px solid #3a96ff; border-radius:2px; }
+.ioTick{ position:absolute; top:20%; height:60%; width:2px; background:#3a96ff; }
+.ioTick.out{ background:#f59e0b; }
+/* Export-region chip in the transport. */
+.ioExport{ font-size:11px; font-weight:700; padding:0 9px !important; color:#fff !important;
+  background:var(--px-accent,#2d76ff) !important; border-radius:6px; white-space:nowrap; }
+.ioExport:disabled{ opacity:.6; }
 .tpTime{ font-variant-numeric:tabular-nums; font-size:11px; min-width:88px; text-align:right; }
 
 /* Sequence playhead across the multi-track lanes (#trackLanes is position:relative) */

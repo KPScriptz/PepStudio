@@ -1553,6 +1553,94 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'h' || e.key === 'H') setTool(state.tool === 'hand' ? 'select' : 'hand');
 });
 
+// ---- Markers (M) + In/Out region (I/O) on the source scrub rail. Markers are session-scoped
+// pins in SOURCE time; Shift+N / Shift+P jump between them. I/O set an export region rendered
+// as a Premiere-blue band, cleared with Option+X — and "Export I/O" renders JUST that region
+// through the existing verified sequence pipeline (no new endpoint). ----
+state.markers = []; state.inPoint = null; state.outPoint = null;
+function renderRail() {
+  const rail = $('#tpRail'); if (!rail) return;
+  const dur = (state.proj && state.proj.duration) || player.duration || 0;
+  if (!dur) { rail.innerHTML = ''; return; }
+  const pct = (t) => `${Math.max(0, Math.min(100, (t / dur) * 100)).toFixed(3)}%`;
+  let html = '';
+  if (state.inPoint != null && state.outPoint != null && state.outPoint > state.inPoint) {
+    html += `<div class="ioRange" style="left:${pct(state.inPoint)};width:${pct(state.outPoint - state.inPoint)}"></div>`;
+  } else if (state.inPoint != null) {
+    html += `<div class="ioTick" style="left:${pct(state.inPoint)}" title="In ${fmt(state.inPoint)}"></div>`;
+  } else if (state.outPoint != null) {
+    html += `<div class="ioTick out" style="left:${pct(state.outPoint)}" title="Out ${fmt(state.outPoint)}"></div>`;
+  }
+  html += state.markers.map((m, i) =>
+    `<div class="tpMark" data-t="${m.t}" style="left:${pct(m.t)}" title="Marker ${i + 1} · ${fmt(m.t)}"></div>`).join('');
+  rail.innerHTML = html;
+  $('#ioExportBtn')?.classList.toggle('hidden', !(state.inPoint != null && state.outPoint != null && state.outPoint > state.inPoint));
+}
+$('#tpRail')?.addEventListener('mousedown', (e) => {
+  const m = e.target.closest('.tpMark'); if (!m) return;
+  e.preventDefault(); e.stopPropagation();
+  player.currentTime = +m.dataset.t;
+});
+$('#ioExportBtn')?.addEventListener('click', async () => {
+  const a = state.inPoint, b = state.outPoint;
+  if (!state.proj || a == null || b == null || b <= a) return;
+  const btn = $('#ioExportBtn'); const o = btn.textContent; btn.disabled = true; btn.textContent = 'Exporting…';
+  showProgress(`Rendering the In→Out region (${fmt(b - a)})…`);
+  try {
+    const res = await fetch('/api/export/sequence', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: state.proj.id, vertical: false, zoom: false, clips: [{ start: a, end: b, overlays: [] }] }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Export failed.');
+    addOutput('In/Out region', data, 'sequence');
+    logEdit('io_export', { in: +a.toFixed(2), out: +b.toFixed(2) });
+    toast(`In→Out region exported (${fmt(b - a)}) ✓`);
+  } catch (e) { toast(e.message, true); } finally { hideProgress(); btn.disabled = false; btn.textContent = o; }
+});
+// Nudge/slip the selected clip's SOURCE window by ±1 frame (Shift: ±5). Length is preserved;
+// this slips WHICH content plays (clips are absolute source windows — guardrail-safe edit).
+function nudgeSelectedClip(dir, frames) {
+  const id = state.selClip || state.selected;
+  const h = (state.highlights || []).find((x) => String(x.id) === String(id));
+  if (!h) { toast('Select a clip on the timeline first.', true); return; }
+  const fps = (state.proj && state.proj.meta && state.proj.meta.fps) || 30;
+  const d = dir * frames / fps;
+  const dur = (state.proj && state.proj.duration) || Infinity;
+  if (h.start + d < 0 || h.end + d > dur) { toast('At the source boundary.', true); return; }
+  h.start = +(h.start + d).toFixed(4); h.end = +(h.end + d).toFixed(4); h.snapped = false;
+  renderHighlights(); draw();
+  logEdit('nudge', { id: h.id, frames: dir * frames });
+  toast(`Slipped ${h.id.toUpperCase()} ${dir > 0 ? '+' : '−'}${frames}f → ${fmt(h.start)}`);
+}
+window.addEventListener('keydown', (e) => {
+  if (!state.proj || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+  const t = player.currentTime || 0;
+  if ((e.key === 'm' || e.key === 'M') && !e.shiftKey && !e.metaKey && !e.altKey) {
+    e.preventDefault();
+    state.markers.push({ t: +t.toFixed(3) }); state.markers.sort((a, b) => a.t - b.t);
+    renderRail(); toast(`Marker at ${fmt(t)} (${state.markers.length} total)`);
+  } else if (e.shiftKey && (e.key === 'N' || e.key === 'n')) {
+    const next = state.markers.find((m) => m.t > t + 0.05);
+    if (next) { e.preventDefault(); player.currentTime = next.t; toast(`Marker ${fmt(next.t)}`); }
+  } else if (e.shiftKey && (e.key === 'P' || e.key === 'p')) {
+    const prev = [...state.markers].reverse().find((m) => m.t < t - 0.05);
+    if (prev) { e.preventDefault(); player.currentTime = prev.t; toast(`Marker ${fmt(prev.t)}`); }
+  } else if ((e.key === 'i' || e.key === 'I') && !e.metaKey && !e.altKey) {
+    e.preventDefault(); state.inPoint = +t.toFixed(3);
+    if (state.outPoint != null && state.outPoint <= state.inPoint) state.outPoint = null;
+    renderRail(); toast(`In point ${fmt(t)}`);
+  } else if ((e.key === 'o' || e.key === 'O') && !e.metaKey && !e.altKey) {
+    e.preventDefault(); state.outPoint = +t.toFixed(3);
+    if (state.inPoint != null && state.inPoint >= state.outPoint) state.inPoint = null;
+    renderRail(); toast(`Out point ${fmt(t)}`);
+  } else if (e.altKey && e.code === 'KeyX') {
+    e.preventDefault(); state.inPoint = null; state.outPoint = null; renderRail(); toast('In/Out cleared');
+  } else if (e.altKey && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
+    e.preventDefault(); nudgeSelectedClip(e.code === 'ArrowRight' ? 1 : -1, e.shiftKey ? 5 : 1);
+  }
+});
+
 // ---- Timeline zoom engine: scale the lanes' laid-out width (all blocks are %-positioned, so
 // they scale for free) and let .trackBody scroll horizontally; track headers stay sticky-left.
 // The time under the anchor point (cursor for Cmd+wheel, viewport center for the slider) stays
