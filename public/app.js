@@ -1494,6 +1494,17 @@ $('#pepaiChatInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter'
   };
   lanes.addEventListener('mousedown', (e) => {
     e.preventDefault();
+    // Hand tool (H): drag pans the zoomed timeline horizontally. No select, no scrub.
+    if (state.tool === 'hand') {
+      const body = document.querySelector('.trackBody'); if (!body) return;
+      lanes.classList.add('panning');
+      const startX = e.clientX; const startScroll = body.scrollLeft;
+      const mv = (ev) => { body.scrollLeft = startScroll - (ev.clientX - startX); };
+      const up = () => { lanes.classList.remove('panning'); window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); };
+      window.addEventListener('mousemove', mv);
+      window.addEventListener('mouseup', up);
+      return;
+    }
     const clip = e.target.closest('.tblk.clip');
     // Razor tool (C): single-click a clip → split at the click point (Premiere behavior).
     // No select, no scrub — the razor only cuts.
@@ -1521,14 +1532,16 @@ $('#pepaiChatInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter'
   });
 })();
 
-// ---- Timeline tool strip: Selection / Razor (C). Only tools with REAL behavior ship —
-// Selection = the existing click-to-select; Razor = single-click split (splitClipAt).
-// C toggles razor <-> selection (V stays bound to the existing verify shortcut).
+// ---- Timeline tool strip: Selection / Razor (C) / Hand (H). Only tools with REAL behavior
+// ship — Selection = click-to-select; Razor = single-click split; Hand = drag-pan the zoomed
+// timeline. C/H each toggle their tool <-> selection (V stays bound to the verify shortcut).
 state.tool = 'select';
 function setTool(tool) {
   state.tool = tool;
   document.querySelectorAll('#toolStrip button').forEach((b) => b.classList.toggle('active', b.dataset.tool === tool));
-  $('#trackLanes')?.classList.toggle('razorMode', tool === 'razor');
+  const lanes = $('#trackLanes');
+  lanes?.classList.toggle('razorMode', tool === 'razor');
+  lanes?.classList.toggle('handMode', tool === 'hand');
 }
 $('#toolStrip')?.addEventListener('click', (e) => {
   const b = e.target.closest('button[data-tool]');
@@ -1537,7 +1550,44 @@ $('#toolStrip')?.addEventListener('click', (e) => {
 window.addEventListener('keydown', (e) => {
   if (!state.proj || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
   if (e.key === 'c' || e.key === 'C') setTool(state.tool === 'razor' ? 'select' : 'razor');
+  if (e.key === 'h' || e.key === 'H') setTool(state.tool === 'hand' ? 'select' : 'hand');
 });
+
+// ---- Timeline zoom engine: scale the lanes' laid-out width (all blocks are %-positioned, so
+// they scale for free) and let .trackBody scroll horizontally; track headers stay sticky-left.
+// The time under the anchor point (cursor for Cmd+wheel, viewport center for the slider) stays
+// stationary across zooms. seek()/playhead need no changes — both read getBoundingClientRect().
+state.tlZoom = 1;
+function applyTlZoom(z, anchorClientX) {
+  const lanes = $('#trackLanes'); const body = document.querySelector('.trackBody');
+  const headers = document.querySelector('.trackHeaders');
+  if (!lanes || !body) return;
+  z = Math.min(8, Math.max(1, z));
+  const headersW = headers ? headers.offsetWidth : 0;
+  const viewW = Math.max(1, body.clientWidth - headersW);
+  const oldW = lanes.getBoundingClientRect().width || viewW;
+  const laneStartX = body.getBoundingClientRect().left + headersW;
+  const ax = anchorClientX != null ? (anchorClientX - laneStartX) : viewW / 2;   // px into the visible lanes
+  const frac = (body.scrollLeft + ax) / oldW;                                    // time-fraction under the anchor
+  state.tlZoom = z;
+  if (z <= 1.001) { lanes.style.width = ''; lanes.style.flex = ''; body.scrollLeft = 0; }
+  else {
+    lanes.style.flex = '0 0 auto';
+    lanes.style.width = `${Math.round(viewW * z)}px`;
+    body.scrollLeft = Math.max(0, frac * viewW * z - ax);
+  }
+  const s = $('#tlZoomSlider'); if (s && +s.value !== z) s.value = z;
+}
+$('#tlZoomSlider')?.addEventListener('input', (e) => applyTlZoom(+e.target.value));
+$('#tlZoomOut')?.addEventListener('click', () => applyTlZoom(state.tlZoom / 1.5));
+$('#tlZoomIn')?.addEventListener('click', () => applyTlZoom(state.tlZoom * 1.5));
+$('#tlZoomFit')?.addEventListener('click', () => applyTlZoom(1));
+// Cmd/Ctrl + scroll = zoom centered on the cursor (the Premiere gesture).
+document.querySelector('.trackBody')?.addEventListener('wheel', (e) => {
+  if (!(e.metaKey || e.ctrlKey)) return;
+  e.preventDefault();
+  applyTlZoom(state.tlZoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15), e.clientX);
+}, { passive: false });
 
 // ---- Right-column tabs (Curate / Publish): pure show/hide by data-rtab. Cards stay in
 // the DOM (display:none), so every listener/value in the hidden tab still works — this is

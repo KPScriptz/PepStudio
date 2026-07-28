@@ -1162,6 +1162,23 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
 .toolStrip button.active{ color:#fff; background:var(--px-accent, #2d76ff); }
 /* Razor mode: crosshair over the lanes so the active tool is obvious. */
 #trackLanes.razorMode, #trackLanes.razorMode .tblk.clip{ cursor:crosshair !important; }
+/* Hand mode: grab/grabbing cursors while panning the zoomed timeline. */
+#trackLanes.handMode, #trackLanes.handMode .tblk{ cursor:grab !important; }
+#trackLanes.handMode.panning, #trackLanes.handMode.panning .tblk{ cursor:grabbing !important; }
+/* Timeline zoom: .trackBody scrolls horizontally when the lanes are zoomed wider than the
+   viewport; the track-header column stays pinned left over the scrolling lanes. */
+.trackBody{ overflow-x:auto; }
+.trackHeaders{ position:sticky; left:0; z-index:6; background:var(--lg-track-bg, #0a0c11); }
+[data-theme="dark"] .trackHeaders{ background:var(--px-tl, #111216); }
+/* Zoom controls (right side of the timeline toolbar). */
+.tlZoom{ display:inline-flex; align-items:center; gap:5px; margin-left:auto; }
+.tlZoom button{ min-width:24px; height:22px; padding:0 7px; border-radius:5px; border:1px solid var(--line, rgba(255,255,255,.09));
+  background:var(--panel2, rgba(0,0,0,.25)); color:var(--muted); font-size:12px; font-weight:700; cursor:pointer; }
+.tlZoom button:hover{ color:var(--text); border-color:var(--px-accent,#2d76ff); }
+.tlZoom input[type=range]{ width:110px; -webkit-appearance:none; appearance:none; height:4px; border-radius:2px;
+  background:rgba(150,150,160,.25); cursor:pointer; }
+.tlZoom input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:11px; height:11px;
+  border-radius:50%; background:var(--px-accent,#2d76ff); border:0; margin-top:0; cursor:pointer; }
 /* Media bin tile: thumbnail + duration badge + Premiere-blue ring. */
 .mediaAsset .assetThumb{ position:relative; width:100%; aspect-ratio:16/9; border-radius:6px;
   background-size:cover; background-position:center; background-color:#000; margin-bottom:6px;
