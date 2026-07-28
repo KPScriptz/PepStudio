@@ -532,7 +532,17 @@ body.reordering .hlRow, body.reordering .card { transition: none; }
   border-radius:6px; padding:4px 9px; cursor:pointer; font-size:13px; line-height:1; }
 .tpBtn:hover{ background:var(--panel); }
 .tpPlay{ min-width:36px; font-size:14px; }
-.tpScrub{ flex:1; min-width:0; accent-color:var(--premiere-blue); cursor:pointer; }
+/* NLE scrub rail: thin track, cyan played-progress fill (via --val, set in the transport update),
+   glowing white/cyan playhead thumb — Resolve/Premiere-style, replacing the default range slider. */
+.tpScrub{ flex:1; min-width:0; cursor:pointer; -webkit-appearance:none; appearance:none; height:5px;
+  border-radius:3px; background:linear-gradient(90deg, var(--accent-cyan,#00e5ff) var(--val,0%), rgba(150,150,160,.22) var(--val,0%)); }
+.tpScrub::-webkit-slider-runnable-track{ height:5px; border-radius:3px; background:transparent; }
+.tpScrub::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:13px; height:13px; border-radius:50%;
+  background:#fff; border:2px solid var(--accent-cyan,#00e5ff); margin-top:-4px; cursor:pointer;
+  box-shadow:0 0 6px rgba(0,229,255,.55), 0 1px 3px rgba(0,0,0,.4); transition:box-shadow .12s; }
+.tpScrub::-webkit-slider-thumb:hover{ box-shadow:0 0 11px rgba(0,229,255,.85), 0 1px 3px rgba(0,0,0,.4); }
+.tpScrub:focus{ outline:none; }
+.tpScrub:focus-visible{ outline:2px solid var(--accent-cyan,#00e5ff); outline-offset:3px; }
 .tpTime{ font-variant-numeric:tabular-nums; font-size:11px; min-width:88px; text-align:right; }
 
 /* Sequence playhead across the multi-track lanes (#trackLanes is position:relative) */
@@ -994,7 +1004,8 @@ input[type=text]{ font-family:ui-monospace, "SF Mono", monospace; font-size:12.5
   border-bottom:2px solid transparent; margin-bottom:-1px; transition:color .12s ease, border-color .12s ease;
 }
 .paneTabs .rtab:hover{ color:var(--text); }
-.paneTabs .rtab.active{ color:var(--text); border-bottom-color:var(--premiere-blue); }
+.paneTabs .rtab.active{ color:var(--text); border-bottom-color:var(--accent-cyan,#00e5ff);
+  box-shadow:0 2px 8px -4px rgba(0,229,255,.6); }
 
 /* ======================================================================
    FCP MAGNETIC — Final Cut reading of the EXISTING sequence lanes (dark).

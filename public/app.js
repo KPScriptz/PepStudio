@@ -960,7 +960,12 @@ player.addEventListener('timeupdate', () => {
 function updateTransport() {
   const scrub = $('#tpScrub'); const tEl = $('#tpTime'); const pEl = $('#tpPlay');
   const dur = state.proj?.duration || player.duration || 0;
-  if (scrub) { scrub.max = dur || 100; if (document.activeElement !== scrub) scrub.value = player.currentTime || 0; }
+  if (scrub) {
+    scrub.max = dur || 100;
+    if (document.activeElement !== scrub) scrub.value = player.currentTime || 0;
+    // drive the played-progress fill on the custom scrub rail (pure-CSS gradient reads --val)
+    scrub.style.setProperty('--val', `${scrub.max > 0 ? (scrub.value / scrub.max) * 100 : 0}%`);
+  }
   const fps = (state.proj && state.proj.meta && state.proj.meta.fps) || 30;
   if (tEl) tEl.textContent = `${tc(player.currentTime || 0, fps)} / ${tc(dur, fps)}`;
   if (pEl) pEl.classList.toggle('playing', !player.paused);
