@@ -143,6 +143,23 @@ $('#backToProjects')?.addEventListener('click', showPicker);
 // Native file dialog (Step 2) routes the chosen absolute path here, same as drag-drop.
 window.pepResolveNativeFilePath = (p) => { hidePicker(); window.pepHandleDroppedPath(p); };
 renderRecents();
+// Crash recovery: the server flags an unclean shutdown (.running sentinel survived); the
+// curation autosaves on every edit, so recovery is just reopening the last project.
+(async () => {
+  try {
+    const s = await (await fetch('/api/session')).json();
+    const last = loadRecents()[0];
+    const bar = $('#crashBanner');
+    if (!s.crashed || !last || !bar) return;
+    bar.innerHTML =
+      `<span>PepStudio didn't shut down cleanly. Your edits are autosaved — pick up where you left off?</span>
+       <button id="crashRestoreBtn">Restore “${escapeHtml(last.name)}”</button>
+       <button id="crashDismissBtn" class="ghostBtn">Dismiss</button>`;
+    bar.classList.remove('hidden');
+    $('#crashRestoreBtn').addEventListener('click', () => { bar.classList.add('hidden'); openRecent(last.id); });
+    $('#crashDismissBtn').addEventListener('click', () => bar.classList.add('hidden'));
+  } catch { /* session check is best-effort — never block the picker */ }
+})();
 
 // ---- Status ----
 state.canBurn = false;

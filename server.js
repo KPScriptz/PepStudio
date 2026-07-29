@@ -40,6 +40,16 @@ await fsp.mkdir(DATA, { recursive: true });
 await fsp.mkdir(RENDERS, { recursive: true });
 await fsp.mkdir(DOWNLOADS, { recursive: true });
 
+// Crash sentinel: created at boot, removed only on a clean SIGTERM/SIGINT shutdown. Finding it
+// at startup means the last run died mid-session (crash / force-quit / power loss) — /api/session
+// lets the UI offer to reopen the last project (the curation itself autosaves on every edit).
+const RUNNING_FILE = path.join(DATA, '.running');
+const crashedLastRun = fs.existsSync(RUNNING_FILE);
+fs.writeFileSync(RUNNING_FILE, String(process.pid));
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.on(sig, () => { try { fs.unlinkSync(RUNNING_FILE); } catch {} process.exit(0); });
+}
+
 // Pack render concurrency. Each clip runs an independent whisper→zoom→encode pipeline; running
 // them all at once on a 6-perf-core Mac oversubscribes the CPU and thrashes. A small pool keeps
 // every core busy without context-switch churn — measured sweet spot is ~3 (see CLAUDE.md).
@@ -130,6 +140,7 @@ app.use(['/api/export', '/api/analyze', '/api/captions', '/api/highlights', '/ap
   res.on('close', done);
   next();
 });
+app.get('/api/session', (req, res) => res.json({ crashed: crashedLastRun }));
 app.get('/api/busy', (req, res) => {
   const importing = [...jobs.values()].filter((j) => j.status !== 'done' && j.status !== 'error').length;
   res.json({ busy: busyOps + importing > 0, renders: busyOps, imports: importing });

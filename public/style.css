@@ -376,6 +376,19 @@ body.reordering .hlRow, body.reordering .card { transition: none; }
   color: #fff; background: linear-gradient(180deg, #7c5cff, #5b3fd6); border: 1px solid var(--accent2);
 }
 .picker-new:hover { box-shadow: 0 0 0 3px #a78bfa33; }
+/* Crash-recovery banner above the recents grid — shown only after an unclean shutdown. */
+.crash-banner {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 0 0 18px; padding: 12px 14px; border-radius: 10px;
+  background: rgba(248, 113, 113, .10); border: 1px solid var(--danger);
+  color: var(--text); font-size: 13px;
+}
+.crash-banner span { flex: 1 1 260px; }
+.crash-banner button {
+  padding: 7px 12px; border-radius: 8px; cursor: pointer; font-size: 12px;
+  color: #fff; background: var(--danger); border: 1px solid var(--danger);
+}
+.crash-banner .ghostBtn { background: transparent; color: var(--muted); border-color: var(--line); }
 .recents-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
 .recent-card {
   background: var(--glass-bg); border: 1px solid var(--glass-border); border-top: 1px solid var(--glass-specular);
