@@ -965,6 +965,77 @@ async function exportTightPacing() {
 $('#pacePreviewBtn')?.addEventListener('click', previewPacing);
 $('#paceExportBtn')?.addEventListener('click', exportTightPacing);
 
+// ---- Filler-Word Purge: transcribe the kept clips, cut the "um / uh / you know" beats, render
+// the survivors through the same sequence pipeline pacing uses. Scan caches its result so the
+// export doesn't pay for a second whisper pass when nothing changed. ----
+let _fillerScan = null;   // { key, data } — key ties the cache to the clip set + aggressive flag
+function fillerClips() {
+  return (state.highlights || []).filter((h) => h.keep).sort((a, b) => a.start - b.start)
+    .map((h) => ({ start: h.start, end: h.end }));
+}
+async function scanFillers() {
+  const clips = fillerClips();
+  if (!clips.length) throw new Error('Keep some clips (Rank or Story Cut) first.');
+  const aggressive = !!($('#fillerAggressive') && $('#fillerAggressive').checked);
+  const key = JSON.stringify([clips, aggressive]);
+  if (_fillerScan && _fillerScan.key === key) return _fillerScan.data;
+  const res = await fetch('/api/fillers', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: state.proj.id, clips, aggressive }),
+  });
+  const d = await res.json();
+  if (!res.ok) throw new Error(d.error || 'Filler scan failed.');
+  _fillerScan = { key, data: d };
+  return d;
+}
+function renderFillerStat(d) {
+  const st = $('#fillerStat'); if (!st) return;
+  if (!d.cuts) {
+    st.innerHTML = `<b>No filler words found</b> across ${d.clips} clip${d.clips === 1 ? '' : 's'}.`;
+  } else {
+    // Show what it actually found — a filler purge you can't inspect is a filler purge you can't trust.
+    const words = [...new Set(d.hits.map((h) => h.w))].slice(0, 8).map((w) => `“${escapeHtml(w)}”`).join(', ');
+    st.innerHTML = `<b>${d.cuts} filler${d.cuts === 1 ? '' : 's'}</b> in ${d.clips} clip${d.clips === 1 ? '' : 's'}`
+      + ` · ${d.origSec}s → <b>${d.tightSec}s</b> · <span class="paceCut">−${d.removedSec}s</span><br>${words}`;
+  }
+  st.classList.remove('hidden');
+}
+async function findFillers() {
+  const btn = $('#fillerScanBtn'); if (!btn) return;
+  if (!state.proj) { toast('Load and analyze a video first.', true); return; }
+  const o = btn.textContent; btn.disabled = true; btn.textContent = 'Transcribing…';
+  try {
+    const d = await scanFillers();
+    renderFillerStat(d);
+    toast(d.cuts ? `${d.cuts} filler word${d.cuts === 1 ? '' : 's'} found (−${d.removedSec}s).` : 'No filler words found.');
+  } catch (e) { toast(e.message, true); } finally { btn.disabled = false; btn.textContent = o; }
+}
+async function exportCleanCut() {
+  const btn = $('#fillerExportBtn'); if (!btn) return;
+  if (!state.proj) { toast('Load and analyze a video first.', true); return; }
+  const o = btn.textContent; btn.disabled = true; btn.textContent = 'Purging…';
+  showProgress('Cutting the filler words out of every kept clip…');
+  try {
+    const d = await scanFillers();
+    renderFillerStat(d);
+    if (!d.cuts) { toast('No filler words to cut.', true); return; }
+    const res = await fetch('/api/export/sequence', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: state.proj.id, vertical: false, zoom: false,
+        clips: d.segments.map((g) => ({ start: g.start, end: g.end, overlays: [] })),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Export failed.');
+    addOutput('Filler-free cut', data, 'sequence');
+    logEdit('filler_purge', { cuts: d.cuts, removedSec: d.removedSec, aggressive: d.aggressive });
+    toast(`Clean cut ready — ${d.cuts} filler${d.cuts === 1 ? '' : 's'} removed (−${d.removedSec}s) ✓`);
+  } catch (e) { toast(e.message, true); } finally { hideProgress(); btn.disabled = false; btn.textContent = o; }
+}
+$('#fillerScanBtn')?.addEventListener('click', findFillers);
+$('#fillerExportBtn')?.addEventListener('click', exportCleanCut);
+
 // ---- One-Shot Publish: run the whole publishing handoff in one pass — Auto-Titles → Upload Kit
 // → Cover frames. Each sub-step handles its own errors/toasts (never throws), so the chain always
 // completes; the button label narrates progress. ----

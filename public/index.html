@@ -217,6 +217,17 @@
               </div>
               <div class="hint">Jump-cuts internal dead air for relentless pacing. Default: your top moment. Tick “whole sequence” to tighten every kept clip into one master cut. Preview the gain, then export.</div>
             </div>
+
+            <div class="pacingBox">
+              <div class="pkHead"><span>Filler-Word Purge</span></div>
+              <label class="check pacingScope"><input type="checkbox" id="fillerAggressive" /> Also cut “like / so / basically”</label>
+              <div id="fillerStat" class="paceStat hidden"></div>
+              <div class="pkBtns" style="margin-top:9px">
+                <button id="fillerScanBtn" class="pkGhost">Find fillers</button>
+                <button id="fillerExportBtn" class="pkGen">Export clean cut</button>
+              </div>
+              <div class="hint">Transcribes your kept clips and cuts the “um / uh / you know” beats, leaving the speech either side intact. Scan first to see exactly what it found — the aggressive set catches real words, so check before exporting.</div>
+            </div>
             <div class="field">
               <label>TikTok clips</label>
               <select id="tiktokCount">

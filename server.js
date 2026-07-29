@@ -20,6 +20,7 @@ import { downloadUrl, probeUrl, ytdlpBin, SUPPORTED_URL } from './lib/fetch.js';
 import { buildEDL, buildFcp7Xml } from './lib/interchange.js';
 import { probe, ffmpeg } from './lib/ff.js';
 import { tightenClip, parseSilences, PACING_LEVELS } from './lib/pacing.js';
+import { detectFillers, stripFillers } from './lib/fillers.js';
 import { ocrAvailable } from './lib/ocr.js';
 import { analyzeNBA } from './lib/nba2k.js';
 import { analyzePalworld } from './lib/palworld.js';
@@ -475,6 +476,44 @@ app.post('/api/pacing/sequence', async (req, res) => {
     res.json({
       level: req.body.level || 'tight', label: lvl.label, segments, clips: clips.length,
       origSec: +origSec.toFixed(1), tightSec: +tightSec.toFixed(1), removedSec: +(origSec - tightSec).toFixed(1), cuts,
+    });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
+// Filler-word purge: transcribe every kept clip in ONE whisper pass (transcribeWindows batches
+// them), find the "um / uh / you know" beats, and return both the hits (so the UI can show what
+// it found before committing) and the keep sub-segments — same segment contract as pacing, so
+// the client renders them through the existing /api/export/sequence path.
+app.post('/api/fillers', async (req, res) => {
+  try {
+    const file = await sourceFor(req.body.id);
+    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    if (!captionsReady()) return res.status(503).json({ error: 'Whisper is not installed — filler detection needs it.' });
+    const clips = capBatch(req.body.clips)
+      .map((c) => [Number(c.start), Number(c.end)])
+      .filter(([s, e]) => Number.isFinite(s) && Number.isFinite(e) && e > s)
+      .sort((a, b) => a[0] - b[0]);
+    if (!clips.length) return res.status(400).json({ error: 'No clips in the sequence.' });
+
+    const aggressive = !!req.body.aggressive;
+    const windows = clips.map(([s, e]) => ({ start: s, end: e }));
+    const transcribed = await transcribeWindows(file, windows, { model: whisperFastModel() });
+
+    const segments = [];
+    const hits = [];
+    let origSec = 0, tightSec = 0, cuts = 0;
+    transcribed.forEach((wnd, i) => {
+      const [s, e] = clips[i];
+      const found = detectFillers(wnd.words || [], { aggressive });
+      const r = stripFillers({ start: s, end: e }, found);
+      segments.push(...r.segments);
+      hits.push(...found.filter((h) => h.t0 >= s && h.t1 <= e));
+      origSec += r.origSec; tightSec += r.tightSec; cuts += r.cuts;
+    });
+
+    res.json({
+      aggressive, segments, hits, clips: clips.length, cuts,
+      origSec: +origSec.toFixed(1), tightSec: +tightSec.toFixed(1), removedSec: +(origSec - tightSec).toFixed(1),
     });
   } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
