@@ -1572,7 +1572,7 @@ function renderRail() {
     html += `<div class="ioTick out" style="left:${pct(state.outPoint)}" title="Out ${fmt(state.outPoint)}"></div>`;
   }
   html += state.markers.map((m, i) =>
-    `<div class="tpMark" data-t="${m.t}" style="left:${pct(m.t)}" title="Marker ${i + 1} · ${fmt(m.t)}"></div>`).join('');
+    `<div class="tpMark${m.label ? ' named' : ''}" data-t="${m.t}" style="left:${pct(m.t)}" title="${escapeHtml(m.label || `Marker ${i + 1}`)} · ${fmt(m.t)} (double-click to label)"></div>`).join('');
   rail.innerHTML = html;
   $('#ioExportBtn')?.classList.toggle('hidden', !(state.inPoint != null && state.outPoint != null && state.outPoint > state.inPoint));
 }
@@ -1580,6 +1580,15 @@ $('#tpRail')?.addEventListener('mousedown', (e) => {
   const m = e.target.closest('.tpMark'); if (!m) return;
   e.preventDefault(); e.stopPropagation();
   player.currentTime = +m.dataset.t;
+});
+// Double-click a marker pin → name it (same prompt UX as project rename). The label shows in
+// the pin tooltip and the jump toasts.
+$('#tpRail')?.addEventListener('dblclick', (e) => {
+  const el = e.target.closest('.tpMark'); if (!el) return;
+  e.preventDefault(); e.stopPropagation();
+  const mk = state.markers.find((m) => m.t === +el.dataset.t); if (!mk) return;
+  const label = prompt('Marker label:', mk.label || '');
+  if (label != null) { mk.label = label.trim(); renderRail(); }
 });
 $('#ioExportBtn')?.addEventListener('click', async () => {
   const a = state.inPoint, b = state.outPoint;
@@ -1622,10 +1631,10 @@ window.addEventListener('keydown', (e) => {
     renderRail(); toast(`Marker at ${fmt(t)} (${state.markers.length} total)`);
   } else if (e.shiftKey && (e.key === 'N' || e.key === 'n')) {
     const next = state.markers.find((m) => m.t > t + 0.05);
-    if (next) { e.preventDefault(); player.currentTime = next.t; toast(`Marker ${fmt(next.t)}`); }
+    if (next) { e.preventDefault(); player.currentTime = next.t; toast(`${next.label || 'Marker'} · ${fmt(next.t)}`); }
   } else if (e.shiftKey && (e.key === 'P' || e.key === 'p')) {
     const prev = [...state.markers].reverse().find((m) => m.t < t - 0.05);
-    if (prev) { e.preventDefault(); player.currentTime = prev.t; toast(`Marker ${fmt(prev.t)}`); }
+    if (prev) { e.preventDefault(); player.currentTime = prev.t; toast(`${prev.label || 'Marker'} · ${fmt(prev.t)}`); }
   } else if ((e.key === 'i' || e.key === 'I') && !e.metaKey && !e.altKey) {
     e.preventDefault(); state.inPoint = +t.toFixed(3);
     if (state.outPoint != null && state.outPoint <= state.inPoint) state.outPoint = null;
