@@ -302,6 +302,8 @@ function loadProject(data) {
   resizeCanvas();
   draw();
   if (typeof renderHookLab === 'function') renderHookLab({});   // reset cold-open health for the new project
+  state.facecam = data.facecam || null;                          // per-project facecam box (persisted in analysis)
+  if (typeof renderFcStatus === 'function') renderFcStatus();
   if (data.videoReady) {
     const st = data.phantasmStats || {};
     toast(`Phantasm: ${st.ghostCount || 0} ghosts (${fmt(st.ghostDuration || 0)} dead air) → cut ≈ ${fmt(st.cutDuration || 0)}.`);
@@ -944,6 +946,70 @@ async function publishEverything() {
   } finally { btn.disabled = false; btn.innerHTML = o; }
 }
 $('#publishAllBtn')?.addEventListener('click', publishEverything);
+
+// ---- Facecam box: draw once over the monitor → every vertical short renders facecam-on-top /
+// gameplay-below (the creator split layout). Stored normalized (0..1 of the SOURCE frame) and
+// persisted into the project's analysis via /api/facecam, so it survives relaunches. ----
+function renderFcStatus() {
+  const st = $('#fcStatus'); const clr = $('#fcClearBtn');
+  if (!st) return;
+  const f = state.facecam;
+  st.textContent = f ? `set — ${Math.round(f.w * 100)}×${Math.round(f.h * 100)}% @ ${Math.round(f.x * 100)},${Math.round(f.y * 100)}` : 'not set — shorts use center-crop';
+  clr?.classList.toggle('hidden', !f);
+}
+async function saveFacecam(rect) {
+  state.facecam = rect;
+  renderFcStatus();
+  if (!state.proj) return;
+  try {
+    await fetch('/api/facecam', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: state.proj.id, facecam: rect }) });
+  } catch {}
+}
+$('#fcClearBtn')?.addEventListener('click', () => { saveFacecam(null); toast('Facecam box cleared — shorts use center-crop.'); });
+$('#fcSetBtn')?.addEventListener('click', () => {
+  if (!state.proj) { toast('Load a project first.', true); return; }
+  if (!player.videoWidth || !player.videoHeight) { toast('Wait for the video to load, then try again.', true); return; }
+  // The video renders object-fit:contain inside #player — compute the DISPLAYED rect so the drawn
+  // box maps to true source pixels (drawing on letterbox bars would skew the crop).
+  const pr = player.getBoundingClientRect();
+  if (pr.width < 120 || pr.height < 70) { toast('Monitor too small to draw on — widen the window first.', true); return; }
+  const scale = Math.min(pr.width / player.videoWidth, pr.height / player.videoHeight);
+  const dw = player.videoWidth * scale, dh = player.videoHeight * scale;
+  const ox = pr.left + (pr.width - dw) / 2, oy = pr.top + (pr.height - dh) / 2;
+  const ov = document.createElement('div');
+  ov.className = 'fcOverlay';
+  ov.style.cssText = `left:${ox}px;top:${oy}px;width:${dw}px;height:${dh}px`;
+  ov.innerHTML = '<div class="fcHint">Drag a box around your facecam · Esc to cancel</div><div class="fcBox hidden"></div>';
+  document.body.appendChild(ov);
+  const box = ov.querySelector('.fcBox');
+  let sx = 0, sy = 0, drawing = false;
+  const cancel = () => { ov.remove(); window.removeEventListener('keydown', esc, true); };
+  const esc = (e) => { if (e.key === 'Escape') { e.stopPropagation(); cancel(); } };
+  window.addEventListener('keydown', esc, true);
+  ov.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    drawing = true; sx = e.clientX - ox; sy = e.clientY - oy;
+    box.classList.remove('hidden');
+    box.style.cssText = `left:${sx}px;top:${sy}px;width:0;height:0`;
+  });
+  ov.addEventListener('mousemove', (e) => {
+    if (!drawing) return;
+    const x = Math.max(0, Math.min(dw, e.clientX - ox)), y = Math.max(0, Math.min(dh, e.clientY - oy));
+    box.style.left = `${Math.min(sx, x)}px`; box.style.top = `${Math.min(sy, y)}px`;
+    box.style.width = `${Math.abs(x - sx)}px`; box.style.height = `${Math.abs(y - sy)}px`;
+  });
+  ov.addEventListener('mouseup', (e) => {
+    if (!drawing) return; drawing = false;
+    const x = Math.max(0, Math.min(dw, e.clientX - ox)), y = Math.max(0, Math.min(dh, e.clientY - oy));
+    const rx = Math.min(sx, x) / dw, ry = Math.min(sy, y) / dh;
+    const rw = Math.abs(x - sx) / dw, rh = Math.abs(y - sy) / dh;
+    cancel();
+    if (rw < 0.03 || rh < 0.03) { toast('Box too small — drag a rectangle around the facecam.', true); return; }
+    saveFacecam({ x: +rx.toFixed(4), y: +ry.toFixed(4), w: +rw.toFixed(4), h: +rh.toFixed(4) });
+    toast('Facecam box saved — vertical shorts now use the split layout.');
+  });
+});
 $('#pkCopyBtn')?.addEventListener('click', async () => {
   const ta = $('#pkText'); if (!ta || !ta.value) return;
   try { await navigator.clipboard.writeText(ta.value); } catch { ta.select(); document.execCommand('copy'); }
@@ -1319,7 +1385,7 @@ $('#tiktokBtn').addEventListener('click', async () => {
   try {
     const res = await fetch('/api/export/tiktok', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: state.proj.id, clips, captions: caps, kinetic: !!($('#capKinetic') && $('#capKinetic').checked) }),
+      body: JSON.stringify({ id: state.proj.id, clips, captions: caps, kinetic: !!($('#capKinetic') && $('#capKinetic').checked), facecam: state.facecam || undefined }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
@@ -1382,7 +1448,7 @@ $('#shortsBtn').addEventListener('click', async () => {
   try {
     const res = await fetch('/api/export/shorts', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: state.proj.id, clips, captions: $('#capShort').checked }),
+      body: JSON.stringify({ id: state.proj.id, clips, captions: $('#capShort').checked, facecam: state.facecam || undefined }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);

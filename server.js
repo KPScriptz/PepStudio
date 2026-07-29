@@ -451,6 +451,39 @@ app.post('/api/pacing/sequence', async (req, res) => {
   } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
 
+// Facecam split geometry: a normalized rect {x,y,w,h} (0..1 of the source frame) → precomputed
+// pixel layout for the stacked 9:16 short. Cam strip height is proportional to its aspect,
+// clamped to 240..768 of the 1920; the gameplay crop centers on whatever aspect fills the rest.
+// All dims even-aligned (yuv420 requirement).
+function facecamLayout(rect, srcW, srcH) {
+  const ev = (n) => Math.max(2, Math.round(n) & ~1);
+  const cx = ev(rect.x * srcW), cy = ev(rect.y * srcH);
+  const cw = ev(Math.min(rect.w * srcW, srcW - cx)), chh = ev(Math.min(rect.h * srcH, srcH - cy));
+  if (cw < 40 || chh < 40) return null;
+  const camOutH = Math.min(768, Math.max(240, ev(1080 * chh / cw)));
+  const gameOutH = 1920 - camOutH;
+  let gw = ev(srcH * 1080 / gameOutH), gh = srcH & ~1;
+  if (gw > srcW) { gw = srcW & ~1; gh = ev(srcW * gameOutH / 1080); }
+  const gx = ev((srcW - gw) / 2), gy = ev((srcH - gh) / 2);
+  return { camCrop: [cw, chh, cx, cy], camOutH, gameCrop: [gw, gh, gx, gy] };
+}
+
+// Persist the project's facecam box (normalized rect) into its analysis so it survives
+// relaunches and rides along in GET /api/analysis/:id.
+app.post('/api/facecam', async (req, res) => {
+  try {
+    const id = req.body.id;
+    const p = path.join(DATA, id || '', 'analysis.json');
+    if (!id || !fs.existsSync(p)) return res.status(404).json({ error: 'Unknown project id' });
+    const a = JSON.parse(await fsp.readFile(p, 'utf8'));
+    const r = req.body.facecam;
+    const ok = r && ['x', 'y', 'w', 'h'].every((k) => Number.isFinite(r[k]) && r[k] >= 0 && r[k] <= 1);
+    a.facecam = ok ? { x: r.x, y: r.y, w: r.w, h: r.h } : null;   // null clears it
+    await fsp.writeFile(p, JSON.stringify(a), 'utf8');
+    res.json({ facecam: a.facecam });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
 // Cover-frame candidates for a clip (peak reaction / loudest / scene change). Pure compile — the
 // client renders each returned `t` as an <img src="/api/cover?...">.
 app.post('/api/covers', (req, res) => {
@@ -792,6 +825,12 @@ app.post('/api/export/shorts', async (req, res) => {
     if (!clips.length) return res.status(400).json({ error: 'No clips selected' });
     const subs = req.body.captions ? path.join(RENDERS, req.body.id, 'captions.ass') : undefined;
     const useSubs = subs && fs.existsSync(subs) ? subs : undefined;
+    // Same facecam split as the TikTok pack, so the manual shorts path matches.
+    let layout = null;
+    if (req.body.facecam) {
+      const meta = await probe(file);
+      if (meta.width && meta.height) layout = facecamLayout(req.body.facecam, meta.width, meta.height);
+    }
     // Bounded-parallel + partial-success: each short is an independent encode (per-call
     // mkdtemp/output path); a single bad clip is isolated so the rest still come back.
     const settled = await mapLimit(clips, PACK_CONCURRENCY, async (clip, i) => {
@@ -799,7 +838,7 @@ app.post('/api/export/shorts', async (req, res) => {
         const r = cleanRange(clip.start, clip.end);
         if (!r) throw new Error(`Invalid clip range [${clip.start}, ${clip.end}]`);
         const out = path.join(RENDERS, req.body.id, `short-${i + 1}.mp4`);
-        await exportShort(file, r[0], r[1], out, { subs: useSubs });
+        await exportShort(file, r[0], r[1], out, { subs: useSubs, layout });
         return { ok: true, value: { file: out, url: `/renders/${req.body.id}/short-${i + 1}.mp4` } };
       } catch (err) {
         return { ok: false, index: i, error: String(err.message || err) };
@@ -826,6 +865,13 @@ app.post('/api/export/tiktok', async (req, res) => {
     const zoomOn = req.body.zoom !== false;   // beat-synced punch-ins on emphasis words
     const dir = path.join(RENDERS, req.body.id);
     let zoomed = false;
+    // Facecam split: one geometry computation for the whole pack (probe once). Falls back to
+    // the classic center-crop when no valid rect arrives.
+    let layout = null;
+    if (req.body.facecam) {
+      const meta = await probe(file);
+      if (meta.width && meta.height) layout = facecamLayout(req.body.facecam, meta.width, meta.height);
+    }
     // Render the pack in BOUNDED PARALLEL — each clip's transcribe→zoom→encode pipeline is fully
     // independent (whisper + exportShort both use per-call mkdtemp/output paths). A pool of
     // PACK_CONCURRENCY keeps every core saturated without the context-switch thrash that
@@ -848,7 +894,7 @@ app.post('/api/export/tiktok', async (req, res) => {
           if (zoomOn) { const z = buildTimelineZoomExpression(chunks || [], 0); zoomFilter = z.filter; if (z.hasZoom) zoomed = true; }
         }
         const out = path.join(dir, `tiktok-${i + 1}.mp4`);
-        await exportShort(file, start, end, out, { subs, zoomFilter });
+        await exportShort(file, start, end, out, { subs, zoomFilter: layout ? null : zoomFilter, layout });
         return { ok: true, value: {
           file: out, url: `/renders/${req.body.id}/tiktok-${i + 1}.mp4`,
           srtUrl: wantCaps ? `/renders/${req.body.id}/tiktok-${i + 1}.srt` : null,

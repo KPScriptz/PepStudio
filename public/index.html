@@ -179,6 +179,11 @@
             <button id="seqExportBtn" class="big seqBtn">Export sequence<small>kept clips in order + text overlays</small></button>
             <label class="check"><input type="checkbox" id="capPublish" checked /> Captions on publish exports</label>
             <label class="check" title="Word-by-word captions that hit on each spoken word — the short-form retention style."><input type="checkbox" id="capKinetic" /> Kinetic captions (word-by-word)</label>
+            <div class="fcRow">
+              <button id="fcSetBtn" class="pkGhost">Set facecam box</button>
+              <span id="fcStatus" class="fcStatus">not set — shorts use center-crop</span>
+              <button id="fcClearBtn" class="pkGhost hidden">Clear</button>
+            </div>
 
             <div class="publishKit">
               <div class="pkHead"><span>Upload Kit</span><span class="pkBtns"><button id="pkTitleBtn" class="pkGhost">Auto-title clips</button><button id="pkGenBtn" class="pkGen">Generate</button></span></div>

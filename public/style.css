@@ -563,6 +563,15 @@ body.reordering .hlRow, body.reordering .card { transition: none; }
 .ioExport{ font-size:11px; font-weight:700; padding:0 9px !important; color:#fff !important;
   background:var(--px-accent,#2d76ff) !important; border-radius:6px; white-space:nowrap; }
 .ioExport:disabled{ opacity:.6; }
+/* Facecam box row + draw-mode overlay. */
+.fcRow{ display:flex; align-items:center; gap:8px; margin:6px 0 4px; }
+.fcStatus{ flex:1 1 auto; min-width:0; font-size:11px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fcOverlay{ position:fixed; z-index:4000; cursor:crosshair; background:rgba(0,0,0,.25);
+  outline:2px dashed var(--px-accent,#2d76ff); outline-offset:-2px; }
+.fcOverlay .fcHint{ position:absolute; top:8px; left:50%; transform:translateX(-50%); padding:4px 12px;
+  font-size:12px; font-weight:600; color:#fff; background:rgba(0,0,0,.72); border-radius:7px; white-space:nowrap; pointer-events:none; }
+.fcOverlay .fcBox{ position:absolute; border:2px solid var(--px-accent,#2d76ff);
+  background:rgba(45,118,255,.18); box-shadow:0 0 12px rgba(45,118,255,.4); pointer-events:none; }
 .tpTime{ font-variant-numeric:tabular-nums; font-size:11px; min-width:88px; text-align:right; }
 
 /* Sequence playhead across the multi-track lanes (#trackLanes is position:relative) */
