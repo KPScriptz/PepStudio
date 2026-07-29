@@ -940,16 +940,15 @@ async function previewPacing() {
     toast(`${d.label}: ${d.origSec}s → ${d.tightSec}s (${d.cuts} cuts).`);
   } catch (e) { toast(e.message, true); } finally { btn.disabled = false; btn.textContent = o; }
 }
-async function exportTightPacing() {
-  const btn = $('#paceExportBtn'); if (!btn) return;
-  if (!state.proj) { toast('Load and analyze a video first.', true); return; }
+// Throws on failure and returns a summary on success, so the batch queue can report the real
+// outcome per row instead of marking every job "done".
+async function runTightPacing() {
   const level = ($('#paceLevel') && $('#paceLevel').value) || 'tight';
   const seq = pacingIsSequence();
-  const o = btn.textContent; btn.disabled = true; btn.textContent = 'Tightening…';
   showProgress(seq ? 'Tightening every clip into one master cut…' : 'Rendering the tightened short…');
   try {
     const pr = await fetchPacing(level);
-    if (!pr.segments || !pr.segments.length) { toast('No dead air to cut at this level.', true); return; }
+    if (!pr.segments || !pr.segments.length) throw new Error('No dead air to cut at this level.');
     const clips = pr.segments.map((g) => ({ start: g.start, end: g.end, overlays: [] }));
     const res = await fetch('/api/export/sequence', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -959,8 +958,16 @@ async function exportTightPacing() {
     if (!res.ok) throw new Error(data.error || 'Export failed.');
     addOutput(seq ? 'Tight sequence' : 'Tight short', data, 'sequence');
     logEdit('micro_cut', { scope: seq ? 'sequence' : 'clip', level, cuts: pr.cuts, removedSec: pr.removedSec });
-    toast(`${seq ? 'Tight master cut' : 'Tight short'} ready — ${pr.origSec}s → ${pr.tightSec}s ✓`);
-  } catch (e) { toast(e.message, true); } finally { hideProgress(); btn.disabled = false; btn.textContent = o; }
+    return `${seq ? 'Tight master cut' : 'Tight short'} ready — ${pr.origSec}s → ${pr.tightSec}s`;
+  } finally { hideProgress(); }
+}
+async function exportTightPacing() {
+  const btn = $('#paceExportBtn'); if (!btn) return;
+  if (!state.proj) { toast('Load and analyze a video first.', true); return; }
+  const o = btn.textContent; btn.disabled = true; btn.textContent = 'Tightening…';
+  try { toast(`${await runTightPacing()} ✓`); }
+  catch (e) { toast(e.message, true); }
+  finally { btn.disabled = false; btn.textContent = o; }
 }
 $('#pacePreviewBtn')?.addEventListener('click', previewPacing);
 $('#paceExportBtn')?.addEventListener('click', exportTightPacing);
@@ -1010,15 +1017,12 @@ async function findFillers() {
     toast(d.cuts ? `${d.cuts} filler word${d.cuts === 1 ? '' : 's'} found (−${d.removedSec}s).` : 'No filler words found.');
   } catch (e) { toast(e.message, true); } finally { btn.disabled = false; btn.textContent = o; }
 }
-async function exportCleanCut() {
-  const btn = $('#fillerExportBtn'); if (!btn) return;
-  if (!state.proj) { toast('Load and analyze a video first.', true); return; }
-  const o = btn.textContent; btn.disabled = true; btn.textContent = 'Purging…';
+async function runCleanCut() {
   showProgress('Cutting the filler words out of every kept clip…');
   try {
     const d = await scanFillers();
     renderFillerStat(d);
-    if (!d.cuts) { toast('No filler words to cut.', true); return; }
+    if (!d.cuts) throw new Error('No filler words to cut.');
     const res = await fetch('/api/export/sequence', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1030,8 +1034,16 @@ async function exportCleanCut() {
     if (!res.ok) throw new Error(data.error || 'Export failed.');
     addOutput('Filler-free cut', data, 'sequence');
     logEdit('filler_purge', { cuts: d.cuts, removedSec: d.removedSec, aggressive: d.aggressive });
-    toast(`Clean cut ready — ${d.cuts} filler${d.cuts === 1 ? '' : 's'} removed (−${d.removedSec}s) ✓`);
-  } catch (e) { toast(e.message, true); } finally { hideProgress(); btn.disabled = false; btn.textContent = o; }
+    return `Clean cut ready — ${d.cuts} filler${d.cuts === 1 ? '' : 's'} removed (−${d.removedSec}s)`;
+  } finally { hideProgress(); }
+}
+async function exportCleanCut() {
+  const btn = $('#fillerExportBtn'); if (!btn) return;
+  if (!state.proj) { toast('Load and analyze a video first.', true); return; }
+  const o = btn.textContent; btn.disabled = true; btn.textContent = 'Purging…';
+  try { toast(`${await runCleanCut()} ✓`); }
+  catch (e) { toast(e.message, true); }
+  finally { btn.disabled = false; btn.textContent = o; }
 }
 $('#fillerScanBtn')?.addEventListener('click', findFillers);
 $('#fillerExportBtn')?.addEventListener('click', exportCleanCut);
@@ -1486,13 +1498,14 @@ function hookRange() {
   return [Math.max(0, +(top.t - 2).toFixed(2)), Math.min(d, +(top.t + 3).toFixed(2))];
 }
 
-$('#tiktokBtn').addEventListener('click', async () => {
-  if (!state.proj) return;
+// The TikTok pack render, split out from its button so the batch queue can run the exact same
+// path (one implementation, no drift). Reads its options at CALL time — a queued job therefore
+// renders with the settings in effect when it runs, matching what the direct button does.
+async function runTikTokPack() {
   const n = parseInt($('#tiktokCount').value, 10) || 5;
   const clips = topClips(n);
-  if (!clips.length) return toast('No highlights to clip — keep at least one.', true);
+  if (!clips.length) throw new Error('No highlights to clip — keep at least one.');
   const caps = $('#capPublish').checked;
-  $('#tiktokBtn').disabled = true;
   showProgress(`Rendering ${clips.length} TikTok clips — vertical${caps ? ' + transcribing captions' : ''}…`);
   try {
     const res = await fetch('/api/export/tiktok', {
@@ -1502,17 +1515,22 @@ $('#tiktokBtn').addEventListener('click', async () => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
     data.clips.forEach((c, i) => addOutput(`TikTok ${i + 1}`, c, 'tiktok'));
-    toast(`${data.clips.length} TikTok clips ready${data.captionsBurned ? ' with burned captions' : ''} ✓`);
-  } catch (e) { toast(e.message, true); } finally { hideProgress(); $('#tiktokBtn').disabled = false; }
+    return `${data.clips.length} TikTok clips ready${data.captionsBurned ? ' with burned captions' : ''}`;
+  } finally { hideProgress(); }
+}
+$('#tiktokBtn').addEventListener('click', async () => {
+  if (!state.proj) return;
+  $('#tiktokBtn').disabled = true;
+  try { toast(`${await runTikTokPack()} ✓`); }
+  catch (e) { toast(e.message, true); }
+  finally { $('#tiktokBtn').disabled = false; }
 });
 
-$('#youtubeBtn').addEventListener('click', async () => {
-  if (!state.proj) return;
+async function runYouTubeCut() {
   const segments = keepSegments();
-  if (!segments.length) return toast('Nothing to cut — all segments are red.', true);
+  if (!segments.length) throw new Error('Nothing to cut — all segments are red.');
   const hook = hookRange();
   const caps = $('#capPublish').checked;
-  $('#youtubeBtn').disabled = true;
   showProgress(`Building YouTube cut — cold-open hook + tight edit${caps ? ' + captions' : ''}…`);
   try {
     const res = await fetch('/api/export/youtube', {
@@ -1522,8 +1540,15 @@ $('#youtubeBtn').addEventListener('click', async () => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
     addOutput('YouTube cut', data, 'youtube');
-    toast(`YouTube cut ready${data.hook ? ' (hooked)' : ''}${data.captionsBurned ? ' + captions' : ''} ✓`);
-  } catch (e) { toast(e.message, true); } finally { hideProgress(); $('#youtubeBtn').disabled = false; }
+    return `YouTube cut ready${data.hook ? ' (hooked)' : ''}${data.captionsBurned ? ' + captions' : ''}`;
+  } finally { hideProgress(); }
+}
+$('#youtubeBtn').addEventListener('click', async () => {
+  if (!state.proj) return;
+  $('#youtubeBtn').disabled = true;
+  try { toast(`${await runYouTubeCut()} ✓`); }
+  catch (e) { toast(e.message, true); }
+  finally { $('#youtubeBtn').disabled = false; }
 });
 
 // Hand the Phantasm cut to Premiere/Resolve/FCP as an EDL + FCP7 XML.
@@ -1552,10 +1577,9 @@ $('#premiereBtn').addEventListener('click', async () => {
   } catch (e) { toast(e.message, true); } finally { hideProgress(); $('#premiereBtn').disabled = false; }
 });
 
-$('#shortsBtn').addEventListener('click', async () => {
-  if (!state.proj) return;
+async function runShorts() {
   const clips = keptHighlightClips();
-  if (!clips.length) return toast('Keep at least one highlight to export shorts.', true);
+  if (!clips.length) throw new Error('Keep at least one highlight to export shorts.');
   showProgress(`Rendering ${clips.length} vertical shorts…`);
   try {
     const res = await fetch('/api/export/shorts', {
@@ -1565,14 +1589,17 @@ $('#shortsBtn').addEventListener('click', async () => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
     data.shorts.forEach((s, i) => addOutput(`Short ${i + 1}`, s, 'short'));
-    toast(`${data.shorts.length} shorts exported ✓`);
-  } catch (e) { toast(e.message, true); } finally { hideProgress(); }
+    return `${data.shorts.length} shorts exported`;
+  } finally { hideProgress(); }
+}
+$('#shortsBtn').addEventListener('click', async () => {
+  if (!state.proj) return;
+  try { toast(`${await runShorts()} ✓`); } catch (e) { toast(e.message, true); }
 });
 
-$('#thumbsBtn').addEventListener('click', async () => {
-  if (!state.proj) return;
+async function runThumbs() {
   const times = state.highlights.filter((h) => h.keep).map((h) => h.t);
-  if (!times.length) return toast('Keep at least one highlight to grab thumbnails.', true);
+  if (!times.length) throw new Error('Keep at least one highlight to grab thumbnails.');
   showProgress(`Grabbing ${times.length} thumbnail frames…`);
   try {
     const res = await fetch('/api/export/thumbs', {
@@ -1591,9 +1618,89 @@ $('#thumbsBtn').addEventListener('click', async () => {
         fetch('/api/reveal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: t.file }) }));
       $('#outputs').prepend(el);
     });
-    toast(`${data.thumbs.length} thumbnails saved (1280px). Drop into Canva to finish.`);
-  } catch (e) { toast(e.message, true); } finally { hideProgress(); }
+    return `${data.thumbs.length} thumbnails saved (1280px). Drop into Canva to finish.`;
+  } finally { hideProgress(); }
+}
+$('#thumbsBtn').addEventListener('click', async () => {
+  if (!state.proj) return;
+  try { toast(await runThumbs()); } catch (e) { toast(e.message, true); }
 });
+
+// ---- Export Queue: line up several renders and run them back-to-back. Each entry calls the
+// SAME run* function its button does, so queued output is identical to clicking it by hand.
+// Serial by design — the server already saturates the CPU inside a single pack (PACK_CONCURRENCY),
+// so running two packs at once would only make both slower.
+const QUEUE_JOBS = {
+  tiktok: { label: 'TikTok pack', run: () => runTikTokPack() },
+  youtube: { label: 'YouTube cut', run: () => runYouTubeCut() },
+  shorts: { label: 'Vertical shorts', run: () => runShorts() },
+  thumbs: { label: 'Thumbnails', run: () => runThumbs() },
+  pacing: { label: 'Tight cut', run: () => runTightPacing() },
+  fillers: { label: 'Clean cut', run: () => runCleanCut() },
+};
+let _queue = [];        // [{ id, key, label, status: queued|running|done|error, note }]
+let _queueRunning = false;
+let _queueSeq = 0;
+function renderQueue() {
+  const list = $('#queueList'), count = $('#queueCount');
+  if (!list) return;
+  const icon = { queued: '·', running: '⟳', done: '✓', error: '✕' };
+  list.innerHTML = _queue.map((j) =>
+    `<div class="qItem ${j.status}">
+       <span class="qIcon">${icon[j.status]}</span>
+       <span class="qLabel">${escapeHtml(j.label)}</span>
+       <span class="qNote">${escapeHtml(j.note || '')}</span>
+       ${j.status === 'queued' ? `<button class="qDel" data-qid="${j.id}" title="Remove">×</button>` : ''}
+     </div>`).join('');
+  list.classList.toggle('hidden', !_queue.length);
+  const pending = _queue.filter((j) => j.status === 'queued' || j.status === 'running').length;
+  if (count) {
+    count.textContent = pending ? `${pending} pending` : `${_queue.length} done`;
+    count.classList.toggle('hidden', !_queue.length);
+  }
+  const run = $('#queueRunBtn');
+  if (run) { run.disabled = _queueRunning || !pending; run.textContent = _queueRunning ? 'Running…' : 'Run queue'; }
+}
+function queueAdd(key) {
+  const job = QUEUE_JOBS[key]; if (!job) return;
+  _queue.push({ id: ++_queueSeq, key, label: job.label, status: 'queued', note: '' });
+  renderQueue();
+  toast(`${job.label} queued (${_queue.filter((j) => j.status === 'queued').length} waiting).`);
+}
+async function runQueue() {
+  if (_queueRunning) return;
+  if (!state.proj) { toast('Load and analyze a video first.', true); return; }
+  _queueRunning = true; renderQueue();
+  let ok = 0, failed = 0;
+  try {
+    // Re-scan each pass: the user can queue MORE work while the queue is draining.
+    for (let j = _queue.find((x) => x.status === 'queued'); j; j = _queue.find((x) => x.status === 'queued')) {
+      j.status = 'running'; j.note = ''; renderQueue();
+      try {
+        const note = await QUEUE_JOBS[j.key].run();
+        j.status = 'done'; j.note = typeof note === 'string' ? note : ''; ok++;
+      } catch (e) {
+        // One bad job never stops the rest — the failure is recorded on its own row.
+        j.status = 'error'; j.note = String(e.message || e); failed++;
+      }
+      renderQueue();
+    }
+  } finally { _queueRunning = false; renderQueue(); }
+  toast(failed ? `Queue finished — ${ok} done, ${failed} failed.` : `Queue finished — ${ok} export${ok === 1 ? '' : 's'} ✓`, !!failed);
+}
+$('#queueAddBtn')?.addEventListener('click', () => queueAdd($('#queueJob').value));
+$('#queueRunBtn')?.addEventListener('click', runQueue);
+$('#queueClearBtn')?.addEventListener('click', () => {
+  // Clearing drops the waiting work and the finished log; anything mid-render keeps going.
+  _queue = _queue.filter((j) => j.status === 'running');
+  renderQueue(); toast('Queue cleared.');
+});
+$('#queueList')?.addEventListener('click', (e) => {
+  const b = e.target.closest('.qDel'); if (!b) return;
+  _queue = _queue.filter((j) => String(j.id) !== b.dataset.qid);
+  renderQueue();
+});
+renderQueue();   // start with Run disabled until something is queued
 
 function addOutput(label, data, kind) {
   const el = document.createElement('div');

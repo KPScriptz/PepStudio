@@ -263,6 +263,27 @@
               </div>
             </details>
 
+            <div class="pacingBox">
+              <div class="pkHead"><span>Export Queue</span><span id="queueCount" class="qCount hidden"></span></div>
+              <div class="qAdd">
+                <select id="queueJob" class="blueprintSel">
+                  <option value="tiktok">TikTok pack</option>
+                  <option value="youtube">YouTube cut</option>
+                  <option value="shorts">Vertical shorts</option>
+                  <option value="thumbs">Thumbnails</option>
+                  <option value="pacing">Tight cut (micro-cut)</option>
+                  <option value="fillers">Clean cut (filler purge)</option>
+                </select>
+                <button id="queueAddBtn" class="pkGhost">Add</button>
+              </div>
+              <div id="queueList" class="qList hidden"></div>
+              <div class="pkBtns" style="margin-top:9px">
+                <button id="queueRunBtn" class="pkGen">Run queue</button>
+                <button id="queueClearBtn" class="pkGhost">Clear</button>
+              </div>
+              <div class="hint">Line up several renders and run them back-to-back — each one uses the settings in effect when it starts, and finished files land in Outputs below as they complete. Keep editing while it works.</div>
+            </div>
+
             <div id="outputs"></div>
           </div>
 
