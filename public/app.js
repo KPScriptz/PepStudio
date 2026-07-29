@@ -315,6 +315,7 @@ function loadProject(data) {
   if (typeof renderHookLab === 'function') renderHookLab({});   // reset cold-open health for the new project
   state.facecam = data.facecam || null;                          // per-project facecam box (persisted in analysis)
   if (typeof renderFcStatus === 'function') renderFcStatus();
+  if (typeof resetUndoBaseline === 'function') setTimeout(resetUndoBaseline, 0);   // undo history starts at the loaded state
   if (data.videoReady) {
     const st = data.phantasmStats || {};
     toast(`Phantasm: ${st.ghostCount || 0} ghosts (${fmt(st.ghostDuration || 0)} dead air) → cut ≈ ${fmt(st.cutDuration || 0)}.`);
@@ -1305,7 +1306,13 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === 'v' || e.key === 'V') { if (seg) { e.preventDefault(); verifySeg(seg); } }
   else if (e.key === 'b' || e.key === 'B') { e.preventDefault(); $('#banishBtn').click(); }
   // Spacebar = transport play/pause (industry standard; inputs already guarded above).
-  else if (e.code === 'Space') { e.preventDefault(); if (player.paused) player.play(); else player.pause(); }
+  // Blur any focused button first so Space can't ALSO trigger it on keyup (transport lock);
+  // Alt+Space is the play-In→Out shortcut, handled elsewhere.
+  else if (e.code === 'Space' && !e.altKey) {
+    e.preventDefault();
+    if (document.activeElement && document.activeElement.tagName === 'BUTTON') document.activeElement.blur();
+    if (player.paused) player.play(); else player.pause();
+  }
 });
 
 // ---- Captions ----
@@ -1703,7 +1710,7 @@ $('#tpRail')?.addEventListener('dblclick', (e) => {
   e.preventDefault(); e.stopPropagation();
   const mk = state.markers.find((m) => m.t === +el.dataset.t); if (!mk) return;
   const label = prompt('Marker label:', mk.label || '');
-  if (label != null) { mk.label = label.trim(); renderRail(); scheduleStateSave(); }
+  if (label != null) { mk.label = label.trim(); renderRail(); scheduleStateSave(); pushUndo(); }
 });
 $('#ioExportBtn')?.addEventListener('click', async () => {
   const a = state.inPoint, b = state.outPoint;
@@ -1737,15 +1744,74 @@ function nudgeSelectedClip(dir, frames) {
   logEdit('nudge', { id: h.id, frames: dir * frames });
   toast(`Slipped ${h.id.toUpperCase()} ${dir > 0 ? '+' : '−'}${frames}f → ${fmt(h.start)}`);
 }
+// ---- Pro transport: J-K-L shuttle, frame stepping, cut navigation, In/Out loop. ----
+// J skims backward (HTML5 video can't reverse-play, so J seeks in steps at the shuttle rate —
+// honest behavior, not fake smooth reverse); L plays forward at 1/2/4/8x; K stops both.
+let _shuttle = { dir: 0, rate: 1, timer: null };
+function stopShuttle() { clearInterval(_shuttle.timer); _shuttle = { dir: 0, rate: 1, timer: null }; player.playbackRate = 1; }
+function shuttle(dir) {
+  if (_shuttle.dir === dir) _shuttle.rate = Math.min(8, _shuttle.rate * 2);   // repeat press → 2x/4x/8x
+  else { clearInterval(_shuttle.timer); _shuttle.dir = dir; _shuttle.rate = 1; }
+  if (dir > 0) { clearInterval(_shuttle.timer); _shuttle.timer = null; player.playbackRate = _shuttle.rate; player.play(); }
+  else {
+    player.pause(); player.playbackRate = 1;
+    clearInterval(_shuttle.timer);
+    _shuttle.timer = setInterval(() => {
+      player.currentTime = Math.max(0, player.currentTime - 0.1 * _shuttle.rate);
+      if (player.currentTime <= 0) stopShuttle();
+    }, 100);
+  }
+  toast(`${dir > 0 ? '▶' : '◀'} ${_shuttle.rate}×`);
+}
+// Loop In→Out (Ctrl+L) — wraps playback inside the region; Option+Space plays it once.
+let _loopIO = false, _playToOut = false;
+player.addEventListener('timeupdate', () => {
+  if (state.outPoint == null) return;
+  if (_loopIO && player.currentTime >= state.outPoint) player.currentTime = state.inPoint ?? 0;
+  else if (_playToOut && player.currentTime >= state.outPoint) { player.pause(); _playToOut = false; }
+});
 window.addEventListener('keydown', (e) => {
   if (!state.proj || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
   const t = player.currentTime || 0;
+  const frame = 1 / ((state.proj.meta && state.proj.meta.fps) || 30);
+  // Undo/Redo
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
+    e.preventDefault(); if (e.shiftKey) redoEdit(); else undoEdit(); return;
+  }
+  // J-K-L shuttle
+  if (!e.metaKey && !e.altKey && (e.key === 'l' || e.key === 'L') && !e.ctrlKey) { e.preventDefault(); shuttle(1); return; }
+  if (!e.metaKey && !e.altKey && (e.key === 'j' || e.key === 'J')) { e.preventDefault(); shuttle(-1); return; }
+  if (!e.metaKey && !e.altKey && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); stopShuttle(); player.pause(); return; }
+  // frame stepping (plain arrows; Shift = 10 frames; Option+arrows stay bound to clip nudge)
+  if (!e.altKey && !e.metaKey && e.code === 'ArrowRight') { e.preventDefault(); stopShuttle(); player.currentTime = Math.min(player.duration || 1e9, t + frame * (e.shiftKey ? 10 : 1)); return; }
+  if (!e.altKey && !e.metaKey && e.code === 'ArrowLeft') { e.preventDefault(); stopShuttle(); player.currentTime = Math.max(0, t - frame * (e.shiftKey ? 10 : 1)); return; }
+  // jump to next / previous cut (kept-clip boundaries in source time)
+  if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
+    const cuts = [...new Set((state.highlights || []).filter((h) => h.keep).flatMap((h) => [h.start, h.end]))].sort((a, b) => a - b);
+    if (cuts.length) {
+      e.preventDefault();
+      const next = e.code === 'ArrowUp' ? cuts.find((c) => c > t + 0.05) : [...cuts].reverse().find((c) => c < t - 0.05);
+      if (next != null) { player.currentTime = next; toast(`Cut · ${fmt(next)}`); }
+    }
+    return;
+  }
+  // In→Out playback: Ctrl+L loop toggle, Option+Space play-once
+  if (e.ctrlKey && (e.key === 'l' || e.key === 'L')) {
+    e.preventDefault(); _loopIO = !_loopIO;
+    if (_loopIO && state.inPoint != null) { player.currentTime = state.inPoint; player.play(); }
+    toast(_loopIO ? 'Looping In→Out' : 'Loop off'); return;
+  }
+  if (e.altKey && e.code === 'Space') {
+    e.preventDefault();
+    if (state.inPoint != null && state.outPoint != null) { _playToOut = true; player.currentTime = state.inPoint; player.play(); }
+    return;
+  }
   if (e.key === 'Home') {
     e.preventDefault(); player.currentTime = 0;
   } else if ((e.key === 'm' || e.key === 'M') && !e.shiftKey && !e.metaKey && !e.altKey) {
     e.preventDefault();
     state.markers.push({ t: +t.toFixed(3) }); state.markers.sort((a, b) => a.t - b.t);
-    renderRail(); scheduleStateSave(); toast(`Marker at ${fmt(t)} (${state.markers.length} total)`);
+    renderRail(); scheduleStateSave(); pushUndo(); toast(`Marker at ${fmt(t)} (${state.markers.length} total)`);
   } else if (e.shiftKey && (e.key === 'N' || e.key === 'n')) {
     const next = state.markers.find((m) => m.t > t + 0.05);
     if (next) { e.preventDefault(); player.currentTime = next.t; toast(`${next.label || 'Marker'} · ${fmt(next.t)}`); }
@@ -1755,13 +1821,13 @@ window.addEventListener('keydown', (e) => {
   } else if ((e.key === 'i' || e.key === 'I') && !e.metaKey && !e.altKey) {
     e.preventDefault(); state.inPoint = +t.toFixed(3);
     if (state.outPoint != null && state.outPoint <= state.inPoint) state.outPoint = null;
-    renderRail(); scheduleStateSave(); toast(`In point ${fmt(t)}`);
+    renderRail(); scheduleStateSave(); pushUndo(); toast(`In point ${fmt(t)}`);
   } else if ((e.key === 'o' || e.key === 'O') && !e.metaKey && !e.altKey) {
     e.preventDefault(); state.outPoint = +t.toFixed(3);
     if (state.inPoint != null && state.inPoint >= state.outPoint) state.inPoint = null;
-    renderRail(); scheduleStateSave(); toast(`Out point ${fmt(t)}`);
+    renderRail(); scheduleStateSave(); pushUndo(); toast(`Out point ${fmt(t)}`);
   } else if (e.altKey && e.code === 'KeyX') {
-    e.preventDefault(); state.inPoint = null; state.outPoint = null; renderRail(); scheduleStateSave(); toast('In/Out cleared');
+    e.preventDefault(); state.inPoint = null; state.outPoint = null; renderRail(); scheduleStateSave(); pushUndo(); toast('In/Out cleared');
   } else if (e.altKey && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
     e.preventDefault(); nudgeSelectedClip(e.code === 'ArrowRight' ? 1 : -1, e.shiftKey ? 5 : 1);
   }
@@ -2020,7 +2086,44 @@ function logEdit(action, detail) {
     }).then(() => refreshEditCount()).catch(() => {});
   } catch {}
   scheduleStateSave();   // every edit action also autosaves the curation (debounced)
+  pushUndo();            // and records an undo snapshot (deduped)
 }
+// ---- Undo/Redo (Cmd+Z / Cmd+Shift+Z): post-state history of the curation (clips + markers +
+// in/out), capped at 100. logEdit is the chokepoint every mutation already flows through; the
+// baseline state is pushed on project load. Restoring re-renders and autosaves. ----
+let _undoStack = [], _undoPtr = -1;
+function _snapState() {
+  return JSON.stringify({
+    h: (state.highlights || []).map((x) => ({ ...x })),
+    m: (state.markers || []).map((x) => ({ ...x })),
+    i: state.inPoint, o: state.outPoint,
+  });
+}
+function pushUndo() {
+  if (!state.proj) return;
+  const snap = _snapState();
+  if (_undoStack[_undoPtr] === snap) return;          // non-mutating action (e.g. an export) — skip
+  _undoStack = _undoStack.slice(0, _undoPtr + 1);     // a new edit clears the redo branch
+  _undoStack.push(snap);
+  if (_undoStack.length > 100) _undoStack.shift();
+  _undoPtr = _undoStack.length - 1;
+}
+function _applyUndoState(snap) {
+  const s = JSON.parse(snap);
+  state.highlights = s.h; state.markers = s.m; state.inPoint = s.i; state.outPoint = s.o;
+  renderHighlights(); draw();
+  if (typeof renderRail === 'function') renderRail();
+  scheduleStateSave();
+}
+function undoEdit() {
+  if (_undoPtr <= 0) { toast('Nothing to undo.', true); return; }
+  _undoPtr--; _applyUndoState(_undoStack[_undoPtr]); toast(`Undo (${_undoPtr}/${_undoStack.length - 1})`);
+}
+function redoEdit() {
+  if (_undoPtr >= _undoStack.length - 1) { toast('Nothing to redo.', true); return; }
+  _undoPtr++; _applyUndoState(_undoStack[_undoPtr]); toast(`Redo (${_undoPtr}/${_undoStack.length - 1})`);
+}
+function resetUndoBaseline() { _undoStack = []; _undoPtr = -1; pushUndo(); }
 // Autosave the curation (keeps + clip windows/titles + markers + in/out) into the analysis,
 // debounced so bursts of edits coalesce into one small write. Crash/relaunch-safe: loadProject
 // restores it. logEdit is the chokepoint every edit action already flows through.
