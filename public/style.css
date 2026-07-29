@@ -527,11 +527,17 @@ body.reordering .hlRow, body.reordering .card { transition: none; }
 .nle-center .playerMeta{ flex:0 0 auto; }
 
 /* Right column: stack ghost/highlights/publish, scroll — nothing orphaned */
-.nle-right .panels{ flex:1 1 auto; display:block; overflow-y:auto; padding:6px; }
+/* Trailing padding so the last card ends on whitespace rather than being sliced flush at the
+   pane edge — a half-cut card reads as broken layout rather than as "scroll for more". */
+.nle-right .panels{ flex:1 1 auto; display:block; overflow-y:auto; padding:6px 6px 14px; }
 .nle-right .panels > .card{ margin:0 0 6px 0; width:auto; padding:11px 13px; }
 
-/* Bottom: phantasm timeline + master track lanes */
-.nle-bottom{ flex:0 0 240px; display:flex; gap:6px; min-height:0; }
+/* Bottom: phantasm timeline + master track lanes.
+   Proportional, not a hardcoded 240px: at 240 fixed, a short window gave the timeline ~37% of
+   the height and squeezed the panes until the right column's cards were cut mid-sentence, while
+   a tall window left dead grey space under the last lane. Basis is a % of the editor's height,
+   clamped so the lanes stay usable on small screens and never dominate on big ones. */
+.nle-bottom{ flex:0 0 clamp(220px, 30%, 340px); display:flex; gap:6px; min-height:0; }
 .nle-bottom > .card{ margin:0; overflow:auto; }
 .nle-bottom .timelineWrap{ flex:2 1 0; }
 .nle-bottom .trackPanel{ flex:1 1 0; }
