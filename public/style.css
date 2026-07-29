@@ -563,6 +563,11 @@ body.reordering .hlRow, body.reordering .card { transition: none; }
 .ioExport{ font-size:11px; font-weight:700; padding:0 9px !important; color:#fff !important;
   background:var(--px-accent,#2d76ff) !important; border-radius:6px; white-space:nowrap; }
 .ioExport:disabled{ opacity:.6; }
+/* Sequence view toggle chip (Full source <-> AI highlights). */
+.seqViewBtn{ margin-left:10px; padding:2px 10px; font-size:11px; font-weight:700; cursor:pointer;
+  color:var(--text); background:var(--panel2, rgba(0,0,0,.25)); border:1px solid var(--line, rgba(255,255,255,.09));
+  border-radius:6px; }
+.seqViewBtn:hover{ border-color:var(--px-accent,#2d76ff); color:#fff; }
 /* Facecam box row + draw-mode overlay. */
 .fcRow{ display:flex; align-items:center; gap:8px; margin:6px 0 4px; }
 .fcStatus{ flex:1 1 auto; min-width:0; font-size:11px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

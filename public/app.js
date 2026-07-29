@@ -286,6 +286,17 @@ function loadProject(data) {
   state.proj = data;
   pushRecent(data.id, data.name);   // remember for the project picker
   state.highlights = (data.highlights || []).map((h) => ({ ...h }));
+  // Restore autosaved curation (crash/relaunch-safe): saved clip windows/titles/keeps replace the
+  // base set (they may include razor splits the base never had), re-merged with the base clips'
+  // rich fields (snippet/hits/story) by id so ranking context survives.
+  if (data.edit && Array.isArray(data.edit.clips) && data.edit.clips.length) {
+    const base = Object.fromEntries(state.highlights.map((h) => [String(h.id), h]));
+    state.highlights = data.edit.clips.map((c) => ({ ...(base[c.id] || {}), ...c }));
+    state.markers = (data.edit.markers || []).map((m) => ({ t: m.t, label: m.label || '' }));
+    state.inPoint = Number.isFinite(data.edit.inPoint) ? data.edit.inPoint : null;
+    state.outPoint = Number.isFinite(data.edit.outPoint) ? data.edit.outPoint : null;
+  } else { state.markers = []; state.inPoint = null; state.outPoint = null; }
+  if (typeof renderRail === 'function') setTimeout(renderRail, 0);   // rail exists after this script block
   state.segments = (data.phantasm || []).map((s) => ({ ...s }));
   state.selSeg = null;
   state.selected = state.highlights[0] ? state.highlights[0].id : null;
@@ -547,8 +558,14 @@ function renderTracks() {
   if (typeof renderAIAssistant === 'function') renderAIAssistant();   // keep the copilot live
   const lanes = $('#trackLanes');
   if (!lanes) return;
-  const kept = (state.proj ? state.highlights : []).filter((h) => h.keep);
-  if (!kept.length) { lanes.innerHTML = ''; $('#seqDur').textContent = '0:00'; return; }
+  let kept = (state.proj ? state.highlights : []).filter((h) => h.keep);
+  // Full-source view: with no curated clips kept, mount the UNCUT VOD on the lanes (filmstrip +
+  // waveform + scrub all work) instead of an empty timeline. Display/seek only — every export
+  // reads the real kept set, so nothing accidentally renders the whole VOD as a "short".
+  const sourceView = !kept.length && !!(state.proj && state.proj.duration);
+  if (!kept.length && !sourceView) { lanes.innerHTML = ''; $('#seqDur').textContent = '0:00'; updateSeqViewBtn(false); return; }
+  if (sourceView) kept = [{ id: '__source', start: 0, end: state.proj.duration, title: state.proj.name || 'Full source', score: 0, keep: true }];
+  updateSeqViewBtn(sourceView);
   // Lay kept clips back-to-back in OUTPUT order (sequence time), tracking each clip's span.
   let acc = 0;
   const seq = kept.map((h) => { const d = Math.max(0.01, h.end - h.start); const s = acc; acc += d; return { h, s, d }; });
@@ -1598,6 +1615,38 @@ $('#pepaiChatInput')?.addEventListener('keydown', (e) => { if (e.key === 'Enter'
   });
 })();
 
+// ---- Sequence view toggle: Full source <-> AI highlights cut. The full-source view is what
+// renderTracks shows when nothing is kept; this button stashes/restores the kept set so you can
+// flip between the uncut VOD and the curated cut without re-analyzing (or triggers the first
+// rank when no highlights exist yet). ----
+function updateSeqViewBtn(sourceView) {
+  const b = $('#seqViewBtn'); if (!b) return;
+  if (!state.proj) { b.classList.add('hidden'); return; }
+  b.classList.remove('hidden');
+  const hasHl = (state.highlights || []).length > 0;
+  b.textContent = sourceView ? (hasHl ? 'AI highlights cut' : 'Generate AI highlights') : 'View full source';
+  b.title = sourceView
+    ? (hasHl ? 'Swap the timeline to the curated highlight clips' : 'Run the funny-moments rank, then mount the highlight cut')
+    : 'Show the uncut source VOD on the timeline (exports keep using your highlight cut)';
+}
+$('#seqViewBtn')?.addEventListener('click', () => {
+  if (!state.proj) return;
+  const keptReal = (state.highlights || []).filter((h) => h.keep);
+  if (keptReal.length) {                       // highlights → full source (stash the keeps)
+    state._keepStash = keptReal.map((h) => h.id);
+    state.highlights.forEach((h) => { h.keep = false; });
+    renderHighlights(); draw();
+    toast('Full source mounted — exports still use your highlight cut when you restore it.');
+  } else if ((state.highlights || []).length) { // full source → restore the stashed (or all-ranked) cut
+    const stash = state._keepStash;
+    state.highlights.forEach((h) => { h.keep = stash ? stash.includes(h.id) : true; });
+    renderHighlights(); draw();
+    toast('AI highlights cut mounted.');
+  } else {
+    $('#funnyBtn')?.click();                    // nothing ranked yet → run the rank
+  }
+});
+
 // ---- Timeline tool strip: Selection / Razor (C) / Hand (H). Only tools with REAL behavior
 // ship — Selection = click-to-select; Razor = single-click split; Hand = drag-pan the zoomed
 // timeline. C/H each toggle their tool <-> selection (V stays bound to the verify shortcut).
@@ -1654,7 +1703,7 @@ $('#tpRail')?.addEventListener('dblclick', (e) => {
   e.preventDefault(); e.stopPropagation();
   const mk = state.markers.find((m) => m.t === +el.dataset.t); if (!mk) return;
   const label = prompt('Marker label:', mk.label || '');
-  if (label != null) { mk.label = label.trim(); renderRail(); }
+  if (label != null) { mk.label = label.trim(); renderRail(); scheduleStateSave(); }
 });
 $('#ioExportBtn')?.addEventListener('click', async () => {
   const a = state.inPoint, b = state.outPoint;
@@ -1691,10 +1740,12 @@ function nudgeSelectedClip(dir, frames) {
 window.addEventListener('keydown', (e) => {
   if (!state.proj || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
   const t = player.currentTime || 0;
-  if ((e.key === 'm' || e.key === 'M') && !e.shiftKey && !e.metaKey && !e.altKey) {
+  if (e.key === 'Home') {
+    e.preventDefault(); player.currentTime = 0;
+  } else if ((e.key === 'm' || e.key === 'M') && !e.shiftKey && !e.metaKey && !e.altKey) {
     e.preventDefault();
     state.markers.push({ t: +t.toFixed(3) }); state.markers.sort((a, b) => a.t - b.t);
-    renderRail(); toast(`Marker at ${fmt(t)} (${state.markers.length} total)`);
+    renderRail(); scheduleStateSave(); toast(`Marker at ${fmt(t)} (${state.markers.length} total)`);
   } else if (e.shiftKey && (e.key === 'N' || e.key === 'n')) {
     const next = state.markers.find((m) => m.t > t + 0.05);
     if (next) { e.preventDefault(); player.currentTime = next.t; toast(`${next.label || 'Marker'} · ${fmt(next.t)}`); }
@@ -1704,13 +1755,13 @@ window.addEventListener('keydown', (e) => {
   } else if ((e.key === 'i' || e.key === 'I') && !e.metaKey && !e.altKey) {
     e.preventDefault(); state.inPoint = +t.toFixed(3);
     if (state.outPoint != null && state.outPoint <= state.inPoint) state.outPoint = null;
-    renderRail(); toast(`In point ${fmt(t)}`);
+    renderRail(); scheduleStateSave(); toast(`In point ${fmt(t)}`);
   } else if ((e.key === 'o' || e.key === 'O') && !e.metaKey && !e.altKey) {
     e.preventDefault(); state.outPoint = +t.toFixed(3);
     if (state.inPoint != null && state.inPoint >= state.outPoint) state.inPoint = null;
-    renderRail(); toast(`Out point ${fmt(t)}`);
+    renderRail(); scheduleStateSave(); toast(`Out point ${fmt(t)}`);
   } else if (e.altKey && e.code === 'KeyX') {
-    e.preventDefault(); state.inPoint = null; state.outPoint = null; renderRail(); toast('In/Out cleared');
+    e.preventDefault(); state.inPoint = null; state.outPoint = null; renderRail(); scheduleStateSave(); toast('In/Out cleared');
   } else if (e.altKey && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
     e.preventDefault(); nudgeSelectedClip(e.code === 'ArrowRight' ? 1 : -1, e.shiftKey ? 5 : 1);
   }
@@ -1968,6 +2019,25 @@ function logEdit(action, detail) {
       body: JSON.stringify({ action, projectId: state.proj && state.proj.id, detail: detail || {} }), keepalive: true,
     }).then(() => refreshEditCount()).catch(() => {});
   } catch {}
+  scheduleStateSave();   // every edit action also autosaves the curation (debounced)
+}
+// Autosave the curation (keeps + clip windows/titles + markers + in/out) into the analysis,
+// debounced so bursts of edits coalesce into one small write. Crash/relaunch-safe: loadProject
+// restores it. logEdit is the chokepoint every edit action already flows through.
+let _stateSaveTimer = null;
+function scheduleStateSave() {
+  if (!state.proj) return;
+  clearTimeout(_stateSaveTimer);
+  _stateSaveTimer = setTimeout(() => {
+    const edit = {
+      keeps: (state.highlights || []).filter((h) => h.keep).map((h) => String(h.id)),
+      clips: (state.highlights || []).map((h) => ({ id: String(h.id), start: h.start, end: h.end, title: h.title || '', keep: !!h.keep, score: h.score || 0 })),
+      markers: (state.markers || []).map((m) => ({ t: m.t, label: m.label || '' })),
+      inPoint: state.inPoint, outPoint: state.outPoint,
+    };
+    fetch('/api/state', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: state.proj.id, edit }), keepalive: true }).catch(() => {});
+  }, 1500);
 }
 function refreshEditCount() {
   const el = $('#editCount'); if (!el) return;

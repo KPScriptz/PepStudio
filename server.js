@@ -468,6 +468,29 @@ function facecamLayout(rect, srcW, srcH) {
   return { camCrop: [cw, chh, cx, cy], camOutH, gameCrop: [gw, gh, gx, gy] };
 }
 
+// Autosave the session's CURATION into the analysis so a relaunch/crash never loses edit work:
+// which clips are kept, their titles/trims, plus markers and the in/out region. Small, debounced
+// writes from the client; applied back in loadProject.
+app.post('/api/state', async (req, res) => {
+  try {
+    const id = req.body.id;
+    const p = path.join(DATA, id || '', 'analysis.json');
+    if (!id || !fs.existsSync(p)) return res.status(404).json({ error: 'Unknown project id' });
+    const a = JSON.parse(await fsp.readFile(p, 'utf8'));
+    const e = req.body.edit || {};
+    a.edit = {
+      keeps: Array.isArray(e.keeps) ? e.keeps.slice(0, 500) : [],
+      clips: Array.isArray(e.clips) ? e.clips.slice(0, 500) : [],
+      markers: Array.isArray(e.markers) ? e.markers.slice(0, 200) : [],
+      inPoint: Number.isFinite(e.inPoint) ? e.inPoint : null,
+      outPoint: Number.isFinite(e.outPoint) ? e.outPoint : null,
+      savedAt: new Date().toISOString(),
+    };
+    await fsp.writeFile(p, JSON.stringify(a), 'utf8');
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
 // Persist the project's facecam box (normalized rect) into its analysis so it survives
 // relaunches and rides along in GET /api/analysis/:id.
 app.post('/api/facecam', async (req, res) => {
