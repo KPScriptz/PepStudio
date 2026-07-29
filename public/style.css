@@ -535,9 +535,14 @@ body.reordering .hlRow, body.reordering .card { transition: none; }
 /* Bottom: phantasm timeline + master track lanes.
    Proportional, not a hardcoded 240px: at 240 fixed, a short window gave the timeline ~37% of
    the height and squeezed the panes until the right column's cards were cut mid-sentence, while
-   a tall window left dead grey space under the last lane. Basis is a % of the editor's height,
-   clamped so the lanes stay usable on small screens and never dominate on big ones. */
-.nle-bottom{ flex:0 0 clamp(220px, 30%, 340px); display:flex; gap:6px; min-height:0; }
+   a tall window left dead grey space under the last lane.
+   The 220px floor is measured, not guessed: 5 lanes x 30px + the tab strip + the toolbar is what
+   an EMPTY sequence needs to show every lane without scrolling. vh, not % — a percentage
+   flex-basis resolves against an indefinite column height and snapped straight to the 340px max
+   on a 656px window; vh always resolves against the viewport. Once a project loads, V1 grows a
+   filmstrip and the panel scrolls, which is normal NLE behaviour (scrollbar styled at
+   .trackBody). */
+.nle-bottom{ flex:0 0 clamp(220px, 30vh, 340px); display:flex; gap:6px; min-height:0; }
 .nle-bottom > .card{ margin:0; overflow:auto; }
 .nle-bottom .timelineWrap{ flex:2 1 0; }
 .nle-bottom .trackPanel{ flex:1 1 0; }
@@ -792,7 +797,11 @@ input, textarea, [contenteditable="true"], #outputs, #outputs *, code, kbd{
    accent-glow actions, mono readouts, dashed empty states, no emojis)
    ====================================================================== */
 body{ letter-spacing:-.1px; }
-button svg, .tpBtn svg{ pointer-events:none; display:block; }
+/* flex:0 0 auto is load-bearing: these buttons are display:flex, and an SVG flex item with a
+   viewBox shrinks to width:0 (height survives, so the icon silently vanishes rather than
+   overflowing). That collapsed the play triangle and left the three timeline tool buttons
+   rendering as blank pills. Same fix already applied to .aiSuggestRow svg. */
+button svg, .tpBtn svg{ pointer-events:none; display:block; flex:0 0 auto; }
 
 /* Precision pane tabs: subtle vertical gradient + tighter type */
 .paneTab{
