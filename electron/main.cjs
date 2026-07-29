@@ -10,6 +10,7 @@ const ROOT = path.join(__dirname, '..'); // server.js lives one level up
 const TEST = process.env.CLIPFORGE_TEST === '1';
 let win = null;
 let serverProc = null;
+let serverPort = 0;
 
 function freePort(pref = 4178) {
   return new Promise((resolve) => {
@@ -110,6 +111,21 @@ function waitForServer(port, ms = 20000) {
   });
 }
 
+// Recreate just the window against the already-running server (used after the quit guard's
+// "Keep Working" with no window left, and dock re-activation). boot() must not run twice — it
+// would fork a second server and re-register the ipcMain handler.
+function reopenWindow() {
+  win = new BrowserWindow({
+    width: 1320, height: 880, minWidth: 1000, minHeight: 640,
+    backgroundColor: '#0b0f17', title: 'PepStudio', show: false,
+    icon: path.join(__dirname, 'icon.png'),
+    webPreferences: { contextIsolation: true, preload: path.join(__dirname, 'preload.cjs') },
+  });
+  win.once('ready-to-show', () => win.show());
+  win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
+  win.loadURL(`http://localhost:${serverPort}`);
+}
+
 async function boot() {
   if (!TEST) {
     win = new BrowserWindow({
@@ -154,6 +170,7 @@ async function boot() {
       serverProc.on('exit', (code) => { clearTimeout(timer); reject(new Error(`server process exited (code ${code})`)); });
     });
     await waitForServer(port);
+    serverPort = port;
 
     if (TEST) { console.log(`ELECTRON_BOOT_OK port=${port}`); try { serverProc.kill(); } catch {} app.quit(); return; }
     await win.loadURL(`http://localhost:${port}`);
@@ -175,5 +192,41 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(boot);
 }
 app.on('window-all-closed', () => app.quit());
-app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) boot(); });
-app.on('before-quit', () => { try { serverProc && serverProc.kill(); } catch {} });
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length !== 0) return;
+  if (serverPort) reopenWindow(); else boot();
+});
+// Quit guard: if an export / whisper pass is mid-flight, confirm before abandoning it.
+// preventDefault must run synchronously, so the busy check re-triggers quit via the flag.
+let quitConfirmed = false;
+app.on('before-quit', (e) => {
+  if (quitConfirmed || TEST || !serverPort) { try { serverProc && serverProc.kill(); } catch {} return; }
+  e.preventDefault();
+  (async () => {
+    let busy = false;
+    try {
+      const r = await fetch(`http://127.0.0.1:${serverPort}/api/busy`, { signal: AbortSignal.timeout(1500) });
+      busy = !!(await r.json()).busy;
+    } catch { /* server unreachable — nothing to protect, just quit */ }
+    if (busy) {
+      const opts = {
+        type: 'warning',
+        buttons: ['Keep Working', 'Quit Anyway'],
+        defaultId: 0, cancelId: 0,
+        message: 'An export or analysis is still running.',
+        detail: 'Quitting now abandons the render in progress. Finished files stay in your library.',
+      };
+      // Red-button close destroys the window before before-quit — fall back to a parentless dialog.
+      const { response } = (win && !win.isDestroyed())
+        ? await dialog.showMessageBox(win, opts)
+        : await dialog.showMessageBox(opts);
+      if (response !== 1) {
+        // Keep working — if the red-button close took the window with it, bring one back.
+        if (!win || win.isDestroyed()) reopenWindow();
+        return;
+      }
+    }
+    quitConfirmed = true;
+    app.quit();
+  })();
+});

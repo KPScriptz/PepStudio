@@ -118,6 +118,23 @@ app.use('/api/export', async (req, res, next) => {
   next();
 });
 
+// Count long-running work (renders + whisper passes) so the desktop shell can warn before
+// quitting mid-export. 'close' fires on both normal finish and client abort, so a dropped
+// connection can't leak the counter; the flag guards the finish+close double-fire.
+let busyOps = 0;
+app.use(['/api/export', '/api/analyze', '/api/captions', '/api/highlights', '/api/pacing/sequence'], (req, res, next) => {
+  busyOps++;
+  let counted = true;
+  const done = () => { if (counted) { counted = false; busyOps--; } };
+  res.on('finish', done);
+  res.on('close', done);
+  next();
+});
+app.get('/api/busy', (req, res) => {
+  const importing = [...jobs.values()].filter((j) => j.status !== 'done' && j.status !== 'error').length;
+  res.json({ busy: busyOps + importing > 0, renders: busyOps, imports: importing });
+});
+
 // id <-> source path registry (kept in memory + persisted per project)
 const sources = new Map();
 const idFor = (p) => crypto.createHash('sha1').update(path.resolve(p)).digest('hex').slice(0, 12);
