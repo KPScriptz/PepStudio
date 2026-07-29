@@ -842,7 +842,7 @@ app.post('/api/export/tiktok', async (req, res) => {
         if (wantCaps) {
           const ass = path.join(dir, `tiktok-${i + 1}.ass`);
           // clip-relative timestamps so captions line up with the -ss-trimmed vertical clip
-          const { chunks } = await generateCaptions(file, ass, { range: [start, end], clipRelative: true, punchy: req.body.punchy !== false });
+          const { chunks } = await generateCaptions(file, ass, { range: [start, end], clipRelative: true, punchy: req.body.punchy !== false, kinetic: req.body.kinetic === true });
           if (burn) subs = ass;
           // Punch-in zooms keyed to the emphasis caption blocks (already clip-relative → clipStart 0).
           if (zoomOn) { const z = buildTimelineZoomExpression(chunks || [], 0); zoomFilter = z.filter; if (z.hasZoom) zoomed = true; }

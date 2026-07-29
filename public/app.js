@@ -1319,7 +1319,7 @@ $('#tiktokBtn').addEventListener('click', async () => {
   try {
     const res = await fetch('/api/export/tiktok', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: state.proj.id, clips, captions: caps }),
+      body: JSON.stringify({ id: state.proj.id, clips, captions: caps, kinetic: !!($('#capKinetic') && $('#capKinetic').checked) }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
