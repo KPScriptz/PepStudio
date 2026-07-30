@@ -1067,6 +1067,127 @@ async function exportCleanCut() {
   catch (e) { toast(e.message, true); }
   finally { btn.disabled = false; btn.textContent = o; }
 }
+// ---- Transcript-driven editing. Whisper gives every word an absolute [t0,t1]; this turns that
+// into an editable text surface: click a word to seek, strike a run of words to cut exactly
+// those frames. The cut math is the SAME stripFillers complement the filler purge is tested on
+// (server-side /api/transcript/cut), so text-cutting and filler-cutting can't drift apart.
+// Cutting rebuilds each affected clip into sub-clips that are still absolute source ranges —
+// never relative offsets (see CLAUDE.md) — so extraction stays frame-accurate. ----
+let _tr = null;            // { clips: [{id,start,end,words}] } as returned by the server
+const _trStruck = new Set();  // "clipId:wordIndex" of struck words
+const trKey = (cid, i) => `${cid}:${i}`;
+function renderTranscript() {
+  const box = $('#trWords'), stat = $('#trStat');
+  if (!box) return;
+  if (!_tr) { box.classList.add('hidden'); stat?.classList.add('hidden'); return; }
+  box.innerHTML = _tr.clips.map((c) => {
+    if (!c.words.length) return `<div class="trClip"><span class="trClipId">${escapeHtml(String(c.id || '').toUpperCase())}</span><span class="trEmpty">no speech detected</span></div>`;
+    const words = c.words.map((w, i) =>
+      `<span class="trW${_trStruck.has(trKey(c.id, i)) ? ' struck' : ''}" data-cid="${escapeHtml(String(c.id))}" data-i="${i}" data-t0="${w.t0}" title="${fmt(w.t0)}">${escapeHtml(w.w)}</span>`).join(' ');
+    return `<div class="trClip"><span class="trClipId">${escapeHtml(String(c.id || '').toUpperCase())}</span>${words}</div>`;
+  }).join('');
+  box.classList.remove('hidden');
+  if (stat) {
+    stat.textContent = _trStruck.size ? `${_trStruck.size} struck` : `${_tr.clips.reduce((n, c) => n + c.words.length, 0)} words`;
+    stat.classList.remove('hidden');
+  }
+}
+// Click seeks; click-drag or Shift-click strikes a run. Strike state is per word index, so
+// re-rendering never loses it.
+let _trAnchor = null, _trPainting = false, _trPaintTo = null;
+$('#trWords')?.addEventListener('mousedown', (e) => {
+  const el = e.target.closest('.trW'); if (!el) return;
+  const cid = el.dataset.cid, i = +el.dataset.i;
+  if (e.shiftKey && _trAnchor && _trAnchor.cid === cid) {
+    e.preventDefault();
+    strikeRange(cid, Math.min(_trAnchor.i, i), Math.max(_trAnchor.i, i));
+    return;
+  }
+  _trAnchor = { cid, i };
+  _trPainting = true; _trPaintTo = null;
+  player.currentTime = +el.dataset.t0;      // click = seek to the exact word
+});
+$('#trWords')?.addEventListener('mousemove', (e) => {
+  if (!_trPainting) return;
+  const el = e.target.closest('.trW'); if (!el) return;
+  const cid = el.dataset.cid, i = +el.dataset.i;
+  if (cid !== _trAnchor.cid || i === _trPaintTo) return;
+  _trPaintTo = i;
+  strikeRange(cid, Math.min(_trAnchor.i, i), Math.max(_trAnchor.i, i));
+});
+window.addEventListener('mouseup', () => { _trPainting = false; });
+function strikeRange(cid, a, b) {
+  for (let i = a; i <= b; i++) _trStruck.add(trKey(cid, i));
+  renderTranscript();
+}
+// Click a single already-struck word to un-strike it (the escape hatch for a mis-drag).
+$('#trWords')?.addEventListener('dblclick', (e) => {
+  const el = e.target.closest('.trW'); if (!el) return;
+  e.preventDefault();
+  _trStruck.delete(trKey(el.dataset.cid, +el.dataset.i));
+  renderTranscript();
+});
+async function loadTranscript() {
+  const btn = $('#trLoadBtn'); if (!btn) return;
+  if (!state.proj) { toast('Load and analyze a video first.', true); return; }
+  const clips = (state.highlights || []).filter((h) => h.keep).sort((a, b) => a.start - b.start)
+    .map((h) => ({ id: h.id, start: h.start, end: h.end }));
+  if (!clips.length) { toast('Keep some clips (Rank or Story Cut) first.', true); return; }
+  const o = btn.textContent; btn.disabled = true; btn.textContent = 'Transcribing…';
+  try {
+    const res = await fetch('/api/transcript', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: state.proj.id, clips }),
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || 'Transcription failed.');
+    _tr = d; _trStruck.clear(); renderTranscript();
+    toast(d.words ? `Transcript ready — ${d.words} words.` : 'No speech found in the kept clips.', !d.words);
+  } catch (e) { toast(e.message, true); } finally { btn.disabled = false; btn.textContent = o; }
+}
+async function cutStruckWords() {
+  const btn = $('#trCutBtn'); if (!btn) return;
+  if (!_tr) { toast('Load the transcript first.', true); return; }
+  if (!_trStruck.size) { toast('Strike some words first — click-drag across them.', true); return; }
+  const cuts = [];
+  for (const c of _tr.clips) {
+    c.words.forEach((w, i) => { if (_trStruck.has(trKey(c.id, i))) cuts.push({ t0: w.t0, t1: w.t1, w: w.w }); });
+  }
+  const o = btn.textContent; btn.disabled = true; btn.textContent = 'Cutting…';
+  try {
+    const res = await fetch('/api/transcript/cut', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clips: _tr.clips.map((c) => ({ id: c.id, start: c.start, end: c.end })), cuts }),
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || 'Cut failed.');
+    if (!d.cuts) { toast('Those words are too short to cut cleanly.', true); return; }
+    // Rebuild the timeline: each affected clip becomes its surviving spans, in order. Sub-clips
+    // inherit the parent's title/tags and stay kept; every span is an ABSOLUTE source range.
+    let replaced = 0;
+    for (const r of d.clips) {
+      if (!r.cuts) continue;
+      const idx = state.highlights.findIndex((h) => String(h.id) === String(r.id));
+      if (idx < 0) continue;
+      const parent = state.highlights[idx];
+      const subs = r.segments.map((g, k) => ({
+        ...parent,
+        id: k === 0 ? parent.id : `t${++_splitSeq}`,
+        start: g.start, end: g.end, keep: true, snapped: false,
+      }));
+      state.highlights.splice(idx, 1, ...subs);
+      replaced++;
+    }
+    _trStruck.clear();
+    _tr = null; renderTranscript();
+    logEdit('transcript_cut', { cuts: d.cuts, removedSec: d.removedSec, clips: replaced });
+    renderHighlights(); draw();
+    toast(`Cut ${d.cuts} word span${d.cuts === 1 ? '' : 's'} (−${d.removedSec}s) from ${replaced} clip${replaced === 1 ? '' : 's'} ✓`);
+  } catch (e) { toast(e.message, true); } finally { btn.disabled = false; btn.textContent = o; }
+}
+$('#trLoadBtn')?.addEventListener('click', loadTranscript);
+$('#trCutBtn')?.addEventListener('click', cutStruckWords);
+
 $('#fillerScanBtn')?.addEventListener('click', findFillers);
 $('#fillerExportBtn')?.addEventListener('click', exportCleanCut);
 
@@ -1208,6 +1329,7 @@ setupTransport();
 // ---- Timeline canvas (Phantasm green/red band) ----
 const TOP = 26;       // clip lane height (scene-cut ticks + draggable highlight blocks)
 const EDGE_PX = 6;    // grab tolerance for a clip's trim edges
+const NARROW_PX = 20; // below this rendered width a clip splits into thirds so the body stays grabbable
 function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth || canvas.parentElement.clientWidth;
@@ -1314,6 +1436,17 @@ function clipLaneAt(x, y) {
     if (!h.keep) continue;
     const sx = X(h.start), ex = X(h.end);
     if (x < sx - EDGE_PX || x > ex + EDGE_PX) continue;
+    // Narrow clips: at full zoom on a long VOD a 15s clip is ~5px wide, so both edge zones
+    // cover the whole block and the body becomes unreachable — you could only trim, never move.
+    // Below NARROW_PX the middle belongs to the body and the edges shrink to a third each, so a
+    // clip stays draggable without having to zoom in first.
+    const w = ex - sx;
+    if (w < NARROW_PX) {
+      const edge = Math.max(2, w / 3);
+      if (x <= sx + edge) return { clip: h, zone: 'left' };
+      if (x >= ex - edge) return { clip: h, zone: 'right' };
+      return { clip: h, zone: 'body' };
+    }
     if (Math.abs(x - sx) <= EDGE_PX) return { clip: h, zone: 'left' };
     if (Math.abs(x - ex) <= EDGE_PX) return { clip: h, zone: 'right' };
     if (x > sx && x < ex) return { clip: h, zone: 'body' };

@@ -376,6 +376,25 @@ body.reordering .hlRow, body.reordering .card { transition: none; }
   color: #fff; background: linear-gradient(180deg, #7c5cff, #5b3fd6); border: 1px solid var(--accent2);
 }
 .picker-new:hover { box-shadow: 0 0 0 3px #a78bfa33; }
+/* Transcript panel: word-level text surface for click-to-seek and strike-to-cut. */
+.transcriptBox { margin-top: 10px; }
+.trWords {
+  margin-top: 8px; max-height: 210px; overflow-y: auto; padding: 8px 9px;
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
+  font-size: 12.5px; line-height: 1.75; user-select: none;
+}
+.trClip { margin-bottom: 8px; }
+.trClip:last-child { margin-bottom: 0; }
+.trClipId {
+  display: inline-block; margin-right: 6px; padding: 1px 5px; border-radius: 4px;
+  background: rgba(127,127,127,.18); color: var(--muted);
+  font-family: var(--font-mono); font-size: 10px; vertical-align: 1px;
+}
+.trEmpty { color: var(--muted); font-style: italic; }
+.trW { cursor: pointer; border-radius: 3px; padding: 0 1px; }
+.trW:hover { background: var(--accent-focus, rgba(0,229,255,.2)); }
+.trW.struck { text-decoration: line-through; color: var(--danger); opacity: .65; }
+
 /* Pacing knobs: continuous pause-floor / noise-floor sliders under the preset dropdown. */
 .knobRow { margin-top: 8px; font-size: 11px; color: var(--muted); }
 .knobRow label { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }

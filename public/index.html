@@ -139,6 +139,16 @@
           </label>
           <div id="hookLab" class="hookLab hidden rtabPane" data-rtab="curate"></div>
           <div id="clipInsight" class="clipInsight hidden rtabPane" data-rtab="curate"></div>
+          <!-- Transcript-driven editing: click a word to seek, strike words to cut those frames -->
+          <div id="transcriptBox" class="transcriptBox rtabPane" data-rtab="curate">
+            <div class="pkHead"><span>Transcript</span><span id="trStat" class="qCount hidden"></span></div>
+            <div id="trWords" class="trWords hidden"></div>
+            <div class="pkBtns" style="margin-top:9px">
+              <button id="trLoadBtn" class="pkGhost">Load transcript</button>
+              <button id="trCutBtn" class="pkGen">Cut struck words</button>
+            </div>
+            <div class="hint">Click a word to jump the playhead there. Click-drag or Shift-click to strike a run of words, then cut — the struck frames are removed from the sequence and Cmd+Z puts them back.</div>
+          </div>
           <!-- Step 5: correction capture — one-tap "why?" after a manual override -->
           <div id="correctionShelf" class="correctionShelf hidden rtabPane" data-rtab="curate">
             <div class="corrHead"><span>Why did you change <b id="corrWhat">this</b>?</span><span id="corrClose" class="corrClose" title="dismiss">×</span></div>

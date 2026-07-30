@@ -535,6 +535,51 @@ app.post('/api/fillers', async (req, res) => {
   } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
 
+// Transcript for the kept clips — the data behind text-based editing. One batched whisper pass
+// (same path the filler purge uses), returning each clip's words with absolute source
+// timestamps so the panel can seek the playhead and cut by word.
+app.post('/api/transcript', async (req, res) => {
+  try {
+    const file = await sourceFor(req.body.id);
+    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    if (!captionsReady()) return res.status(503).json({ error: 'Whisper is not installed — transcription needs it.' });
+    const clips = capBatch(req.body.clips)
+      .map((c) => ({ id: c.id, start: Number(c.start), end: Number(c.end) }))
+      .filter((c) => Number.isFinite(c.start) && Number.isFinite(c.end) && c.end > c.start)
+      .sort((a, b) => a.start - b.start);
+    if (!clips.length) return res.status(400).json({ error: 'No clips in the sequence.' });
+    const out = await transcribeWindows(file, clips, { model: whisperFastModel() });
+    res.json({
+      clips: out.map((w, i) => ({ id: clips[i].id, start: clips[i].start, end: clips[i].end, words: w.words || [] })),
+      words: out.reduce((n, w) => n + (w.words || []).length, 0),
+    });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
+// Given clips + the word ranges the user struck out, return each clip's surviving spans. Pure
+// and instant (no ffmpeg, no whisper) — it's the same stripFillers complement math the filler
+// purge is tested on, so text-cutting and filler-cutting can never drift apart.
+app.post('/api/transcript/cut', (req, res) => {
+  try {
+    const cuts = capBatch(req.body.cuts)
+      .map((c) => ({ t0: Number(c.t0), t1: Number(c.t1), w: String(c.w || '') }))
+      .filter((c) => Number.isFinite(c.t0) && Number.isFinite(c.t1) && c.t1 > c.t0);
+    const clips = capBatch(req.body.clips)
+      .map((c) => ({ id: c.id, start: Number(c.start), end: Number(c.end) }))
+      .filter((c) => Number.isFinite(c.start) && Number.isFinite(c.end) && c.end > c.start);
+    if (!clips.length) return res.status(400).json({ error: 'No clips to cut.' });
+    let removedSec = 0, cutCount = 0;
+    const out = clips.map((c) => {
+      // pad:0 — a word boundary is already where the user pointed; padding would leave slivers
+      // of the struck word audible.
+      const r = stripFillers(c, cuts, { pad: 0, minCut: 0.05 });
+      removedSec += r.removedSec; cutCount += r.cuts;
+      return { id: c.id, start: c.start, end: c.end, segments: r.segments, cuts: r.cuts };
+    });
+    res.json({ clips: out, cuts: cutCount, removedSec: +removedSec.toFixed(2) });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
 // Facecam split geometry: a normalized rect {x,y,w,h} (0..1 of the source frame) → precomputed
 // pixel layout for the stacked 9:16 short. Cam strip height is proportional to its aspect,
 // clamped to 240..768 of the 1920; the gameplay crop centers on whatever aspect fills the rest.
