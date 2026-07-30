@@ -210,6 +210,14 @@
                 </select>
               </div>
               <label class="check pacingScope"><input type="checkbox" id="paceSeq" /> Apply to the whole sequence</label>
+              <div class="knobRow">
+                <label for="paceMinSil">Pause floor <span id="paceMinSilVal" class="knobVal">0.70s</span></label>
+                <input type="range" id="paceMinSil" min="0.2" max="2" step="0.05" value="0.7" />
+              </div>
+              <div class="knobRow">
+                <label for="paceDb">Silence is below <span id="paceDbVal" class="knobVal">−32 dB</span></label>
+                <input type="range" id="paceDb" min="-45" max="-15" step="1" value="-32" />
+              </div>
               <div id="paceStat" class="paceStat hidden"></div>
               <div class="pkBtns" style="margin-top:9px">
                 <button id="pacePreviewBtn" class="pkGhost">Preview</button>

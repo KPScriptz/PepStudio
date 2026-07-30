@@ -376,6 +376,12 @@ body.reordering .hlRow, body.reordering .card { transition: none; }
   color: #fff; background: linear-gradient(180deg, #7c5cff, #5b3fd6); border: 1px solid var(--accent2);
 }
 .picker-new:hover { box-shadow: 0 0 0 3px #a78bfa33; }
+/* Pacing knobs: continuous pause-floor / noise-floor sliders under the preset dropdown. */
+.knobRow { margin-top: 8px; font-size: 11px; color: var(--muted); }
+.knobRow label { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.knobRow input[type=range] { width: 100%; margin-top: 3px; accent-color: var(--accent); }
+.knobVal { font-family: var(--font-mono); color: var(--text); font-size: 11px; }
+
 /* Export queue: add row, job list, per-row status. */
 .qAdd { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
 .qAdd .blueprintSel { flex: 1 1 auto; min-width: 0; }

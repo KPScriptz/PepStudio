@@ -903,6 +903,28 @@ function activeClip() {
   return pool.slice().sort((a, b) => (b.score || 0) - (a.score || 0))[0] || null;
 }
 function pacingIsSequence() { return !!($('#paceSeq') && $('#paceSeq').checked); }
+// The two knobs that actually drive a cut: how long a pause has to be, and how quiet counts as
+// silence. Selecting a named preset snaps the sliders back to that preset's numbers, so the
+// dropdown stays a meaningful starting point rather than being silently overridden.
+function pacingKnobs() {
+  const ms = $('#paceMinSil'), db = $('#paceDb');
+  return { minSilence: ms ? +ms.value : undefined, db: db ? +db.value : undefined };
+}
+function renderPacingKnobs() {
+  const ms = $('#paceMinSil'), db = $('#paceDb');
+  if (ms && $('#paceMinSilVal')) $('#paceMinSilVal').textContent = `${(+ms.value).toFixed(2)}s`;
+  if (db && $('#paceDbVal')) $('#paceDbVal').textContent = `${(+db.value < 0 ? '−' : '')}${Math.abs(+db.value)} dB`;
+}
+const PACE_PRESETS = { natural: [1.2, -32], tight: [0.7, -32], relentless: [0.4, -30] };
+$('#paceMinSil')?.addEventListener('input', renderPacingKnobs);
+$('#paceDb')?.addEventListener('input', renderPacingKnobs);
+$('#paceLevel')?.addEventListener('change', () => {
+  const p = PACE_PRESETS[$('#paceLevel').value]; if (!p) return;
+  if ($('#paceMinSil')) $('#paceMinSil').value = p[0];
+  if ($('#paceDb')) $('#paceDb').value = p[1];
+  renderPacingKnobs();
+});
+renderPacingKnobs();
 // One shared pacing fetch for both scopes → { label, origSec, tightSec, removedSec, cuts, segments, scopeLabel }.
 async function fetchPacing(level) {
   if (pacingIsSequence()) {
@@ -911,7 +933,7 @@ async function fetchPacing(level) {
     if (!clips.length) throw new Error('Keep some clips (Rank or Story Cut) first.');
     const d = await (await fetch('/api/pacing/sequence', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: state.proj.id, clips, level }),
+      body: JSON.stringify({ id: state.proj.id, clips, level, ...pacingKnobs() }),
     })).json();
     if (d.error) throw new Error(d.error);
     return { ...d, scopeLabel: `${d.clips} clips` };
@@ -919,7 +941,7 @@ async function fetchPacing(level) {
   const clip = activeClip(); if (!clip) throw new Error('No moments yet — analyze / rank first.');
   const d = await (await fetch('/api/pacing/preview', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: state.proj.id, clip: { start: clip.start, end: clip.end }, level }),
+    body: JSON.stringify({ id: state.proj.id, clip: { start: clip.start, end: clip.end }, level, ...pacingKnobs() }),
   })).json();
   if (d.error) throw new Error(d.error);
   return { ...d, scopeLabel: clip.title || `Clip ${fmt(clip.start)}` };
@@ -1272,6 +1294,16 @@ function draw() {
   const px = X(player.currentTime || 0);
   ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, H); ctx.stroke();
+
+  // Snap guide: amber dashed line at the time the dragged edge locked onto, so the magnet is
+  // visible rather than a mysterious jump. Only drawn mid-drag.
+  if (state.snapAt != null) {
+    const sx = X(state.snapAt);
+    ctx.save();
+    ctx.strokeStyle = '#f5b301'; ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, H); ctx.stroke();
+    ctx.restore();
+  }
 }
 
 // ---- Interactive clip lane: drag an edge to trim, drag the body to shift, else seek ----
@@ -1295,6 +1327,37 @@ function syncRowInputs(h) {
   if (!row) return;
   const si = row.querySelector('input[data-k=start]'); if (si) si.value = h.start.toFixed(1);
   const ei = row.querySelector('input[data-k=end]'); if (ei) ei.value = h.end.toFixed(1);
+}
+
+// ---- Magnetic snapping (toggle with S). While dragging or trimming, a clip edge within
+// SNAP_PX of a meaningful time locks onto it exactly. Targets are everything an editor lines
+// up against: the playhead, markers, the In/Out region, every OTHER kept clip's edges, and the
+// sequence bounds. The snap is applied to the edge being moved, so a body-drag preserves length
+// by construction (both edges shift by the same delta). state.snapAt drives the on-canvas guide.
+const SNAP_PX = 10;
+state.snapOn = true;
+state.snapAt = null;
+function snapTargets(excludeId) {
+  const out = [0, state.proj.duration];
+  if (Number.isFinite(player.currentTime)) out.push(player.currentTime);
+  for (const m of (state.markers || [])) out.push(m.t);
+  if (state.inPoint != null) out.push(state.inPoint);
+  if (state.outPoint != null) out.push(state.outPoint);
+  for (const c of (state.highlights || [])) {
+    if (!c.keep || c.id === excludeId) continue;
+    out.push(c.start, c.end);
+  }
+  return out.filter(Number.isFinite);
+}
+// Returns the snapped time for `t`, or null when nothing is in range. tolSec is SNAP_PX
+// converted through the CURRENT zoom, so snapping feels like a constant 10px at any zoom level.
+function snapTime(t, targets, tolSec) {
+  let best = null, bestD = tolSec;
+  for (const g of targets) {
+    const d = Math.abs(g - t);
+    if (d <= bestD) { bestD = d; best = g; }
+  }
+  return best;
 }
 
 canvas.addEventListener('mousedown', (e) => {
@@ -1337,13 +1400,35 @@ window.addEventListener('mousemove', (e) => {
     if (!h) return;
     const dt = T(x) - d.anchorT;
     const dur = state.proj.duration, MIN = 0.3;
+    // Hold Alt to suspend snapping for one drag (the standard NLE escape hatch).
+    const snapping = state.snapOn && !e.altKey;
+    const tol = canvas.clientWidth ? (SNAP_PX / canvas.clientWidth) * dur : 0;
+    const targets = snapping ? snapTargets(h.id) : [];
+    state.snapAt = null;
     if (d.zone === 'left') {
-      h.start = +Math.max(0, Math.min(d.startStart + dt, h.end - MIN)).toFixed(3);
+      let ns = d.startStart + dt;
+      const s = snapping ? snapTime(ns, targets, tol) : null;
+      if (s != null) { ns = s; state.snapAt = s; }
+      h.start = +Math.max(0, Math.min(ns, h.end - MIN)).toFixed(3);
     } else if (d.zone === 'right') {
-      h.end = +Math.min(dur, Math.max(d.startEnd + dt, h.start + MIN)).toFixed(3);
+      let ne = d.startEnd + dt;
+      const s = snapping ? snapTime(ne, targets, tol) : null;
+      if (s != null) { ne = s; state.snapAt = s; }
+      h.end = +Math.min(dur, Math.max(ne, h.start + MIN)).toFixed(3);
     } else { // body: shift, preserving length
       const len = d.startEnd - d.startStart;
-      const ns = Math.max(0, Math.min(d.startStart + dt, dur - len));
+      let ns = d.startStart + dt;
+      if (snapping) {
+        // Try BOTH edges and take whichever lands closer, so a clip snaps by its head or its
+        // tail — whichever the editor pushed against. Length is preserved either way.
+        const sS = snapTime(ns, targets, tol);
+        const sE = snapTime(ns + len, targets, tol);
+        const dS = sS == null ? Infinity : Math.abs(sS - ns);
+        const dE = sE == null ? Infinity : Math.abs(sE - (ns + len));
+        if (dS <= dE && sS != null) { ns = sS; state.snapAt = sS; }
+        else if (sE != null) { ns = sE - len; state.snapAt = sE; }
+      }
+      ns = Math.max(0, Math.min(ns, dur - len));
       h.start = +ns.toFixed(3); h.end = +(ns + len).toFixed(3);
     }
     h.snapped = false;                  // manual edit → no longer an auto-snap
@@ -1361,9 +1446,14 @@ window.addEventListener('mousemove', (e) => {
 window.addEventListener('mouseup', () => {
   if (!state.drag) return;
   const h = state.highlights.find((c) => c.id === state.drag.id);
+  const moved = h && (h.start !== state.drag.startStart || h.end !== state.drag.startEnd);
   state.drag = null;
+  state.snapAt = null;                     // clear the guide line once the drag lands
   canvas.style.cursor = 'default';
-  if (h) { renderHighlights(); draw(); }   // commit: refresh duration line + snap chip + inputs
+  if (h) {
+    renderHighlights(); draw();            // commit: refresh duration line + snap chip + inputs
+    if (moved) logEdit('trim', { id: h.id, start: +h.start.toFixed(3), end: +h.end.toFixed(3) });
+  }
 });
 
 // Razor: double-click a clip to split it in two — at the playhead if it's inside the clip,
@@ -1868,6 +1958,39 @@ window.addEventListener('keydown', (e) => {
   if (!state.proj || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
   if (e.key === 'c' || e.key === 'C') setTool(state.tool === 'razor' ? 'select' : 'razor');
   if (e.key === 'h' || e.key === 'H') setTool(state.tool === 'hand' ? 'select' : 'hand');
+  // S toggles magnetic snapping globally; Alt suspends it for a single drag.
+  if ((e.key === 's' || e.key === 'S') && !e.metaKey && !e.shiftKey && !e.altKey) {
+    state.snapOn = !state.snapOn;
+    toast(state.snapOn ? 'Snapping on' : 'Snapping off');
+  }
+  // Delete vs Ripple Delete on the selected clip.
+  //
+  // A note on what "ripple" means HERE: clips are absolute SOURCE ranges and the export
+  // concatenates the kept ones in order, so the output has no gaps to close — dropping a clip
+  // already pulls everything downstream up. Rewriting start/end into relative timeline offsets
+  // to "close a gap" would break frame-accurate extraction (see CLAUDE.md). So:
+  //   Delete/Backspace  → ghost the clip: keep=false, still on the timeline, fully reversible.
+  //   Shift+Backspace   → ripple delete: drop it from the sequence entirely.
+  // Both route through logEdit, so both are Cmd+Z-able.
+  if (e.key === 'Backspace' || e.key === 'Delete') {
+    const id = state.selClip || state.selected;
+    const i = (state.highlights || []).findIndex((x) => String(x.id) === String(id));
+    if (i < 0) { toast('Select a clip on the timeline first.', true); return; }
+    e.preventDefault();
+    const h = state.highlights[i];
+    if (e.shiftKey) {
+      state.highlights.splice(i, 1);
+      if (state.selected === h.id) state.selected = null;
+      if (state.selClip === h.id) state.selClip = null;
+      logEdit('ripple_delete', { id: h.id });
+      toast(`Ripple-deleted ${String(h.id).toUpperCase()} — sequence closed up.`);
+    } else {
+      h.keep = false;
+      logEdit('drop', { id: h.id });
+      toast(`${String(h.id).toUpperCase()} dropped to a ghost (Shift+Delete removes it).`);
+    }
+    renderHighlights(); draw();
+  }
 });
 
 // ---- Markers (M) + In/Out region (I/O) on the source scrub rail. Markers are session-scoped

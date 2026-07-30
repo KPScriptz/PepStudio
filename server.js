@@ -443,6 +443,23 @@ async function paceClip(file, s, e, lvl) {
   return tightenClip({ start: s, end: e }, silences, { minSilence: lvl.minSilence });
 }
 
+// Resolve the pacing level, letting the client override the two numbers that actually drive the
+// cut: how long a pause must be before it's cut, and how quiet counts as silence. The named
+// presets stay the default; overrides are clamped so a bad slider value can't produce a
+// pathological silencedetect (e.g. a 0s threshold that cuts between syllables).
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+function resolveLevel(body) {
+  const base = PACING_LEVELS[body.level] || PACING_LEVELS.tight;
+  const minSilence = Number(body.minSilence);
+  const db = Number(body.db);
+  const lvl = { ...base };
+  let custom = false;
+  if (Number.isFinite(minSilence)) { lvl.minSilence = +clamp(minSilence, 0.2, 2).toFixed(2); custom = true; }
+  if (Number.isFinite(db)) { lvl.db = Math.round(clamp(db, -45, -15)); custom = true; }
+  if (custom) lvl.label = `Custom (${lvl.minSilence}s @ ${lvl.db}dB)`;
+  return lvl;
+}
+
 app.post('/api/pacing/preview', async (req, res) => {
   try {
     const file = await sourceFor(req.body.id);
@@ -450,9 +467,9 @@ app.post('/api/pacing/preview', async (req, res) => {
     const s = Number(req.body.clip && req.body.clip.start);
     const e = Number(req.body.clip && req.body.clip.end);
     if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) return res.status(400).json({ error: 'Invalid clip.' });
-    const lvl = PACING_LEVELS[req.body.level] || PACING_LEVELS.tight;
+    const lvl = resolveLevel(req.body);
     const result = await paceClip(file, s, e, lvl);
-    res.json({ level: req.body.level || 'tight', label: lvl.label, ...result });
+    res.json({ level: req.body.level || 'tight', label: lvl.label, minSilence: lvl.minSilence, db: lvl.db, ...result });
   } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
 
@@ -468,7 +485,7 @@ app.post('/api/pacing/sequence', async (req, res) => {
       .filter(([s, e]) => Number.isFinite(s) && Number.isFinite(e) && e > s)
       .sort((a, b) => a[0] - b[0]);
     if (!clips.length) return res.status(400).json({ error: 'No clips in the sequence.' });
-    const lvl = PACING_LEVELS[req.body.level] || PACING_LEVELS.tight;
+    const lvl = resolveLevel(req.body);
     const results = await mapLimit(clips, PACK_CONCURRENCY, ([s, e]) => paceClip(file, s, e, lvl));
     const segments = [];
     let origSec = 0, tightSec = 0, cuts = 0;
