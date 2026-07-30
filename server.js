@@ -22,6 +22,7 @@ import { probe, ffmpeg } from './lib/ff.js';
 import { tightenClip, parseSilences, PACING_LEVELS } from './lib/pacing.js';
 import { detectFillers, stripFillers } from './lib/fillers.js';
 import { ocrAvailable } from './lib/ocr.js';
+import { revealCmd, installHint, expandTilde } from './lib/platform.js';
 import { analyzeNBA } from './lib/nba2k.js';
 import { analyzePalworld } from './lib/palworld.js';
 import { applyGameEvents } from './lib/gameEvents.js';
@@ -165,7 +166,9 @@ async function sourceFor(id) {
   } catch { return null; }
 }
 
-const tildeExpand = (p) => (p && p.startsWith('~') ? path.join(process.env.HOME, p.slice(1)) : p);
+// expandTilde reads USERPROFILE on Windows — process.env.HOME is undefined there, so the old
+// path.join(undefined, ...) threw a TypeError and crashed POST /api/analyze for any ~ path.
+const tildeExpand = (p) => expandTilde(p);
 
 // Auto-titles: punchy Title-Cased clip names from each clip's transcript snippet (offline,
 // no model). Feeds the highlight list + the Publish Kit chapters. Pure compile.
@@ -273,7 +276,7 @@ function pruneJobs(max = 50) {
 app.post('/api/import-url', async (req, res) => {
   const url = (req.body.url || '').trim();
   if (!url) return res.status(400).json({ error: 'Paste a YouTube or Twitch link.' });
-  if (!ytdlpBin()) return res.status(500).json({ error: 'yt-dlp not installed. Run: brew install yt-dlp' });
+  if (!ytdlpBin()) return res.status(500).json({ error: `yt-dlp not installed. ${installHint('yt-dlp')}` });
   if (!SUPPORTED_URL.test(url)) return res.status(400).json({ error: 'Only YouTube and Twitch links are supported.' });
 
   pruneJobs();
@@ -692,7 +695,7 @@ app.post('/api/highlights/funny', async (req, res) => {
     if (!file) return res.status(404).json({ error: 'Unknown project id' });
     const cap = captionsReady();
     if (!cap.bin || !cap.model) {
-      return res.status(400).json({ error: 'Reaction ranking needs whisper.cpp. Install it: brew install whisper-cpp' });
+      return res.status(400).json({ error: `Reaction ranking needs whisper.cpp. ${installHint('whisper-cli')}` });
     }
 
     // Candidate windows: prefer the broad analyze pool, fall back to highlights.
@@ -1163,7 +1166,13 @@ app.post('/api/export/thumbs', async (req, res) => {
 // a filename containing shell metacharacters (backticks, $(), ;) can't be interpreted as a command.
 app.post('/api/reveal', async (req, res) => {
   const p = req.body.path;
-  if (p && typeof p === 'string' && fs.existsSync(p)) execFile('open', ['-R', p], () => {});
+  // execFile (no shell) so a filename with backticks/$() can't inject — never rebuild this as
+  // exec(`...`). revealCmd picks the platform's file manager; Windows explorer.exe exits 1 even
+  // on success, so its exit code is deliberately ignored.
+  if (p && typeof p === 'string' && fs.existsSync(p)) {
+    const r = revealCmd(p);
+    execFile(r.cmd, r.args, () => {});
+  }
   res.json({ ok: true });
 });
 

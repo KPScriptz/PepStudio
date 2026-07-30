@@ -10,10 +10,11 @@
   },
   "scripts": {
     "start": "node server.js",
-    "test": "node test/zooms.test.js && node test/storyboard.test.js && node test/hooks.test.js && node test/publishkit.test.js && node test/titles.test.js && node test/thumbnails.test.js && node test/pacing.test.js && node test/fillers.test.js",
+    "test": "node test/zooms.test.js && node test/storyboard.test.js && node test/hooks.test.js && node test/publishkit.test.js && node test/titles.test.js && node test/thumbnails.test.js && node test/pacing.test.js && node test/fillers.test.js && node test/platform.test.js",
     "electron": "electron .",
     "dist": "electron-builder --mac dmg",
-    "dist:dir": "electron-builder --dir"
+    "dist:dir": "electron-builder --dir",
+    "dist:win": "electron-builder --win nsis zip"
   },
   "dependencies": {
     "express": "^4.19.2"
@@ -42,6 +43,31 @@
       "category": "public.app-category.video",
       "icon": "electron/icon.png",
       "identity": null
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "electron/icon.png",
+      "artifactName": "PepStudio-${version}-windows-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "shortcutName": "PepStudio"
     }
   }
 }

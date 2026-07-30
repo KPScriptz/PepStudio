@@ -4,7 +4,8 @@ const path = require('node:path');
 const fs = require('node:fs');
 const net = require('node:net');
 const https = require('node:https');
-const { spawn, execSync, fork } = require('node:child_process');
+const { spawn, execFileSync, fork } = require('node:child_process');
+const P = require('../lib/platform.cjs');
 
 const ROOT = path.join(__dirname, '..'); // server.js lives one level up
 const TEST = process.env.CLIPFORGE_TEST === '1';
@@ -30,10 +31,20 @@ function status(t) {
   }
 }
 
+// Locate an executable WITHOUT a shell. `command -v` is a POSIX shell builtin, so the old
+// implementation could not work on Windows at all; `where` is the Windows equivalent and both
+// are invoked argv-style so an odd PATH entry can't inject.
 function which(bin) {
-  try { return execSync(`command -v ${bin} 2>/dev/null`).toString().trim() || null; } catch { return null; }
+  const w = P.whichCmd(P.binName(bin));
+  try {
+    const out = execFileSync(w.cmd, w.args, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const first = out.split(/\r?\n/)[0].trim();   // `where` may print several matches
+    return first && fs.existsSync(first) ? first : null;
+  } catch { return null; }
 }
 
+// Run a package-manager install. macOS/Linux only — there is no single package manager we can
+// assume on Windows, so callers must not reach this there (ensureDeps guards on process.platform).
 function sh(cmd) {
   return new Promise((res) => { const c = spawn('bash', ['-lc', cmd], { stdio: 'ignore' }); c.on('close', () => res()); c.on('error', () => res()); });
 }
@@ -58,20 +69,19 @@ function download(url, dest, onPct) {
 async function ensureDeps(ud) {
   const binDir = path.join(ud, 'bin');
   fs.mkdirSync(binDir, { recursive: true });
-  // A Finder-launched GUI app inherits a bare PATH (/usr/bin:/bin) — NOT the shell's — so ffprobe/
-  // ffmpeg/whisper-cli/yt-dlp installed in ~/.local/bin are invisible and spawn with ENOENT. Add
-  // the common user/Homebrew bin dirs (incl. ~/.local/bin) so all four external tools resolve.
-  const homeBin = process.env.HOME ? path.join(process.env.HOME, '.local', 'bin') : '';
-  process.env.PATH = ['/opt/homebrew/bin', '/usr/local/bin', homeBin, binDir, process.env.PATH || '']
-    .filter(Boolean).join(':');
+  // A GUI-launched app inherits a bare PATH — NOT the shell's — so tools in ~/.local/bin (macOS)
+  // or a scoop/winget shim dir (Windows) are invisible and spawn with ENOENT. buildPath prepends
+  // the platform's tool dirs using the RIGHT delimiter; joining with ':' on Windows would collapse
+  // the entire PATH into one bogus entry and break every spawn downstream.
+  process.env.PATH = P.buildPath(binDir);
 
-  // yt-dlp — single standalone binary, no Homebrew required.
+  // yt-dlp — one standalone binary per OS, so no package manager is needed anywhere.
   if (!which('yt-dlp') && !process.env.YTDLP_BIN) {
-    const dest = path.join(binDir, 'yt-dlp');
+    const dest = path.join(binDir, P.binName('yt-dlp'));
     if (!fs.existsSync(dest)) {
       status('Setting up the VOD downloader…');
-      await download('https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos', dest, (p) => status(`Downloading yt-dlp… ${p}%`));
-      fs.chmodSync(dest, 0o755);
+      await download(`https://github.com/yt-dlp/yt-dlp/releases/latest/download/${P.ytdlpAsset()}`, dest, (p) => status(`Downloading yt-dlp… ${p}%`));
+      if (!P.isWin()) fs.chmodSync(dest, 0o755);   // NTFS has no exec bit
     }
     process.env.YTDLP_BIN = dest;
   }
@@ -92,11 +102,24 @@ async function ensureDeps(ud) {
     }
   }
 
-  // FFmpeg (with libass) + whisper.cpp — prefer what's installed; fall back to Homebrew if present.
-  const brew = which('brew');
-  const ffOk = fs.existsSync('/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg') || which('ffmpeg');
-  if (!ffOk && brew) { status('Installing FFmpeg (caption burn-in)…'); await sh(`${brew} install ffmpeg-full`); }
-  if (!which('whisper-cli') && brew) { status('Installing whisper.cpp…'); await sh(`${brew} install whisper-cpp`); }
+  // FFmpeg (with libass) + whisper.cpp. On macOS/Linux we can auto-install via Homebrew. Windows
+  // has no package manager we can assume is present, so we do NOT silently install anything —
+  // missingTools() reports what's absent and boot() shows actionable instructions instead.
+  if (!P.isWin()) {
+    const brew = which('brew');
+    const ffOk = fs.existsSync('/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg') || which('ffmpeg');
+    if (!ffOk && brew) { status('Installing FFmpeg (caption burn-in)…'); await sh(`${brew} install ffmpeg-full`); }
+    if (!which('whisper-cli') && brew) { status('Installing whisper.cpp…'); await sh(`${brew} install whisper-cpp`); }
+  }
+}
+
+// Which external tools are still missing after ensureDeps. ffmpeg/ffprobe are hard requirements
+// (no analyze, no render without them); whisper is soft (captions/ranking degrade).
+function missingTools() {
+  const miss = [];
+  for (const t of ['ffmpeg', 'ffprobe']) if (!which(t)) miss.push({ tool: t, hard: true, hint: P.installHint('ffmpeg') });
+  if (!which('whisper-cli') && !which('whisper-cpp')) miss.push({ tool: 'whisper-cli', hard: false, hint: P.installHint('whisper-cli') });
+  return miss;
 }
 
 function waitForServer(port, ms = 20000) {
