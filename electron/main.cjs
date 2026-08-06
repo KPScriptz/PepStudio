@@ -75,6 +75,10 @@ async function ensureDeps(ud) {
   // the entire PATH into one bogus entry and break every spawn downstream.
   process.env.PATH = P.buildPath(binDir);
 
+  // CI boot check (CLIPFORGE_TEST=1) only proves the packaged app starts and serves — it must not
+  // pull ~170MB of yt-dlp + speech model on every run. Skip the downloads; the PATH is already set.
+  if (TEST) return;
+
   // yt-dlp — one standalone binary per OS, so no package manager is needed anywhere.
   if (!which('yt-dlp') && !process.env.YTDLP_BIN) {
     const dest = path.join(binDir, P.binName('yt-dlp'));

@@ -166,6 +166,28 @@ function run() {
   assert.ok(!mfonts.some((f) => f.includes('Windows')), 'no windows paths on mac');
   console.log('✅ fontCandidates: real font files per platform (drawtext needs an explicit one).');
 
+  // --- HOST INDEPENDENCE ---
+  // These must hold whether this suite runs on macOS, Linux or a Windows CI runner. Using the
+  // host's path.join produced mixed separators (C:\Users\kp/scoop/shims) and made the mac-branch
+  // assertions fail on windows-latest — a green Mac and a red CI for the same correct code.
+  for (const d of toolDirs('C:\\app\\bin', winEnv, WIN)) {
+    assert.ok(!d.includes('/'), `windows tool dir must have no forward slashes: ${d}`);
+  }
+  for (const d of toolDirs('/app/bin', macEnv, MAC)) {
+    assert.ok(!d.includes('\\'), `posix tool dir must have no backslashes: ${d}`);
+  }
+  for (const c of binCandidates('ffmpeg', winEnv, WIN)) {
+    assert.ok(!c.includes('/'), `windows candidate must be pure win32: ${c}`);
+  }
+  for (const c of binCandidates('ffmpeg', macEnv, MAC)) {
+    assert.ok(!c.includes('\\'), `posix candidate must be pure posix: ${c}`);
+  }
+  assert.ok(!whisperModelDirs(winEnv, WIN).some((d) => d.includes('/')), 'win model dirs are pure win32');
+  assert.ok(!whisperModelDirs(macEnv, MAC).some((d) => d.includes('\\')), 'posix model dirs are pure posix');
+  assert.strictEqual(expandTilde('~/models', winEnv, WIN), 'C:\\Users\\kp\\models', 'win tilde uses backslashes');
+  assert.strictEqual(expandTilde('~/models', macEnv, MAC), '/Users/kp/models', 'posix tilde uses forward slashes');
+  console.log('✅ path output depends on the TARGET platform, never on the host running the tests.');
+
   // --- isWin ---
   assert.ok(isWin(WIN) && !isWin(MAC) && !isWin(LIN));
 

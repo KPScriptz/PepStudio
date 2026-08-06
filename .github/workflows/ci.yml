@@ -1,0 +1,132 @@
+name: CI
+
+# The Windows job is the point of this file. PepStudio is developed on a Mac and shells out to
+# ffmpeg/ffprobe/whisper, so the Windows code paths cannot be verified locally at all — this
+# runs the real analyze → export pipeline on an actual Windows host and fails loudly on the
+# silent-failure class of bug (concat list files, filtergraph path escaping, drawtext fonts,
+# PATH assembly) that a unit test can only approximate.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# A newer push to the same branch makes an in-flight run pointless.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Unit tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      # The pure suites need no ffmpeg. Running them on Windows too is what validates the
+      # platform layer against real win32 path semantics rather than a simulation.
+      - name: Run unit tests
+        run: npm test
+
+  smoke:
+    name: E2E smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Install ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg --no-progress -y
+        shell: pwsh
+
+      - name: Install ffmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      # Prove the tools resolve before blaming the app for a runner problem.
+      - name: Show ffmpeg build
+        run: |
+          ffmpeg -hide_banner -version
+          ffprobe -hide_banner -version
+        shell: bash
+
+      # Boots the server, synthesises a clip at a path containing a space, then drives
+      # analyze → sequence export → vertical+drawtext export and ffprobes the results.
+      - name: Run end-to-end smoke test
+        run: node scripts/smoke.mjs
+        shell: bash
+
+  build-windows:
+    name: Build Windows installer
+    # Only after the Windows smoke test proves the app actually runs there — publishing an
+    # installer that was never executed is what we are trying to stop doing.
+    needs: smoke
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      # Built on a real Windows host, so no wine is involved.
+      - name: Build NSIS installer + portable zip
+        run: npx electron-builder --win nsis zip --x64 --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify the artifacts are real Windows binaries
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem dist -Filter '*windows-x64.exe' | Select-Object -First 1
+          if (-not $exe) { throw 'no installer produced' }
+          # 'MZ' is the DOS header every PE file starts with.
+          $bytes = [System.IO.File]::ReadAllBytes($exe.FullName)[0..1]
+          $magic = [System.Text.Encoding]::ASCII.GetString($bytes)
+          if ($magic -ne 'MZ') { throw "installer is not a PE binary (magic=$magic)" }
+          Write-Host "OK $($exe.Name) $([math]::Round($exe.Length/1MB,1)) MB"
+
+      # Launch the PACKAGED app headlessly and assert it boots and serves. CLIPFORGE_TEST=1 makes
+      # electron/main.cjs start the server, print ELECTRON_BOOT_OK with its port, and exit — so
+      # this catches a packaged-only breakage (missing file, bad path) that running from source
+      # would never surface.
+      - name: Smoke-boot the packaged app
+        shell: pwsh
+        run: |
+          $env:CLIPFORGE_TEST = '1'
+          $out = & 'dist\win-unpacked\PepStudio.exe' 2>&1 | Out-String
+          Write-Host $out
+          if ($out -notmatch 'ELECTRON_BOOT_OK') { throw "packaged app failed to boot:`n$out" }
+          Write-Host 'packaged app booted and served'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pepstudio-windows-x64
+          path: |
+            dist/*windows-x64.exe
+            dist/*windows-x64.zip
+          if-no-files-found: error
+          retention-days: 14
