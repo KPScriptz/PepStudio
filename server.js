@@ -27,6 +27,7 @@ import { analyzeNBA } from './lib/nba2k.js';
 import { analyzePalworld } from './lib/palworld.js';
 import { applyGameEvents } from './lib/gameEvents.js';
 import { selectStoryboard, recommendPlan } from './lib/storyboard.js';
+import { auditCut } from './lib/critic.js';
 import { scoreHook, hookCandidates } from './lib/hooks.js';
 import { buildChapters, suggestHashtags, buildDescription } from './lib/publishkit.js';
 import { coverCandidates } from './lib/thumbnails.js';
@@ -216,15 +217,29 @@ app.post('/api/prefs', async (req, res) => {
   } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
 
+// Every client calls this on load, so it must ALWAYS answer. It was async with no try/catch: a
+// throw from any probe became an unhandled rejection, Express never replied, and the UI sat on a
+// blank status forever — most likely on a fresh install where the external tools are missing.
+// Each probe is now individually defaulted, so one absent tool can't take the whole route down.
 app.get('/api/status', async (req, res) => {
-  const cap = captionsReady();
-  const pep = await pepaiReady();
-  res.json({
-    captions: { ready: !!(cap.bin && cap.model), bin: cap.bin, model: cap.model },
-    canBurn: await canBurnCaptions(),
-    canDownload: !!ytdlpBin(),
-    pepai: { ready: pep.ready, model: pep.model || null },
-  });
+  const safe = async (fn, fallback) => { try { return await fn(); } catch { return fallback; } };
+  try {
+    const cap = await safe(() => captionsReady(), { bin: null, model: null });
+    const pep = await safe(() => pepaiReady(), { ready: false, model: null });
+    res.json({
+      captions: { ready: !!(cap.bin && cap.model), bin: cap.bin, model: cap.model },
+      canBurn: await safe(() => canBurnCaptions(), false),
+      canDownload: await safe(() => !!ytdlpBin(), false),
+      pepai: { ready: !!pep.ready, model: pep.model || null },
+    });
+  } catch (e) {
+    // Last resort: a degraded status beats a hung client.
+    res.json({
+      captions: { ready: false, bin: null, model: null },
+      canBurn: false, canDownload: false, pepai: { ready: false, model: null },
+      error: String(e.message || e),
+    });
+  }
 });
 
 // ---- Editorial feedback recorder: append every real human edit decision to a local
@@ -823,6 +838,18 @@ app.post('/api/highlights/funny', async (req, res) => {
 // for the export-time prepend. Pure compile — no ffmpeg, fast. ----
 // Cost a cut WITHOUT compiling or exporting one: how long should this footage become, and why.
 // Pure and instant (no ffmpeg, no whisper), so the UI can re-cost live as the blueprint changes.
+// Deterministic retention audit of a cut map BEFORE it reaches ffmpeg. Pure and instant — no
+// LLM, no tokens, no latency, and the same verdict every time for the same input.
+app.post('/api/critic', (req, res) => {
+  try {
+    res.json(auditCut({
+      clips: Array.isArray(req.body.clips) ? capBatch(req.body.clips) : [],
+      words: Array.isArray(req.body.words) ? req.body.words : [],
+      silences: Array.isArray(req.body.silences) ? req.body.silences : [],
+    }, req.body.thresholds && typeof req.body.thresholds === 'object' ? req.body.thresholds : {}));
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
 app.post('/api/storyboard/plan', (req, res) => {
   try {
     const highlights = Array.isArray(req.body.highlights) ? req.body.highlights : [];
