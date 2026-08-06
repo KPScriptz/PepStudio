@@ -28,6 +28,7 @@ import { analyzePalworld } from './lib/palworld.js';
 import { applyGameEvents } from './lib/gameEvents.js';
 import { selectStoryboard, recommendPlan } from './lib/storyboard.js';
 import { auditCut } from './lib/critic.js';
+import { parseRetentionCsv, findCliffs, buildFeedbackRows } from './lib/retentionCsv.js';
 import { scoreHook, hookCandidates } from './lib/hooks.js';
 import { buildChapters, suggestHashtags, buildDescription } from './lib/publishkit.js';
 import { coverCandidates } from './lib/thumbnails.js';
@@ -840,6 +841,33 @@ app.post('/api/highlights/funny', async (req, res) => {
 // Pure and instant (no ffmpeg, no whisper), so the UI can re-cost live as the blueprint changes.
 // Deterministic retention audit of a cut map BEFORE it reaches ffmpeg. Pure and instant — no
 // LLM, no tokens, no latency, and the same verdict every time for the same input.
+// Close the flywheel: a YouTube Studio retention export becomes bounded editorial feedback.
+// It appends rows in the EXISTING feedback.jsonl schema, so every weight change still flows
+// through the clamped, idempotent consumer — this adds a signal source, not a new learning path.
+// Nothing is applied here; /api/feedback/apply remains the explicit step.
+app.post('/api/retention/import', async (req, res) => {
+  try {
+    const csv = String(req.body.csv || '');
+    if (!csv.trim()) return res.status(400).json({ error: 'Paste the retention CSV exported from YouTube Studio.' });
+    const clips = Array.isArray(req.body.clips) ? capBatch(req.body.clips) : [];
+    if (!clips.length) return res.status(400).json({ error: 'Provide the clips manifest that was exported.' });
+    const videoSec = clips.reduce((n, c) => n + Math.max(0, Number(c.end) - Number(c.start)), 0);
+    const { points, positionUnit } = parseRetentionCsv(csv, { videoSec });
+    if (!points.length) return res.status(400).json({ error: 'No retention rows found in that CSV.' });
+    const cliffs = findCliffs(points, { dropPct: Number(req.body.dropPct) || 5, windowSec: Number(req.body.windowSec) || 10 });
+    const audit = auditCut({ clips, words: req.body.words || [], silences: req.body.silences || [] });
+    const { rows, skipped, considered } = buildFeedbackRows(cliffs, {
+      projectId: req.body.id || null, videoId: req.body.videoId || null,
+      clips, criticIssues: audit.issues,
+    });
+    if (rows.length && req.body.dryRun !== true) {
+      await fsp.mkdir(DATA, { recursive: true });
+      await fsp.appendFile(path.join(DATA, 'feedback.jsonl'), rows.map((r) => JSON.stringify(r)).join('\n') + '\n', 'utf8');
+    }
+    res.json({ positionUnit, points: points.length, cliffs, considered, written: req.body.dryRun === true ? 0 : rows.length, rows, skipped, auditScore: audit.score });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
 app.post('/api/critic', (req, res) => {
   try {
     res.json(auditCut({
