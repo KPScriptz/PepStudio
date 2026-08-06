@@ -19,8 +19,18 @@ const toast = (msg, isErr) => {
 };
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const showProgress = (txt) => { $('#progressText').textContent = txt; $('#progress').classList.remove('hidden'); };
-const hideProgress = () => $('#progress').classList.add('hidden');
+// Progress also drives the OS: a Dock progress bar on macOS and a taskbar-button bar on Windows,
+// so a long render stays visible when the app is behind something else. Same Electron call for
+// both. Every native hook is optional-chained — in a plain browser tab there is no
+// window.electron and these are simply inert.
+const showProgress = (txt) => {
+  $('#progressText').textContent = txt; $('#progress').classList.remove('hidden');
+  try { window.electron?.setProgress?.(2); } catch {}    // 2 = indeterminate
+};
+const hideProgress = () => {
+  $('#progress').classList.add('hidden');
+  try { window.electron?.setProgress?.(-1); } catch {}   // -1 = clear
+};
 
 const state = { proj: null, highlights: [], selected: null, selClip: null, drag: null };
 const player = $('#player');
@@ -143,6 +153,28 @@ $('#backToProjects')?.addEventListener('click', showPicker);
 // Native file dialog (Step 2) routes the chosen absolute path here, same as drag-drop.
 window.pepResolveNativeFilePath = (p) => { hidePicker(); window.pepHandleDroppedPath(p); };
 renderRecents();
+
+// ---- Native desktop chrome, gated on the real platform ----------------------------------------
+// On macOS the window uses hiddenInset, so the traffic lights float OVER the top-left of the page.
+// Without a matching inset they'd sit on top of the "‹ Projects" button. The class is applied only
+// when the MAIN PROCESS confirms darwin — never from a user-agent guess — so Windows and a plain
+// browser tab are untouched.
+//
+// The accent colour comes from macOS System Settings, so the app picks up the user's chosen colour
+// the way a native app does. Off macOS it resolves to null and the stylesheet's accent stands.
+(async () => {
+  try {
+    const el = window.electron; if (!el) return;
+    const plat = await (el.platform?.() ?? null);
+    if (plat) document.documentElement.classList.add(`os-${plat}`);
+    if (plat === 'darwin') document.documentElement.classList.add('isMac');
+    const accent = await (el.accentColor?.() ?? null);
+    if (accent && /^#[0-9a-f]{6}$/i.test(accent)) {
+      document.documentElement.style.setProperty('--px-accent', accent);
+      document.documentElement.style.setProperty('--premiere-blue', accent);
+    }
+  } catch { /* native chrome is a nicety — never block the UI on it */ }
+})();
 // Crash recovery: the server flags an unclean shutdown (.running sentinel survived); the
 // curation autosaves on every edit, so recovery is just reopening the last project.
 (async () => {
@@ -1986,6 +2018,10 @@ $('#queueList')?.addEventListener('click', (e) => {
 renderQueue();   // start with Run disabled until something is queued
 
 function addOutput(label, data, kind) {
+  // Every finished render lands here, so it's the one honest place to fire an OS notification —
+  // Notification Center on macOS, a toast on Windows. The main process suppresses it when the
+  // window is focused, so it only ever reaches you when you've switched away during a long export.
+  try { window.electron?.notify?.('PepStudio', `${label} is ready.`); } catch {}
   const el = document.createElement('div');
   el.className = 'outItem';
   el.innerHTML = `<span class="tag">${kind}</span>

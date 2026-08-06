@@ -155,31 +155,82 @@ function waitForServer(port, ms = 20000) {
   });
 }
 
-// Recreate just the window against the already-running server (used after the quit guard's
-// "Keep Working" with no window left, and dock re-activation). boot() must not run twice — it
-// would fork a second server and re-register the ipcMain handler.
-function reopenWindow() {
-  win = new BrowserWindow({
+const IS_MAC = process.platform === 'darwin';
+
+// ---- Window options, in ONE place -------------------------------------------------------------
+// There are two BrowserWindow constructions (first boot and reopen-after-close); they used to be
+// copy-pasted, which is how the two silently drift apart. Mac-only chrome is applied here and
+// nowhere else.
+//
+// On macOS: hiddenInset floats the traffic lights over the content for the unified title bar Pro
+// apps use, and `vibrancy` gives the real NSVisualEffectView translucency — the genuine article,
+// not a CSS approximation. Both are ignored on Windows/Linux, where the standard frame is correct
+// and expected, so this is additive rather than a cross-platform regression.
+function windowOptions() {
+  const base = {
     width: 1320, height: 880, minWidth: 1000, minHeight: 640,
     backgroundColor: '#0b0f17', title: 'PepStudio', show: false,
     icon: path.join(__dirname, 'icon.png'),
     webPreferences: { contextIsolation: true, preload: path.join(__dirname, 'preload.cjs') },
-  });
-  win.once('ready-to-show', () => win.show());
-  win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
+  };
+  if (!IS_MAC) return base;
+  return {
+    ...base,
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 14, y: 16 },   // vertically centred against the 48px header
+    vibrancy: 'under-window',
+    visualEffectState: 'active',              // stay vibrant when the window is not focused
+    backgroundColor: '#00000000',             // let the vibrancy through
+  };
+}
+
+// Restore the last window position/size, ignoring a geometry that no longer fits any connected
+// display (unplugging an external monitor would otherwise reopen the app off-screen).
+function savedBounds() {
+  try {
+    const b = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'window.json'), 'utf8'));
+    if (!b || !Number.isFinite(b.width) || !Number.isFinite(b.height)) return null;
+    const { screen } = require('electron');
+    const fits = screen.getAllDisplays().some((d) => {
+      const a = d.workArea;
+      return b.x >= a.x - 40 && b.y >= a.y - 40 && b.x + b.width <= a.x + a.width + 40 && b.y + b.height <= a.y + a.height + 40;
+    });
+    return fits ? b : null;
+  } catch { return null; }
+}
+function trackBounds(w) {
+  const save = () => {
+    try {
+      if (!w || w.isDestroyed() || w.isMinimized() || w.isFullScreen()) return;
+      fs.writeFileSync(path.join(app.getPath('userData'), 'window.json'), JSON.stringify(w.getBounds()));
+    } catch { /* geometry is a convenience — never fail the app over it */ }
+  };
+  let t = null;
+  const debounced = () => { clearTimeout(t); t = setTimeout(save, 400); };
+  w.on('resize', debounced);
+  w.on('move', debounced);
+  w.on('close', save);
+}
+
+function makeWindow() {
+  const w = new BrowserWindow({ ...windowOptions(), ...(savedBounds() || {}) });
+  w.once('ready-to-show', () => w.show());
+  w.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
+  trackBounds(w);
+  return w;
+}
+
+// Recreate just the window against the already-running server (used after the quit guard's
+// "Keep Working" with no window left, and dock re-activation). boot() must not run twice — it
+// would fork a second server and re-register the ipcMain handler.
+function reopenWindow() {
+  win = makeWindow();
   win.loadURL(`http://localhost:${serverPort}`);
 }
 
 async function boot() {
   if (!TEST) {
-    win = new BrowserWindow({
-      width: 1320, height: 880, minWidth: 1000, minHeight: 640,
-      backgroundColor: '#0b0f17', title: 'PepStudio', show: false,
-      icon: path.join(__dirname, 'icon.png'),
-      webPreferences: { contextIsolation: true, preload: path.join(__dirname, 'preload.cjs') },
-    });
-    win.once('ready-to-show', () => win.show());
-    win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
+    win = makeWindow();
     // Native file-open dialog for the renderer's "Choose file…" button (preload → window.electron).
     ipcMain.handle('dialog:openVideo', async () => {
       const r = await dialog.showOpenDialog(win, {
@@ -189,6 +240,43 @@ async function boot() {
         filters: [{ name: 'Video', extensions: ['mp4', 'mov', 'mkv', 'avi', 'webm', 'm4v'] }],
       });
       return (r.canceled || !r.filePaths.length) ? null : r.filePaths[0];
+    });
+
+    // ---- Native desktop integration -----------------------------------------------------------
+    // The renderer is a web page, so it can't reach the OS on its own. These three are the ones
+    // that actually change how the app FEELS native, and two of them are wins on Windows too.
+
+    // The user's chosen system accent colour (macOS System Settings). Windows/Linux return null and
+    // the CSS keeps its own accent, so this is additive.
+    ipcMain.handle('sys:accent', () => {
+      try {
+        const { systemPreferences } = require('electron');
+        if (!IS_MAC || typeof systemPreferences.getAccentColor !== 'function') return null;
+        const hex = systemPreferences.getAccentColor();      // 'RRGGBBAA'
+        return hex ? `#${String(hex).slice(0, 6)}` : null;
+      } catch { return null; }
+    });
+    ipcMain.handle('sys:platform', () => process.platform);
+
+    // Render progress on the Dock icon (macOS) AND the taskbar button (Windows) — same call, so
+    // this is not a Mac-only nicety. -1 clears it.
+    ipcMain.handle('sys:progress', (_e, value) => {
+      try {
+        if (win && !win.isDestroyed()) win.setProgressBar(Number.isFinite(value) ? value : -1);
+      } catch {}
+      return true;
+    });
+
+    // Native OS notification when a long render finishes — Notification Center on macOS, toast on
+    // Windows. Only fires when the window isn't focused, so it never interrupts active work.
+    ipcMain.handle('sys:notify', (_e, { title, body } = {}) => {
+      try {
+        const { Notification } = require('electron');
+        if (!Notification.isSupported()) return false;
+        if (win && !win.isDestroyed() && win.isFocused()) return false;
+        new Notification({ title: String(title || 'PepStudio'), body: String(body || '') }).show();
+        return true;
+      } catch { return false; }
     });
     await win.loadFile(path.join(__dirname, 'splash.html'));
   }

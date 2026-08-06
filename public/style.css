@@ -376,6 +376,21 @@ body.reordering .hlRow, body.reordering .card { transition: none; }
   color: #fff; background: linear-gradient(180deg, #7c5cff, #5b3fd6); border: 1px solid var(--accent2);
 }
 .picker-new:hover { box-shadow: 0 0 0 3px #a78bfa33; }
+/* ---- macOS unified title bar --------------------------------------------------------------
+   With titleBarStyle:'hiddenInset' the traffic lights float over the top-left of the page, so the
+   header needs a matching inset or they land on top of the "‹ Projects" button. Applied ONLY when
+   the main process reports darwin (html.isMac) — Windows and browser tabs keep the normal header.
+   The header also becomes a drag region, which is what makes a frameless window movable at all;
+   its buttons opt back out, or they'd be undraggable-but-unclickable. */
+html.isMac header { padding-left: 82px; -webkit-app-region: drag; }
+html.isMac header button,
+html.isMac header input,
+html.isMac header select,
+html.isMac header .window-title-tab { -webkit-app-region: no-drag; }
+/* The vibrancy layer lives BEHIND the page, so the body must not paint an opaque colour over it. */
+html.isMac, html.isMac body { background: transparent; }
+html.isMac .view-picker { background: rgba(12, 12, 14, 0.72); }
+
 /* Live run-time plan: what length the cut will be, and why, before anything renders. */
 .runPlan { margin-top: 10px; padding: 11px 13px; background: var(--panel2);
   border: 1px solid var(--line); border-radius: 8px; }
