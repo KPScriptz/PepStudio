@@ -2894,7 +2894,10 @@ async function storyboardCut() {
     clips.push(...body);
     if (!clips.length) { toast('Not enough moments to build a storyboard.', true); return; }
 
-    showProgress(`Editing your ${fmt(plan.totalSec)} story package…`);
+    // Report the REAL runtime, not plan.totalSec — that figure predates the tightening pass, so
+    // it over-reported the length of what actually shipped (4:11 claimed vs 3:07 delivered).
+    const finalSec = clips.reduce((n, c) => n + Math.max(0, c.end - c.start), 0);
+    showProgress(`Editing your ${fmt(finalSec)} story package…`);
     const res = await fetch('/api/export/sequence', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: state.proj.id, clips, vertical: false, zoom: false }),
@@ -2902,8 +2905,8 @@ async function storyboardCut() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Export failed.');
     addOutput('Storyboard Cut', data, 'sequence');
-    logEdit('storyboard_cut', { body: body.length, totalSec: +(+plan.totalSec).toFixed(1), reachedMin: !!plan.reachedMin, blueprint, hookScore: plan.hookScore ?? null });
-    toast(`Story package ready — hook + ${body.length} moments, ${fmt(plan.totalSec)} ✓`);
+    logEdit('storyboard_cut', { body: body.length, totalSec: +finalSec.toFixed(1), plannedSec: +(+plan.totalSec).toFixed(1), blueprint, hookScore: plan.hookScore ?? null });
+    toast(`Story package ready — hook + ${body.length} moments, ${fmt(finalSec)} ✓`);
   } catch (e) {
     toast(e.message, true);
   } finally {
