@@ -75,6 +75,23 @@ async function ensureDeps(ud) {
   // the entire PATH into one bogus entry and break every spawn downstream.
   process.env.PATH = P.buildPath(binDir);
 
+  // BUNDLED TOOLS (Windows): ffmpeg/ffprobe ship inside the app under resources/bin, so a fresh
+  // install works with ZERO setup — no winget, no PATH surgery, nothing for the user to install.
+  // It goes FIRST so the shipped, known-good build (with libass, so captions can burn in) wins over
+  // whatever random ffmpeg might already be on the machine. In dev, process.resourcesPath points
+  // into electron's own bundle and simply won't contain bin/, so this is a no-op there.
+  const bundled = process.resourcesPath ? path.join(process.resourcesPath, 'bin') : null;
+  if (bundled && fs.existsSync(bundled)) {
+    process.env.PATH = [bundled, process.env.PATH].filter(Boolean).join(P.pathDelim());
+    // Pin the exact binaries too: PATH alone can be defeated by a stale shim earlier in the list.
+    const ff = path.join(bundled, P.binName('ffmpeg'));
+    const fp = path.join(bundled, P.binName('ffprobe'));
+    const wc = path.join(bundled, P.binName('whisper-cli'));
+    if (fs.existsSync(ff)) process.env.FFMPEG_PATH = ff;
+    if (fs.existsSync(fp)) process.env.FFPROBE_PATH = fp;
+    if (fs.existsSync(wc)) process.env.WHISPER_BIN = wc;
+  }
+
   // CI boot check (CLIPFORGE_TEST=1) only proves the packaged app starts and serves — it must not
   // pull ~170MB of yt-dlp + speech model on every run. Skip the downloads; the PATH is already set.
   if (TEST) return;

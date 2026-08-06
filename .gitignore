@@ -13,3 +13,4 @@ data/
 
 # compiled Swift OCR helper (build artifact)
 native/pep-ocr
+vendor/
