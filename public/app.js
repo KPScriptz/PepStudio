@@ -2783,6 +2783,7 @@ async function storyboardCut() {
       body: JSON.stringify({
         highlights: state.highlights, blueprint,
         sourceSec: (state.proj && state.proj.duration) || 0,   // lets the planner size the cut to the footage
+        pickyFloor: state.pickyFloor,                          // the quality bar that governs length
         envelope: (state.proj && state.proj.envelope) || [],
         sceneCuts: (state.proj && state.proj.sceneCuts) || [],
       }),
@@ -2907,23 +2908,45 @@ $('#storyCutBtn')?.addEventListener('click', storyboardCut);
 // material the ranking actually found, with the source length only supplying a sanity ceiling.
 // Surfacing it BEFORE the export is the point — you see what it intends to build, and changing the
 // blueprint re-costs it instantly (the planner is pure, so this is a cheap round-trip, no ffmpeg).
+// How picky the filter is, 0-1 — the ONLY length control. A moment must score at least this
+// fraction of the VOD's best moment to make the cut. Persisted so it survives a reload.
+state.pickyFloor = (() => {
+  const v = parseFloat(localStorage.getItem('pep_picky'));
+  return Number.isFinite(v) ? v : 0.35;
+})();
 function renderRunPlan(p) {
   const el = $('#runPlan'); if (!el) return;
   if (!p || !p.targetSec) { el.classList.add('hidden'); el.innerHTML = ''; return; }
-  const cap = p.capped ? ' <span class="rpCap" title="Held to 25% of the source runtime">source-capped</span>' : '';
+  const flat = p.degenerate ? ' <span class="rpCap" title="The ranking found no spread — rank the VOD for a sharper cut">unranked</span>' : '';
+  const pct = Math.round((state.pickyFloor || 0.35) * 100);
   el.innerHTML =
     `<div class="pkHead"><span>Planned cut</span><span class="rpTier">${escapeHtml(p.tier)}</span></div>
-     <div class="rpBig">${fmt(p.targetSec)}${cap}</div>
+     <div class="rpBig">${fmt(p.targetSec)}${flat}</div>
      <div class="rpWhy">${escapeHtml(p.reason)}</div>
-     <div class="rpMeta">${p.strongCount}${p.availCount ? ` of ${p.availCount}` : ''} moments · ${fmt(p.availSec)} available · ${p.hookSec}s cold open</div>`;
+     <div class="rpMeta">${p.strongCount}${p.totalCount ? ` of ${p.totalCount}` : ''} moments kept · ${fmt(p.availSec)} available · ${p.hookSec}s cold open</div>
+     <div class="knobRow rpKnob">
+       <label for="pickySlider">How picky <span id="pickyVal" class="knobVal">${pct}%</span></label>
+       <input type="range" id="pickySlider" min="0.05" max="0.9" step="0.05" value="${state.pickyFloor}" />
+     </div>`;
   el.classList.remove('hidden');
+  // Re-bound on every render because innerHTML replaces the node — hence binding here, not once.
+  $('#pickySlider')?.addEventListener('input', (e) => {
+    state.pickyFloor = +e.target.value;
+    localStorage.setItem('pep_picky', String(state.pickyFloor));
+    const lbl = $('#pickyVal'); if (lbl) lbl.textContent = `${Math.round(state.pickyFloor * 100)}%`;
+    scheduleRunPlan();
+  });
 }
 // Cost the current highlights without exporting anything.
-let _planTimer = null;
+// Dragging the picky slider fires overlapping requests, and responses can come back OUT OF ORDER —
+// a slower reply for an older bar would otherwise land last and leave the card showing a number
+// that doesn't match the slider. The sequence guard drops any response that isn't the newest.
+let _planTimer = null, _planSeq = 0;
 async function refreshRunPlan() {
   const el = $('#runPlan'); if (!el) return;
   const hs = (state.highlights || []).filter((h) => Number.isFinite(h.start) && Number.isFinite(h.end));
   if (!state.proj || !hs.length) { renderRunPlan(null); return; }
+  const seq = ++_planSeq;
   try {
     const res = await fetch('/api/storyboard/plan', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2931,9 +2954,11 @@ async function refreshRunPlan() {
         highlights: hs,
         sourceSec: state.proj.duration || 0,
         blueprint: ($('#blueprintSel') && $('#blueprintSel').value) || 'balanced',
+        pickyFloor: state.pickyFloor,
       }),
     });
     const p = await res.json();
+    if (seq !== _planSeq) return;                     // a newer request already answered
     if (res.ok) renderRunPlan({ ...p, availCount: hs.length });
   } catch { /* advisory only — never block the UI on it */ }
 }

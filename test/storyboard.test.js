@@ -100,60 +100,74 @@ function run() {
 
 run();
 
-// ---- Adaptive run-time planner (any length of footage) ----
+// ---- Adaptive planner: length is purely a function of quality, with NO time ceiling ----
 {
-  console.log('\n🧪 Adaptive plan tests…');
-  const mk = (i, dur, score, extra = {}) => ({
-    id: `h${i}`, start: i * 100, end: i * 100 + dur, score, ...extra,
-  });
+  console.log('\n🧪 Dynamic picky-planner tests…');
+  const mk = (i, dur, score, extra = {}) => ({ id: `h${i}`, start: i * 200, end: i * 200 + dur, score, ...extra });
 
-  // 1) SHORT SOURCE: a 12-min clip with 5 good moments must NOT be padded toward 8 minutes.
-  const shortHl = [mk(1, 20, 9), mk(2, 18, 8), mk(3, 15, 7.5), mk(4, 14, 7), mk(5, 12, 6.5)];
-  const shortPlan = recommendPlan(shortHl, { sourceSec: 12 * 60 });
-  assert.ok(shortPlan.targetSec <= 79, `short source stays short (got ${shortPlan.targetSec}s)`);
-  assert.ok(shortPlan.targetSec > 0, 'short source still produces a plan');
-  assert.ok(shortPlan.targetSec <= shortPlan.availSec + 0.01, 'never targets more than exists');
-  console.log(`✅ 12-min source → ${shortPlan.targetSec}s (was forced to 480s): ${shortPlan.reason}`);
+  // CASE A — low-density VOD: 68 min, only a few great moments. Must stay tight.
+  const lowDensity = [mk(1, 60, 10), mk(2, 55, 9.4), mk(3, 50, 9), mk(4, 45, 8.6)];
+  for (let i = 5; i <= 40; i++) lowDensity.push(mk(i, 40, 1.2));   // grinding filler
+  const lowPlan = recommendPlan(lowDensity, { sourceSec: 68 * 60 });
+  assert.ok(lowPlan.targetSec <= 240, `low-density stays tight (${lowPlan.targetSec}s)`);
+  assert.strictEqual(lowPlan.strongCount, 4, 'only the 4 genuinely good moments survive');
+  console.log(`✅ CASE A 68-min low-density → ${lowPlan.targetSec}s from ${lowPlan.strongCount} moments (filler discarded).`);
 
-  // 2) LONG SOURCE: a 3-hour VOD with lots of strong material earns a long cut, capped at 25%.
-  const longHl = [];
-  for (let i = 1; i <= 120; i++) longHl.push(mk(i, 30, i <= 60 ? 9 : 1));
-  const longPlan = recommendPlan(longHl, { sourceSec: 3 * 3600 });
-  assert.ok(longPlan.targetSec > 600, `3-hour VOD earns >10min (got ${longPlan.targetSec}s)`);
-  assert.ok(longPlan.targetSec <= 1800, 'never exceeds the 30-min ceiling');
-  assert.strictEqual(longPlan.tier, 'long-form');
-  console.log(`✅ 3-hour source → ${longPlan.targetSec}s, tier=${longPlan.tier}: ${longPlan.reason}`);
+  // CASE B — high-density VOD: the SAME 68 min, but 25+ min of gold. Must keep it ALL.
+  const highDensity = [];
+  for (let i = 1; i <= 30; i++) highDensity.push(mk(i, 55, 9 + (i % 3) * 0.3));   // sustained comedy
+  for (let i = 31; i <= 50; i++) highDensity.push(mk(i, 40, 1.1));                // filler
+  const highPlan = recommendPlan(highDensity, { sourceSec: 68 * 60 });
+  assert.strictEqual(highPlan.strongCount, 30, 'every high-tier moment is kept');
+  assert.ok(highPlan.targetSec >= 1600, `high-density earns a long cut (${highPlan.targetSec}s)`);
+  console.log(`✅ CASE B same 68-min high-density → ${highPlan.targetSec}s from ${highPlan.strongCount} moments (nothing good dropped).`);
 
-  // 3) The knee must EXCLUDE the weak tail: 60 strong @30s = 1800s of material.
-  assert.ok(longPlan.strongCount <= 70, `knee excludes the filler tail (kept ${longPlan.strongCount}/120)`);
-  assert.ok(longPlan.strongCount >= 55, 'knee keeps the genuinely strong block');
-  console.log(`✅ quality knee kept ${longPlan.strongCount}/120 (the 60 strong, not the 60 filler).`);
+  // The two cases share a source length — proving LENGTH TRACKS QUALITY, not the clock.
+  assert.ok(highPlan.targetSec > lowPlan.targetSec * 5, 'same source, wildly different runtimes');
+  console.log(`✅ identical 68-min source → ${lowPlan.targetSec}s vs ${highPlan.targetSec}s purely on content.`);
 
-  // 4) Source ceiling actually binds: same strong material, much shorter source.
-  const cappedPlan = recommendPlan(longHl, { sourceSec: 20 * 60 });
-  assert.ok(cappedPlan.targetSec <= 20 * 60 * 0.25 + 0.5, '25% source ceiling binds');
-  assert.strictEqual(cappedPlan.capped, true, 'reports that it was capped');
-  console.log(`✅ ceiling binds: 20-min source → ${cappedPlan.targetSec}s (capped=${cappedPlan.capped}).`);
+  // NO CEILING: a 3-hour VOD with 45 min of gold must return ~45 min, not a capped 30.
+  const epic = [];
+  for (let i = 1; i <= 60; i++) epic.push(mk(i, 45, 9.5));
+  for (let i = 61; i <= 120; i++) epic.push(mk(i, 30, 0.9));
+  const epicPlan = recommendPlan(epic, { sourceSec: 3 * 3600 });
+  assert.strictEqual(epicPlan.strongCount, 60, 'all 60 gold moments kept');
+  assert.ok(epicPlan.targetSec > 1800, `NO 30-min cap (${epicPlan.targetSec}s)`);
+  assert.ok(Math.abs(epicPlan.targetSec - 2700) < 1, `exactly the gold runtime (${epicPlan.targetSec}s ≈ 45min)`);
+  console.log(`✅ 3-hour VOD with 45min of gold → ${epicPlan.targetSec}s (no ceiling applied).`);
 
-  // 5) Hook scales down for tiny cuts — a 60s cut must not open with a 10s teaser.
-  const tiny = recommendPlan([mk(1, 20, 9), mk(2, 15, 8)], { sourceSec: 120 });
-  assert.ok(tiny.hookSec < 8, `hook scales with the cut (got ${tiny.hookSec}s)`);
-  assert.ok(tiny.hookSec >= 3, 'hook never collapses below 3s');
-  console.log(`✅ hook scales with cut length (${tiny.hookSec}s for a ${tiny.targetSec}s cut).`);
+  // pickyFloor is the single control: raising it must shorten the cut monotonically.
+  // Needs a GRADED fixture — highDensity is deliberately bimodal (gold ~9.5, filler ~1.1), so every
+  // threshold that falls between the two clusters returns the same set and would prove nothing.
+  const graded = [];
+  for (let i = 1; i <= 40; i++) graded.push(mk(i, 30, 10 - i * 0.22));   // smooth 10 → 1.4 slide
+  const lens = [0.15, 0.35, 0.6, 0.9].map((f) => recommendPlan(graded, { sourceSec: 68 * 60, pickyFloor: f }).targetSec);
+  for (let i = 1; i < lens.length; i++) assert.ok(lens[i] <= lens[i - 1], `pickier never lengthens (${lens})`);
+  assert.ok(lens[0] > lens[lens.length - 1], 'the control has real range');
+  console.log(`✅ pickyFloor 0.15→0.9 shortens monotonically: ${lens.join('s → ')}s.`);
+  // and it is clamped, so a nonsense value can't wipe the cut out
+  assert.ok(recommendPlan(highDensity, { pickyFloor: 99 }).targetSec > 0, 'absurd floor still yields a cut');
+  assert.ok(recommendPlan(highDensity, { pickyFloor: -5 }).targetSec > 0, 'negative floor is clamped');
 
-  // 6) Degenerate inputs never throw.
-  assert.strictEqual(recommendPlan([], { sourceSec: 100 }).targetSec, 0, 'empty input is safe');
-  assert.strictEqual(recommendPlan(null, {}).tier, 'empty', 'null input is safe');
-  assert.ok(recommendPlan([mk(1, 10, 5)], {}).targetSec > 0, 'missing sourceSec still plans');
-  console.log('✅ empty / null / missing-sourceSec inputs are safe.');
+  // DEGENERATE: flat scores can't be thresholded — must not emit the whole VOD as the "cut".
+  const flat = [];
+  for (let i = 1; i <= 20; i++) flat.push(mk(i, 60, 0));
+  const flatPlan = recommendPlan(flat, { sourceSec: 3600 });
+  assert.strictEqual(flatPlan.degenerate, true, 'flat scores are flagged');
+  assert.ok(flatPlan.strongCount < flat.length, 'does not pass everything through');
+  assert.ok(/flat/i.test(flatPlan.reason), 'and says so');
+  console.log(`✅ flat/unranked scores → ${flatPlan.strongCount}/${flat.length} kept, flagged: "${flatPlan.reason.slice(0, 48)}…"`);
 
-  // 7) auto mode actually drives selectStoryboard, and the explicit path is UNCHANGED.
-  const autoCut = selectStoryboard(shortHl, { auto: true, sourceSec: 12 * 60 });
-  assert.ok(autoCut.totalSec <= 90, `auto cut sized to the footage (${autoCut.totalSec}s)`);
-  assert.ok(autoCut.body.length > 0, 'auto cut still produces a body');
-  const explicitCut = selectStoryboard(shortHl, { minSec: 480, maxSec: 600 });
-  assert.ok(explicitCut.totalSec !== autoCut.totalSec || shortHl.length === 0, 'explicit path differs from auto');
-  console.log(`✅ auto mode drives the selector (${autoCut.totalSec}s vs explicit ${explicitCut.totalSec}s).`);
+  // The selector in auto mode must actually take the whole picky set, not a truncated band.
+  const autoCut = selectStoryboard(highDensity, { auto: true, sourceSec: 68 * 60 });
+  assert.ok(autoCut.body.length >= 28, `auto cut keeps the picky set (${autoCut.body.length}/30)`);
+  assert.ok(autoCut.totalSec >= 1500, `auto cut is the full length (${autoCut.totalSec}s)`);
+  console.log(`✅ auto mode assembles ${autoCut.body.length} clips / ${autoCut.totalSec}s — the whole picky set.`);
 
-  console.log('🚀 ADAPTIVE PLAN TESTS PASSED.');
+  // Degenerate inputs stay safe.
+  assert.strictEqual(recommendPlan([], { sourceSec: 100 }).targetSec, 0, 'empty is safe');
+  assert.strictEqual(recommendPlan(null, {}).tier, 'empty', 'null is safe');
+  console.log('✅ empty / null inputs safe.');
+
+  console.log('🚀 DYNAMIC PICKY-PLANNER TESTS PASSED.');
 }

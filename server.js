@@ -829,6 +829,7 @@ app.post('/api/storyboard/plan', (req, res) => {
     res.json(recommendPlan(highlights, {
       sourceSec: Number(req.body.sourceSec) || 0,
       blueprint: typeof req.body.blueprint === 'string' ? req.body.blueprint : 'balanced',
+      pickyFloor: Number.isFinite(req.body.pickyFloor) ? req.body.pickyFloor : undefined,
     }));
   } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
@@ -845,13 +846,14 @@ app.post('/api/storyboard', (req, res) => {
     if (Number.isFinite(req.body.hookSec)) opts.hookSec = req.body.hookSec;
     if (typeof req.body.blueprint === 'string') opts.blueprint = req.body.blueprint;
     if (Number.isFinite(req.body.sourceSec)) opts.sourceSec = req.body.sourceSec;
+    if (Number.isFinite(req.body.pickyFloor)) opts.pickyFloor = req.body.pickyFloor;
     // AUTO by default: size the cut to the footage instead of the old hardcoded 8-10 min, so a
     // 12-minute clip isn't padded and a 3-hour stream isn't squeezed. An explicit minSec/maxSec
     // from the client still wins (manual override).
     opts.auto = req.body.auto !== false && !Number.isFinite(req.body.minSec) && !Number.isFinite(req.body.maxSec);
     const plan = selectStoryboard(highlights, opts);
     // Always report what the planner decided and why, so the UI can show it live.
-    plan.plan = recommendPlan(highlights, { sourceSec: opts.sourceSec || 0, blueprint: opts.blueprint });
+    plan.plan = recommendPlan(highlights, { sourceSec: opts.sourceSec || 0, blueprint: opts.blueprint, pickyFloor: opts.pickyFloor });
     plan.auto = !!opts.auto;
     // Hook health + audition candidates — only when the client sends the signals (envelope /
     // sceneCuts from the loaded analysis). Uses the SAME blueprint ranking via plan.ranked.
