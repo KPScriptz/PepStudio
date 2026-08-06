@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.SMOKE_PORT) || 4187;
@@ -85,7 +85,9 @@ async function main() {
   console.log(`# scratch=${tmp}`);
 
   // --- the external tools must resolve at all (this is the ENOENT/PATH class of bug) ---
-  const { ffmpeg, ffprobe } = await import(path.join(ROOT, 'lib', 'ff.js'));
+  // pathToFileURL, not a bare path: on Windows a dynamic import() of an absolute path fails with
+  // "Received protocol 'd:'" because Node reads the drive letter as a URL scheme.
+  const { ffmpeg, ffprobe } = await import(pathToFileURL(path.join(ROOT, 'lib', 'ff.js')).href);
   const probeOut = await ffprobe(['-version']).catch((e) => fail(`ffprobe did not resolve: ${e.message}`));
   check(/ffprobe version/i.test(probeOut.stdout.toString()), 'ffprobe resolves and runs');
 
