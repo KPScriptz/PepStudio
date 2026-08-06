@@ -974,6 +974,24 @@ async function runTightPacing() {
   try {
     const pr = await fetchPacing(level);
     if (!pr.segments || !pr.segments.length) throw new Error('No dead air to cut at this level.');
+
+    // APPLY TO THE TIMELINE, not just the render. The route returns one flat list of surviving
+    // spans, so group them back under the clip that contains each span — every span came from
+    // inside exactly one kept clip, so containment is an exact regrouping, not a heuristic.
+    // Without this the file was tight but the lanes still showed the original wide clips and
+    // #seqDur still reported the uncut runtime.
+    const targets = seq
+      ? state.highlights.filter((h) => h.keep)
+      : [activeClip()].filter(Boolean);
+    const perClip = targets.map((h) => ({
+      id: h.id,
+      segments: pr.segments
+        .filter((g) => g.start >= h.start - 0.01 && g.start < h.end + 0.01)
+        .map((g) => ({ start: Math.max(g.start, h.start), end: Math.min(g.end, h.end) }))
+        .filter((g) => g.end > g.start),
+    })).filter((r) => r.segments.length);
+    const applied = applyCutSegments(perClip);
+
     const clips = pr.segments.map((g) => ({ start: g.start, end: g.end, overlays: [] }));
     const res = await fetch('/api/export/sequence', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -982,8 +1000,10 @@ async function runTightPacing() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Export failed.');
     addOutput(seq ? 'Tight sequence' : 'Tight short', data, 'sequence');
-    logEdit('micro_cut', { scope: seq ? 'sequence' : 'clip', level, cuts: pr.cuts, removedSec: pr.removedSec });
-    return `${seq ? 'Tight master cut' : 'Tight short'} ready — ${pr.origSec}s → ${pr.tightSec}s`;
+    logEdit('micro_cut', { scope: seq ? 'sequence' : 'clip', level, cuts: pr.cuts, removedSec: pr.removedSec, applied });
+    renderHighlights(); draw();      // lanes + #seqDur now reflect the real, tightened runtime
+    return `${seq ? 'Tight master cut' : 'Tight short'} ready — ${pr.origSec}s → ${pr.tightSec}s`
+      + (applied ? ` · timeline updated (${applied} clip${applied === 1 ? '' : 's'})` : '');
   } finally { hideProgress(); }
 }
 async function exportTightPacing() {
@@ -1048,6 +1068,18 @@ async function runCleanCut() {
     const d = await scanFillers();
     renderFillerStat(d);
     if (!d.cuts) throw new Error('No filler words to cut.');
+
+    // Apply to the timeline too — same regrouping-by-containment as the pacing pass, so the lanes
+    // and #seqDur show the filler-free runtime instead of the original clip windows.
+    const perClip = state.highlights.filter((h) => h.keep).map((h) => ({
+      id: h.id,
+      segments: d.segments
+        .filter((g) => g.start >= h.start - 0.01 && g.start < h.end + 0.01)
+        .map((g) => ({ start: Math.max(g.start, h.start), end: Math.min(g.end, h.end) }))
+        .filter((g) => g.end > g.start),
+    })).filter((r) => r.segments.length);
+    const applied = applyCutSegments(perClip);
+
     const res = await fetch('/api/export/sequence', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1058,8 +1090,10 @@ async function runCleanCut() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Export failed.');
     addOutput('Filler-free cut', data, 'sequence');
-    logEdit('filler_purge', { cuts: d.cuts, removedSec: d.removedSec, aggressive: d.aggressive });
-    return `Clean cut ready — ${d.cuts} filler${d.cuts === 1 ? '' : 's'} removed (−${d.removedSec}s)`;
+    logEdit('filler_purge', { cuts: d.cuts, removedSec: d.removedSec, aggressive: d.aggressive, applied });
+    renderHighlights(); draw();
+    return `Clean cut ready — ${d.cuts} filler${d.cuts === 1 ? '' : 's'} removed (−${d.removedSec}s)`
+      + (applied ? ` · timeline updated` : '');
   } finally { hideProgress(); }
 }
 async function exportCleanCut() {
@@ -1076,6 +1110,44 @@ async function exportCleanCut() {
 // (server-side /api/transcript/cut), so text-cutting and filler-cutting can't drift apart.
 // Cutting rebuilds each affected clip into sub-clips that are still absolute source ranges —
 // never relative offsets (see CLAUDE.md) — so extraction stays frame-accurate. ----
+// ---- Apply a cut to the TIMELINE, not just to an exported file --------------------------------
+// Every tightening pass (micro-cut pacing, filler purge, transcript strike) produces the same
+// shape: per-clip surviving spans. They used to be piped straight into /api/export/sequence, so
+// the rendered file was tight but the timeline still showed the ORIGINAL wide clips and the
+// original duration — you couldn't see what had been cut, and #seqDur lied about the runtime.
+//
+// This rebuilds each affected clip into its surviving spans as real sub-clips. Every span stays an
+// ABSOLUTE source range (never a relative offset — see CLAUDE.md), sub-clips inherit the parent's
+// title/tags, and the whole thing routes through logEdit so Cmd+Z puts it back.
+//
+// @param perClip [{ id, segments:[{start,end}], cuts? }]
+// @returns number of clips actually replaced
+function applyCutSegments(perClip) {
+  let replaced = 0;
+  for (const r of (perClip || [])) {
+    if (!r || !Array.isArray(r.segments) || !r.segments.length) continue;
+    const idx = state.highlights.findIndex((h) => String(h.id) === String(r.id));
+    if (idx < 0) continue;
+    const parent = state.highlights[idx];
+    // Nothing was removed from this clip — leave it alone rather than churning its id.
+    const same = r.segments.length === 1
+      && Math.abs(r.segments[0].start - parent.start) < 0.01
+      && Math.abs(r.segments[0].end - parent.end) < 0.01;
+    if (same) continue;
+    const subs = r.segments
+      .filter((g) => Number.isFinite(g.start) && Number.isFinite(g.end) && g.end > g.start)
+      .map((g, k) => ({
+        ...parent,
+        id: k === 0 ? parent.id : `t${++_splitSeq}`,
+        start: g.start, end: g.end, keep: true, snapped: false,
+      }));
+    if (!subs.length) continue;
+    state.highlights.splice(idx, 1, ...subs);
+    replaced++;
+  }
+  return replaced;
+}
+
 let _tr = null;            // { clips: [{id,start,end,words}] } as returned by the server
 const _trStruck = new Set();  // "clipId:wordIndex" of struck words
 const trKey = (cid, i) => `${cid}:${i}`;
@@ -1165,22 +1237,7 @@ async function cutStruckWords() {
     const d = await res.json();
     if (!res.ok) throw new Error(d.error || 'Cut failed.');
     if (!d.cuts) { toast('Those words are too short to cut cleanly.', true); return; }
-    // Rebuild the timeline: each affected clip becomes its surviving spans, in order. Sub-clips
-    // inherit the parent's title/tags and stay kept; every span is an ABSOLUTE source range.
-    let replaced = 0;
-    for (const r of d.clips) {
-      if (!r.cuts) continue;
-      const idx = state.highlights.findIndex((h) => String(h.id) === String(r.id));
-      if (idx < 0) continue;
-      const parent = state.highlights[idx];
-      const subs = r.segments.map((g, k) => ({
-        ...parent,
-        id: k === 0 ? parent.id : `t${++_splitSeq}`,
-        start: g.start, end: g.end, keep: true, snapped: false,
-      }));
-      state.highlights.splice(idx, 1, ...subs);
-      replaced++;
-    }
+    const replaced = applyCutSegments(d.clips);
     _trStruck.clear();
     _tr = null; renderTranscript();
     logEdit('transcript_cut', { cuts: d.cuts, removedSec: d.removedSec, clips: replaced });
@@ -2796,6 +2853,38 @@ async function storyboardCut() {
     const bodyIds = new Set((plan.body || []).map((h) => h.id));
     state.highlights.forEach((h) => { h.keep = bodyIds.has(h.id); });
     renderHighlights(); draw();
+
+    // 3b. TIGHTEN the selected moments before exporting. The ranker picks wide contextual windows,
+    // so shipping them raw meant the "story cut" carried all their internal dead air — measured at
+    // 22% of the runtime on a real VOD, with a 74s opening at 0.53 words/sec. Running the same
+    // micro-cut pass the Tight Cut button uses, and APPLYING it to the timeline, is the difference
+    // between a selection of moments and an actual edit. Best-effort: a tightening failure must
+    // never lose the storyboard the user just waited for.
+    try {
+      showProgress('Tightening the selected moments (removing internal dead air)…');
+      const kept = state.highlights.filter((h) => h.keep);
+      const pace = await (await fetch('/api/pacing/sequence', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: state.proj.id, level: ($('#paceLevel') && $('#paceLevel').value) || 'tight',
+          clips: kept.map((h) => ({ start: h.start, end: h.end })), ...pacingKnobs(),
+        }),
+      })).json();
+      if (pace && Array.isArray(pace.segments) && pace.segments.length) {
+        const perClip = kept.map((h) => ({
+          id: h.id,
+          segments: pace.segments
+            .filter((g) => g.start >= h.start - 0.01 && g.start < h.end + 0.01)
+            .map((g) => ({ start: Math.max(g.start, h.start), end: Math.min(g.end, h.end) }))
+            .filter((g) => g.end > g.start),
+        })).filter((r) => r.segments.length);
+        const tightened = applyCutSegments(perClip);
+        if (tightened) {
+          renderHighlights(); draw();
+          toast(`Tightened ${tightened} moment${tightened === 1 ? '' : 's'} — cut ${pace.removedSec}s of dead air.`);
+        }
+      }
+    } catch { /* tightening is an improvement, not a gate — keep the storyboard either way */ }
 
     // 4. Export clip list = cold-open HOOK first, then the chronological body (hard-cut concat).
     const body = state.highlights.filter((h) => h.keep).sort((a, b) => a.start - b.start)
