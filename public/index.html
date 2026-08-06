@@ -124,8 +124,8 @@
           <span class="rtab" data-rtab="publish" role="tab">Publish</span>
         </div>
         <div class="panels">
-          <button id="storyCutBtn" class="storyCutBtn rtabPane" data-rtab="curate" title="Storyboard Cut: analyze → rank a wide pool → lead with a cold-open hook of your best moment → assemble the 8–10 minute chronological story arc, and export it.">
-            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M9 1L3 9h4l-1 6 6-8H8l1-6z"/></svg>Storyboard Cut (8–10 min)
+          <button id="storyCutBtn" class="storyCutBtn rtabPane" data-rtab="curate" title="Storyboard Cut: analyze → rank a wide pool → lead with a cold-open hook of your best moment → assemble the chronological story arc at a length sized to your footage, and export it.">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M9 1L3 9h4l-1 6 6-8H8l1-6z"/></svg>Storyboard Cut
           </button>
           <label id="blueprintRow" class="blueprintRow rtabPane" data-rtab="curate" title="Narrative blueprint: which kind of moments lead the cut, and how long the cold-open hook runs.">
             <span>Blueprint</span>
@@ -137,6 +137,8 @@
               <option value="fast" data-pace="relentless">Fast-Cut — high-density, reaction-led</option>
             </select>
           </label>
+          <!-- Live run-time plan: recomputed as the footage/blueprint change, before any export -->
+          <div id="runPlan" class="runPlan hidden rtabPane" data-rtab="curate"></div>
           <div id="hookLab" class="hookLab hidden rtabPane" data-rtab="curate"></div>
           <div id="clipInsight" class="clipInsight hidden rtabPane" data-rtab="curate"></div>
           <!-- Transcript-driven editing: click a word to seek, strike words to cut those frames -->

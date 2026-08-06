@@ -8,7 +8,7 @@ import assert from 'assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { selectStoryboard } from '../lib/storyboard.js';
+import {selectStoryboard, recommendPlan } from '../lib/storyboard.js';
 import { applyGameEvents } from '../lib/gameEvents.js';
 import { matchTextEvents } from '../lib/textEvents.js';
 import { PAL_RULES } from '../lib/palworld.js';
@@ -99,3 +99,61 @@ function run() {
 }
 
 run();
+
+// ---- Adaptive run-time planner (any length of footage) ----
+{
+  console.log('\n🧪 Adaptive plan tests…');
+  const mk = (i, dur, score, extra = {}) => ({
+    id: `h${i}`, start: i * 100, end: i * 100 + dur, score, ...extra,
+  });
+
+  // 1) SHORT SOURCE: a 12-min clip with 5 good moments must NOT be padded toward 8 minutes.
+  const shortHl = [mk(1, 20, 9), mk(2, 18, 8), mk(3, 15, 7.5), mk(4, 14, 7), mk(5, 12, 6.5)];
+  const shortPlan = recommendPlan(shortHl, { sourceSec: 12 * 60 });
+  assert.ok(shortPlan.targetSec <= 79, `short source stays short (got ${shortPlan.targetSec}s)`);
+  assert.ok(shortPlan.targetSec > 0, 'short source still produces a plan');
+  assert.ok(shortPlan.targetSec <= shortPlan.availSec + 0.01, 'never targets more than exists');
+  console.log(`✅ 12-min source → ${shortPlan.targetSec}s (was forced to 480s): ${shortPlan.reason}`);
+
+  // 2) LONG SOURCE: a 3-hour VOD with lots of strong material earns a long cut, capped at 25%.
+  const longHl = [];
+  for (let i = 1; i <= 120; i++) longHl.push(mk(i, 30, i <= 60 ? 9 : 1));
+  const longPlan = recommendPlan(longHl, { sourceSec: 3 * 3600 });
+  assert.ok(longPlan.targetSec > 600, `3-hour VOD earns >10min (got ${longPlan.targetSec}s)`);
+  assert.ok(longPlan.targetSec <= 1800, 'never exceeds the 30-min ceiling');
+  assert.strictEqual(longPlan.tier, 'long-form');
+  console.log(`✅ 3-hour source → ${longPlan.targetSec}s, tier=${longPlan.tier}: ${longPlan.reason}`);
+
+  // 3) The knee must EXCLUDE the weak tail: 60 strong @30s = 1800s of material.
+  assert.ok(longPlan.strongCount <= 70, `knee excludes the filler tail (kept ${longPlan.strongCount}/120)`);
+  assert.ok(longPlan.strongCount >= 55, 'knee keeps the genuinely strong block');
+  console.log(`✅ quality knee kept ${longPlan.strongCount}/120 (the 60 strong, not the 60 filler).`);
+
+  // 4) Source ceiling actually binds: same strong material, much shorter source.
+  const cappedPlan = recommendPlan(longHl, { sourceSec: 20 * 60 });
+  assert.ok(cappedPlan.targetSec <= 20 * 60 * 0.25 + 0.5, '25% source ceiling binds');
+  assert.strictEqual(cappedPlan.capped, true, 'reports that it was capped');
+  console.log(`✅ ceiling binds: 20-min source → ${cappedPlan.targetSec}s (capped=${cappedPlan.capped}).`);
+
+  // 5) Hook scales down for tiny cuts — a 60s cut must not open with a 10s teaser.
+  const tiny = recommendPlan([mk(1, 20, 9), mk(2, 15, 8)], { sourceSec: 120 });
+  assert.ok(tiny.hookSec < 8, `hook scales with the cut (got ${tiny.hookSec}s)`);
+  assert.ok(tiny.hookSec >= 3, 'hook never collapses below 3s');
+  console.log(`✅ hook scales with cut length (${tiny.hookSec}s for a ${tiny.targetSec}s cut).`);
+
+  // 6) Degenerate inputs never throw.
+  assert.strictEqual(recommendPlan([], { sourceSec: 100 }).targetSec, 0, 'empty input is safe');
+  assert.strictEqual(recommendPlan(null, {}).tier, 'empty', 'null input is safe');
+  assert.ok(recommendPlan([mk(1, 10, 5)], {}).targetSec > 0, 'missing sourceSec still plans');
+  console.log('✅ empty / null / missing-sourceSec inputs are safe.');
+
+  // 7) auto mode actually drives selectStoryboard, and the explicit path is UNCHANGED.
+  const autoCut = selectStoryboard(shortHl, { auto: true, sourceSec: 12 * 60 });
+  assert.ok(autoCut.totalSec <= 90, `auto cut sized to the footage (${autoCut.totalSec}s)`);
+  assert.ok(autoCut.body.length > 0, 'auto cut still produces a body');
+  const explicitCut = selectStoryboard(shortHl, { minSec: 480, maxSec: 600 });
+  assert.ok(explicitCut.totalSec !== autoCut.totalSec || shortHl.length === 0, 'explicit path differs from auto');
+  console.log(`✅ auto mode drives the selector (${autoCut.totalSec}s vs explicit ${explicitCut.totalSec}s).`);
+
+  console.log('🚀 ADAPTIVE PLAN TESTS PASSED.');
+}

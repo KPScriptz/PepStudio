@@ -26,7 +26,7 @@ import { revealCmd, installHint, expandTilde } from './lib/platform.js';
 import { analyzeNBA } from './lib/nba2k.js';
 import { analyzePalworld } from './lib/palworld.js';
 import { applyGameEvents } from './lib/gameEvents.js';
-import { selectStoryboard } from './lib/storyboard.js';
+import { selectStoryboard, recommendPlan } from './lib/storyboard.js';
 import { scoreHook, hookCandidates } from './lib/hooks.js';
 import { buildChapters, suggestHashtags, buildDescription } from './lib/publishkit.js';
 import { coverCandidates } from './lib/thumbnails.js';
@@ -821,6 +821,18 @@ app.post('/api/highlights/funny', async (req, res) => {
 // import lib/ (plain script), so it POSTs its highlights here and gets back { hook, body, totalSec }.
 // The frontend then sets keep on the body clips (rebuilding seqMap natively) and stashes the hook
 // for the export-time prepend. Pure compile — no ffmpeg, fast. ----
+// Cost a cut WITHOUT compiling or exporting one: how long should this footage become, and why.
+// Pure and instant (no ffmpeg, no whisper), so the UI can re-cost live as the blueprint changes.
+app.post('/api/storyboard/plan', (req, res) => {
+  try {
+    const highlights = Array.isArray(req.body.highlights) ? req.body.highlights : [];
+    res.json(recommendPlan(highlights, {
+      sourceSec: Number(req.body.sourceSec) || 0,
+      blueprint: typeof req.body.blueprint === 'string' ? req.body.blueprint : 'balanced',
+    }));
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
 app.post('/api/storyboard', (req, res) => {
   try {
     const highlights = req.body.highlights;
@@ -832,7 +844,15 @@ app.post('/api/storyboard', (req, res) => {
     if (Number.isFinite(req.body.maxSec)) opts.maxSec = req.body.maxSec;
     if (Number.isFinite(req.body.hookSec)) opts.hookSec = req.body.hookSec;
     if (typeof req.body.blueprint === 'string') opts.blueprint = req.body.blueprint;
+    if (Number.isFinite(req.body.sourceSec)) opts.sourceSec = req.body.sourceSec;
+    // AUTO by default: size the cut to the footage instead of the old hardcoded 8-10 min, so a
+    // 12-minute clip isn't padded and a 3-hour stream isn't squeezed. An explicit minSec/maxSec
+    // from the client still wins (manual override).
+    opts.auto = req.body.auto !== false && !Number.isFinite(req.body.minSec) && !Number.isFinite(req.body.maxSec);
     const plan = selectStoryboard(highlights, opts);
+    // Always report what the planner decided and why, so the UI can show it live.
+    plan.plan = recommendPlan(highlights, { sourceSec: opts.sourceSec || 0, blueprint: opts.blueprint });
+    plan.auto = !!opts.auto;
     // Hook health + audition candidates — only when the client sends the signals (envelope /
     // sceneCuts from the loaded analysis). Uses the SAME blueprint ranking via plan.ranked.
     const envelope = Array.isArray(req.body.envelope) ? req.body.envelope : [];

@@ -437,6 +437,7 @@ function updatePhantasmSummary() {
 const reasonLabel = { silence: 'silence', static: 'static', dead: 'dead air' };
 function renderGhosts() {
   if (typeof renderAIAssistant === 'function') renderAIAssistant();   // dead-air count lands with phase-2 segments
+  if (typeof scheduleRunPlan === 'function') scheduleRunPlan();   // re-cost the planned cut
   // Show every segment that began as a ghost (re-kept ones stay listed, dimmed).
   const list = (state.segments || []).filter((s) => s.reason !== 'active');
   $('#ghostCount').textContent = `${list.filter((s) => s.state === 'ghost').length} red / ${list.length}`;
@@ -476,6 +477,8 @@ function toggleSeg(s) {
 
 // ---- Highlights list ----
 function renderHighlights() {
+  // Re-cost the planned cut whenever the moment set changes (ranking, keeps, trims, cuts).
+  if (typeof scheduleRunPlan === 'function') scheduleRunPlan();
   if (!state.highlights.length) {
     $('#hlCount').textContent = '0 / 0';
     $('#hlList').innerHTML = '<div class="hlEmpty">Sequence empty — analyze a file, then press Rank funny moments to begin.</div>';
@@ -2748,9 +2751,10 @@ async function autoEdit() {
 }
 $('#autoEditBtn')?.addEventListener('click', autoEdit);
 
-// ---- Storyboard Cut: an 8-10 min HOOK-LED narrative package (vs autoEdit's short reel). Ranks a
+// ---- Storyboard Cut: a HOOK-LED narrative package (vs autoEdit's short reel), sized to the
+// footage by the adaptive planner rather than a fixed clock. Ranks a
 // WIDE candidate pool (storyboard:true → keep≈40, bigger audio budget) so there's enough to fill
-// 8-10 min, asks the backend /api/storyboard to compile the plan, sets keep on the chosen body
+// the cut, asks the backend /api/storyboard to compile the plan, sets keep on the chosen body
 // clips (native seqMap rebuild — NO overwrite), then exports with the cold-open hook PREPENDED as
 // the first clip (hard smash-cut into the chronological body). Reuses autoEdit's export path.
 async function storyboardCut() {
@@ -2759,7 +2763,7 @@ async function storyboardCut() {
   try {
     if (btn) btn.disabled = true;
     // 1. Rank with the wide pool so the storyboard doesn't starve.
-    showProgress('Finding your best 8–10 minutes — ranking a wide candidate pool…');
+    showProgress('Ranking a wide candidate pool — the cut length is sized to your footage…');
     const rank = await fetch('/api/highlights/funny', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: state.proj.id, storyboard: true }),
@@ -2778,6 +2782,7 @@ async function storyboardCut() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         highlights: state.highlights, blueprint,
+        sourceSec: (state.proj && state.proj.duration) || 0,   // lets the planner size the cut to the footage
         envelope: (state.proj && state.proj.envelope) || [],
         sceneCuts: (state.proj && state.proj.sceneCuts) || [],
       }),
@@ -2799,7 +2804,7 @@ async function storyboardCut() {
     clips.push(...body);
     if (!clips.length) { toast('Not enough moments to build a storyboard.', true); return; }
 
-    showProgress(`Editing your ${fmt(plan.totalSec)} story package${plan.reachedMin ? '' : ' (short — not enough footage for 8 min)'}…`);
+    showProgress(`Editing your ${fmt(plan.totalSec)} story package…`);
     const res = await fetch('/api/export/sequence', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: state.proj.id, clips, vertical: false, zoom: false }),
@@ -2892,10 +2897,48 @@ function oneButtonStoryCut() {
   if (btn) { btn.disabled = true; const o = btn.innerHTML; btn.innerHTML = 'Assembling…'; setTimeout(() => { btn.disabled = false; btn.innerHTML = o; }, 400); }
   toast(`Story cut assembled — ${kept} clips (${fmt(total)}), filler dropped.`);
 }
-// The single primary auto-edit control now runs the 8-10 min Storyboard Cut (the old One-Button
+// The single primary auto-edit control now runs the Storyboard Cut (the old One-Button
 // Story Cut / Edit for Me buttons were redundant and confusing). oneButtonStoryCut/autoEdit remain
 // defined for reuse but are no longer wired to a button.
 $('#storyCutBtn')?.addEventListener('click', storyboardCut);
+
+// ---- Live run-time plan ----------------------------------------------------------------------
+// The cut length is no longer a fixed 8-10 minutes: it's computed from how much genuinely strong
+// material the ranking actually found, with the source length only supplying a sanity ceiling.
+// Surfacing it BEFORE the export is the point — you see what it intends to build, and changing the
+// blueprint re-costs it instantly (the planner is pure, so this is a cheap round-trip, no ffmpeg).
+function renderRunPlan(p) {
+  const el = $('#runPlan'); if (!el) return;
+  if (!p || !p.targetSec) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+  const cap = p.capped ? ' <span class="rpCap" title="Held to 25% of the source runtime">source-capped</span>' : '';
+  el.innerHTML =
+    `<div class="pkHead"><span>Planned cut</span><span class="rpTier">${escapeHtml(p.tier)}</span></div>
+     <div class="rpBig">${fmt(p.targetSec)}${cap}</div>
+     <div class="rpWhy">${escapeHtml(p.reason)}</div>
+     <div class="rpMeta">${p.strongCount}${p.availCount ? ` of ${p.availCount}` : ''} moments · ${fmt(p.availSec)} available · ${p.hookSec}s cold open</div>`;
+  el.classList.remove('hidden');
+}
+// Cost the current highlights without exporting anything.
+let _planTimer = null;
+async function refreshRunPlan() {
+  const el = $('#runPlan'); if (!el) return;
+  const hs = (state.highlights || []).filter((h) => Number.isFinite(h.start) && Number.isFinite(h.end));
+  if (!state.proj || !hs.length) { renderRunPlan(null); return; }
+  try {
+    const res = await fetch('/api/storyboard/plan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        highlights: hs,
+        sourceSec: state.proj.duration || 0,
+        blueprint: ($('#blueprintSel') && $('#blueprintSel').value) || 'balanced',
+      }),
+    });
+    const p = await res.json();
+    if (res.ok) renderRunPlan({ ...p, availCount: hs.length });
+  } catch { /* advisory only — never block the UI on it */ }
+}
+const scheduleRunPlan = () => { clearTimeout(_planTimer); _planTimer = setTimeout(refreshRunPlan, 250); };
+$('#blueprintSel')?.addEventListener('change', scheduleRunPlan);
 
 // ---- Step 5: Correction Capture. After a MANUAL override (trim/keep/reorder/segment),
 // surface a one-tap "why?" popover. The base action already logged; tapping a reason
