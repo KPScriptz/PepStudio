@@ -29,6 +29,7 @@ import { applyGameEvents } from './lib/gameEvents.js';
 import { selectStoryboard, recommendPlan } from './lib/storyboard.js';
 import { auditCut } from './lib/critic.js';
 import { parseRetentionCsv, findCliffs, buildFeedbackRows } from './lib/retentionCsv.js';
+import { findOutliers, pacingMetrics, aggregateBenchmark, suggestFromBenchmark } from './lib/benchmark.js';
 import { scoreHook, hookCandidates } from './lib/hooks.js';
 import { buildChapters, suggestHashtags, buildDescription } from './lib/publishkit.js';
 import { coverCandidates } from './lib/thumbnails.js';
@@ -845,6 +846,40 @@ app.post('/api/highlights/funny', async (req, res) => {
 // It appends rows in the EXISTING feedback.jsonl schema, so every weight change still flows
 // through the clamped, idempotent consumer — this adds a signal source, not a new learning path.
 // Nothing is applied here; /api/feedback/apply remains the explicit step.
+// Which uploads overperformed, using the channel's OWN median as the baseline. Takes per-video
+// view counts from any source (the official YouTube Data API is enough) — no third-party
+// analytics service required to answer this question.
+app.post('/api/benchmark/outliers', (req, res) => {
+  try {
+    res.json(findOutliers(capBatch(req.body.videos), { factor: Number(req.body.factor) || 3 }));
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
+// Structural pacing metrics for one analyzed video, computed from the SAME signals PepStudio
+// extracts for its own VODs — so ours and a reference's are comparable by construction.
+app.post('/api/benchmark/metrics', (req, res) => {
+  try {
+    const m = pacingMetrics({
+      durationSec: Number(req.body.durationSec) || 0,
+      sceneCuts: Array.isArray(req.body.sceneCuts) ? req.body.sceneCuts : [],
+      words: Array.isArray(req.body.words) ? req.body.words : [],
+      silences: Array.isArray(req.body.silences) ? req.body.silences : [],
+    });
+    if (!m) return res.status(400).json({ error: 'durationSec is required.' });
+    res.json(m);
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
+// Compare our pacing to a set of references and PROPOSE bounded nudges. Suggestions only —
+// applying them stays an explicit act, so a benchmarking run can never overwrite what the
+// retention loop learned from real viewers.
+app.post('/api/benchmark/compare', (req, res) => {
+  try {
+    const bench = Array.isArray(req.body.references) ? aggregateBenchmark(req.body.references) : req.body.benchmark;
+    res.json({ benchmark: bench, ...suggestFromBenchmark(req.body.mine, bench, { current: req.body.current || {} }) });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
 app.post('/api/retention/import', async (req, res) => {
   try {
     const csv = String(req.body.csv || '');

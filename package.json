@@ -1,6 +1,6 @@
 {
   "name": "pepstudio",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "description": "Local, free, AI-assisted gameplay editor: paste a VOD -> TikTok clips + YouTube cut, long cut, captions, thumbnails",
   "type": "module",
@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "node server.js",
-    "test": "node test/zooms.test.js && node test/storyboard.test.js && node test/hooks.test.js && node test/publishkit.test.js && node test/titles.test.js && node test/thumbnails.test.js && node test/pacing.test.js && node test/fillers.test.js && node test/critic.test.js && node test/retentionCsv.test.js && node test/platform.test.js",
+    "test": "node test/zooms.test.js && node test/storyboard.test.js && node test/hooks.test.js && node test/publishkit.test.js && node test/titles.test.js && node test/thumbnails.test.js && node test/pacing.test.js && node test/fillers.test.js && node test/critic.test.js && node test/retentionCsv.test.js && node test/benchmark.test.js && node test/platform.test.js",
     "electron": "electron .",
     "dist": "electron-builder --mac dmg",
     "dist:dir": "electron-builder --dir",
