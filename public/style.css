@@ -376,6 +376,38 @@ body.reordering .hlRow, body.reordering .card { transition: none; }
   color: #fff; background: linear-gradient(180deg, #7c5cff, #5b3fd6); border: 1px solid var(--accent2);
 }
 .picker-new:hover { box-shadow: 0 0 0 3px #a78bfa33; }
+/* Retention critic panel: objective numbers for the cut before it renders. */
+.criticBox { margin-top: 10px; padding: 11px 13px; background: var(--panel2);
+  border: 1px solid var(--line); border-radius: 8px; }
+.cScore { font-family: var(--font-mono); font-size: 15px; font-weight: 700; padding: 1px 8px;
+  border-radius: 6px; }
+.cScore.pass { color: #0b3; background: rgba(0,187,51,.14); }
+.cScore.warn { color: #f5b301; background: rgba(245,179,1,.14); }
+.cScore.bad  { color: var(--danger); background: rgba(220,60,60,.14); }
+.cMetrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; margin: 8px 0 6px; }
+.cMetric { display: flex; justify-content: space-between; align-items: baseline; gap: 6px;
+  padding: 4px 7px; border-radius: 6px; background: rgba(127,127,127,.10); font-size: 11px;
+  color: var(--muted); }
+.cMetric b { font-family: var(--font-mono); font-size: 12px; color: var(--text); }
+.cMetric.bad b { color: var(--danger); }
+.cMetric.ok b { color: var(--text); }
+.cIssues { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.cIssue { font-size: 11px; padding: 5px 7px; border-radius: 6px; background: rgba(127,127,127,.08);
+  border-left: 3px solid var(--muted); }
+.cIssue.fail { border-left-color: var(--danger); }
+.cIssue.warn { border-left-color: #f5b301; }
+.cIssue b { text-transform: capitalize; }
+.cAt { font-family: var(--font-mono); color: var(--muted); }
+.cFix { color: var(--muted); }
+.cClean { font-size: 11.5px; color: var(--muted); }
+
+/* Dead-air heatmap: critic findings painted over the sequence lanes, in output time. */
+.heatLane { position: absolute; left: 0; right: 0; bottom: 0; height: 7px; pointer-events: none; }
+.heatBlk { position: absolute; top: 0; height: 7px; border-radius: 2px; pointer-events: auto; }
+.heatDead  { background: rgba(220, 60, 60, .85); }
+.heatQuiet { background: rgba(245, 179, 1, .80); }
+.heatFlat  { background: rgba(90, 130, 255, .70); }
+
 /* ---- macOS unified title bar --------------------------------------------------------------
    With titleBarStyle:'hiddenInset' the traffic lights float over the top-left of the page, so the
    header needs a matching inset or they land on top of the "‹ Projects" button. Applied ONLY when

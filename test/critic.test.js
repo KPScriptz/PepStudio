@@ -119,6 +119,34 @@ console.log('🧪 PepStudio deterministic critic tests…');
   console.log(`✅ deterministic, bounded score (${r1.score}), fails first, every issue actionable.`);
 }
 
+// --- the score must DISCRIMINATE, not saturate ---
+// Regression: scoring by issue COUNT sent a real cut with a healthy 2.68 words/sec average but
+// sixteen short quiet pockets to 0 — the same score as a cut that is almost entirely silence.
+// That made the number useless for comparing two runs, which is its main job.
+{
+  const mkClips = (n, dur) => Array.from({ length: n }, (_, i) => ({ id: `c${i}`, start: i * 500, end: i * 500 + dur }));
+
+  // A: mostly dense, with several brief quiet pockets.
+  const clipsA = mkClips(12, 20);
+  const wordsA = clipsA.flatMap((c, i) => (i % 4 === 3 ? talk(c.start, c.start + 4, 3) : talk(c.start, c.end, 3)));
+  const good = auditCut({ clips: clipsA, words: wordsA });
+
+  // B: one long clip that is almost entirely silence.
+  const bad = auditCut({ clips: [{ id: 'x', start: 0, end: 240 }], words: talk(0, 12, 3) });
+
+  assert.ok(good.score > bad.score, `a mostly-good cut must outscore a mostly-dead one (${good.score} vs ${bad.score})`);
+  assert.ok(good.score > 25, `a mostly-good cut is not floored (${good.score})`);
+  assert.ok(bad.score < good.score - 15, `the gap is meaningful (${good.score} vs ${bad.score})`);
+  console.log(`✅ score discriminates: mostly-good ${good.score} vs mostly-dead ${bad.score} (was 0 vs 0).`);
+
+  // Adding MORE short issues of the same kind must not collapse the score to zero.
+  const many = auditCut({ clips: mkClips(24, 20), words: mkClips(24, 20).flatMap((c, i) => (i % 3 === 2 ? talk(c.start, c.start + 5, 3) : talk(c.start, c.end, 3))) });
+  assert.ok(many.score > 0, `many small issues still leave a usable score (${many.score})`);
+  // And the score stays bounded.
+  for (const r of [good, bad, many]) assert.ok(r.score >= 0 && r.score <= 100, 'score stays in 0..100');
+  console.log(`✅ many small defects degrade gracefully (${many.score}), never saturate to 0.`);
+}
+
 // --- degenerate input ---
 {
   const empty = auditCut({ clips: [] });

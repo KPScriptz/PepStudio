@@ -511,6 +511,9 @@ function toggleSeg(s) {
 function renderHighlights() {
   // Re-cost the planned cut whenever the moment set changes (ranking, keeps, trims, cuts).
   if (typeof scheduleRunPlan === 'function') scheduleRunPlan();
+  // Re-audit too. Hooked HERE and not in renderTracks on purpose: refreshCritic() repaints the
+  // lanes via renderTracks, so auditing from there would recurse.
+  if (typeof scheduleCritic === 'function') scheduleCritic();
   if (!state.highlights.length) {
     $('#hlCount').textContent = '0 / 0';
     $('#hlList').innerHTML = '<div class="hlEmpty">Sequence empty — analyze a file, then press Rank funny moments to begin.</div>';
@@ -683,10 +686,31 @@ function renderTracks() {
         ov.type === 'broll' ? 'b-roll' : escapeHtml((ov.content || 'text').slice(0, 16))));
     });
   }
+  // Dead-air heatmap: the critic's findings painted straight onto the sequence, in the SAME
+  // output-time percentages the lanes use, so a defect sits visually over the clip that causes it.
+  // This is what would have made the 54s-of-dead-air bug obvious on screen instead of only in a
+  // rendered file. Only drawn for the real sequence — the full-source view has no cut to audit.
+  const heat = (!sourceView ? (state.criticIssues || []) : [])
+    .filter((i) => HEAT_TYPES[i.type])
+    .map((i) => {
+      const a = Math.max(0, Number(i.atSec) || 0);
+      const b = Math.max(a + 0.15, Number(i.endSec ?? i.atSec) || a + 0.15);   // always visible
+      const t = HEAT_TYPES[i.type];
+      return `<div class="heatBlk ${t.cls}" style="left:${pct(a)};width:${pct(Math.min(b, total) - a)}"`
+        + ` title="${escapeHtml(t.label)} · ${escapeHtml(i.detail || '')}"></div>`;
+    }).join('');
+
   lanes.innerHTML = [vOv, vClip, aSpeech, aMusic, aSfx].map((a) => `<div class="lane">${a.join('')}</div>`).join('')
+    + (heat ? `<div class="heatLane" aria-hidden="true">${heat}</div>` : '')
     + '<div class="seqPlayhead" id="seqPlayhead" style="display:none"></div>';
   updateSeqPlayhead();
 }
+// Which critic findings get painted, and how they read at a glance.
+const HEAT_TYPES = {
+  dead_air: { cls: 'heatDead', label: 'Dead air' },
+  low_speech_density: { cls: 'heatQuiet', label: 'Low speech density' },
+  no_pattern_interrupt: { cls: 'heatFlat', label: 'No pattern interrupt' },
+};
 
 // ---- Sequence reorder: drag a card's handle to change OUTPUT order (array order). This
 // changes which order clips concat in exports — it NEVER touches a clip's source start/end.
@@ -1249,6 +1273,8 @@ async function loadTranscript() {
     const d = await res.json();
     if (!res.ok) throw new Error(d.error || 'Transcription failed.');
     _tr = d; _trStruck.clear(); renderTranscript();
+    // The critic can only score speech density once words exist, so re-audit now that they do.
+    if (typeof scheduleCritic === 'function') scheduleCritic();
     toast(d.words ? `Transcript ready — ${d.words} words.` : 'No speech found in the kept clips.', !d.words);
   } catch (e) { toast(e.message, true); } finally { btn.disabled = false; btn.textContent = o; }
 }
@@ -3092,6 +3118,64 @@ async function refreshRunPlan() {
 }
 const scheduleRunPlan = () => { clearTimeout(_planTimer); _planTimer = setTimeout(refreshRunPlan, 250); };
 $('#blueprintSel')?.addEventListener('change', scheduleRunPlan);
+
+// ---- Retention critic panel -------------------------------------------------------------------
+// Objective numbers for the cut you're about to render, so a bad edit is a measurement rather than
+// a judgement call. Pure server-side maths (no ffmpeg, no tokens), so it re-costs live.
+//
+// IMPORTANT: speech density is only meaningful when a transcript is loaded. Without words the
+// critic sees zero words and would paint the ENTIRE cut as low-density — confidently wrong. So the
+// density findings are suppressed (and the panel says why) until the transcript exists.
+state.criticIssues = [];
+function renderCriticCard(r, hasWords) {
+  const el = $('#criticBox'); if (!el) return;
+  if (!r || !r.stats || !r.stats.clipCount) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+  const s = r.stats;
+  const verdict = r.pass ? 'pass' : (s.fails > 2 ? 'bad' : 'warn');
+  const chip = (ok, label, val, title) =>
+    `<div class="cMetric ${ok ? 'ok' : 'bad'}" title="${escapeHtml(title)}"><span>${escapeHtml(label)}</span><b>${escapeHtml(val)}</b></div>`;
+  const top = (r.issues || []).slice(0, 4).map((i) =>
+    `<li class="cIssue ${i.severity}"><b>${escapeHtml((i.type || '').replace(/_/g, ' '))}</b>
+       <span class="cAt">@${fmt(i.atSec)}</span><br><span class="cFix">${escapeHtml(i.detail || '')}</span></li>`).join('');
+  el.innerHTML =
+    `<div class="pkHead"><span>Retention critic</span><span class="cScore ${verdict}">${r.score}</span></div>
+     <div class="cMetrics">
+       ${chip(s.deadAirSec <= 2, 'Dead air', `${s.deadAirSec}s`, 'Silence that survived into a kept clip')}
+       ${chip(s.interruptsPerMin >= 8, 'Interrupts', `${s.interruptsPerMin}/min`, 'Cuts, zooms, overlays and SFX hits per minute')}
+       ${hasWords ? chip(s.wordsPerSec >= 2.5, 'Speech', `${s.wordsPerSec}/s`, 'Sustained speech density') : ''}
+       ${chip(true, 'Runtime', fmt(s.outputSec), `${s.clipCount} clips`)}
+     </div>
+     ${top ? `<ul class="cIssues">${top}</ul>` : '<div class="cClean">No retention defects found.</div>'}
+     ${hasWords ? '' : '<div class="hint">Load the transcript to also score speech density.</div>'}`;
+  el.classList.remove('hidden');
+}
+let _criticTimer = null, _criticSeq = 0;
+async function refreshCritic() {
+  const el = $('#criticBox'); if (!el) return;
+  const clips = (state.highlights || []).filter((h) => h.keep)
+    .map((h) => ({ id: h.id, start: h.start, end: h.end }));
+  if (!state.proj || !clips.length) { state.criticIssues = []; renderCriticCard(null); return; }
+  // Words only exist once the transcript has been loaded in this session.
+  const words = _tr ? _tr.clips.flatMap((c) => c.words || []) : [];
+  const seq = ++_criticSeq;
+  try {
+    const res = await fetch('/api/critic', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clips, words,
+        silences: ((state.proj && state.proj.silences) || []).map((s) => (Array.isArray(s) ? s : [s.start, s.end])),
+      }),
+    });
+    const r = await res.json();
+    if (seq !== _criticSeq || !res.ok) return;             // a newer audit already answered
+    // Drop density findings when we have no transcript, so the heatmap can't lie.
+    r.issues = (r.issues || []).filter((i) => words.length || i.type !== 'low_speech_density');
+    state.criticIssues = r.issues;
+    renderCriticCard(r, words.length > 0);
+    renderTracks();                                        // repaint the heatmap
+  } catch { /* advisory only */ }
+}
+const scheduleCritic = () => { clearTimeout(_criticTimer); _criticTimer = setTimeout(refreshCritic, 400); };
 
 // ---- Step 5: Correction Capture. After a MANUAL override (trim/keep/reorder/segment),
 // surface a one-tap "why?" popover. The base action already logged; tapping a reason
