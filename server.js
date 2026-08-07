@@ -26,7 +26,7 @@ import { revealCmd, installHint, expandTilde } from './lib/platform.js';
 import { analyzeNBA } from './lib/nba2k.js';
 import { analyzePalworld } from './lib/palworld.js';
 import { applyGameEvents } from './lib/gameEvents.js';
-import { selectStoryboard, recommendPlan } from './lib/storyboard.js';
+import { selectStoryboard, recommendPlan, candidatePool } from './lib/storyboard.js';
 import { auditCut } from './lib/critic.js';
 import { parseRetentionCsv, findCliffs, buildFeedbackRows } from './lib/retentionCsv.js';
 import { findOutliers, pacingMetrics, aggregateBenchmark, suggestFromBenchmark } from './lib/benchmark.js';
@@ -726,10 +726,19 @@ app.post('/api/highlights/funny', async (req, res) => {
     // Storyboard mode needs a MUCH bigger candidate pool — an 8-10 min cut is ~15-25 clips, so the
     // default keep=8 / 9-min budget would starve it. Scale both up when the caller asks for it.
     const storyboard = req.body.storyboard === true;
-    const keepN = req.body.keep || (storyboard ? 40 : 8);
     const pad = 1.5;
     const minScore = req.body.minScore ?? (storyboard ? 0.3 : 0.5);  // lower gate → more candidates survive
-    const budgetSec = req.body.budgetSec ?? (storyboard ? 1500 : 540); // audio sent to whisper (~25 min vs ~9)
+
+    // SCALE THE POOL WITH THE SOURCE. keepN/budget were fixed constants tuned on a ~68-min VOD,
+    // which quietly capped what a longer stream could ever become: 40 candidates is ~20 min of
+    // material no matter how long the VOD is, and a fixed 25-min audio budget samples 37% of a
+    // 68-min stream but only 14% of a 3-hour one. That directly contradicts the adaptive planner —
+    // "3 hours with 45 min of gold gives a 45-min cut" is impossible if the pool upstream can only
+    // ever hold 20 minutes. Both now grow with duration, bounded at the top so a very long VOD
+    // can't run whisper unboundedly (the budget is the dominant ranking cost).
+    const pool_ = candidatePool(duration, { storyboard });
+    const keepN = req.body.keep || pool_.keepN;
+    const budgetSec = req.body.budgetSec ?? pool_.budgetSec;
     // Snap clips to the tight reaction beat — default ON, but OFF for storyboard mode: an 8-10 min
     // narrative package needs the WIDE, contextual windows (the setup + build-up), not 5s snippets.
     // Tightening there starved the cut (24 clips × ~5s ≈ 2 min instead of ~8). Explicit override wins.

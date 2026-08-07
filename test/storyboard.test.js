@@ -8,7 +8,7 @@ import assert from 'assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {selectStoryboard, recommendPlan } from '../lib/storyboard.js';
+import {selectStoryboard, recommendPlan, candidatePool, POOL_REF_SEC } from '../lib/storyboard.js';
 import { applyGameEvents } from '../lib/gameEvents.js';
 import { matchTextEvents } from '../lib/textEvents.js';
 import { PAL_RULES } from '../lib/palworld.js';
@@ -170,4 +170,58 @@ run();
   console.log('✅ empty / null inputs safe.');
 
   console.log('🚀 DYNAMIC PICKY-PLANNER TESTS PASSED.');
+}
+
+// ---- Candidate pool scales with the source ----------------------------------------------------
+// The pool caps used to be fixed constants tuned on a ~68-min VOD, which made the adaptive
+// planner's headline promise unreachable: 40 candidates is ~20 minutes of material regardless of
+// how long the stream is, so "3 hours with 45 minutes of gold" could never return 45 minutes.
+{
+  console.log('\n🧪 Candidate pool sizing…');
+
+  // The reference case must be BYTE-IDENTICAL to the old constants — this widens long sources
+  // without re-tuning the one length the defaults were actually measured on.
+  const ref = candidatePool(POOL_REF_SEC, { storyboard: true });
+  assert.strictEqual(ref.keepN, 40, 'reference VOD keeps the tuned pool size');
+  assert.strictEqual(ref.budgetSec, 1500, 'reference VOD keeps the tuned audio budget');
+  console.log(`✅ 68-min reference unchanged: keepN ${ref.keepN}, budget ${ref.budgetSec}s.`);
+
+  // Longer sources get proportionally more, so a long stream can actually yield a long cut.
+  const threeH = candidatePool(3 * 3600, { storyboard: true });
+  assert.ok(threeH.keepN > ref.keepN * 2, `3-hour pool grows (${threeH.keepN} vs ${ref.keepN})`);
+  assert.ok(threeH.budgetSec > ref.budgetSec * 2, `3-hour audio budget grows (${threeH.budgetSec}s)`);
+  // ...enough material to actually reach a long cut: pool x typical window >> 20 min.
+  assert.ok(threeH.keepN * 25 > 40 * 60, `pool can back a 40min+ cut (${threeH.keepN} clips)`);
+  console.log(`✅ 3-hour source scales up: keepN ${threeH.keepN}, budget ${threeH.budgetSec}s.`);
+
+  // Monotonic — a longer VOD never gets a smaller pool.
+  let prev = 0;
+  for (const d of [600, 1800, 4080, 7200, 10800, 21600]) {
+    const p = candidatePool(d, { storyboard: true });
+    assert.ok(p.keepN >= prev, `pool never shrinks as duration grows (${d}s -> ${p.keepN})`);
+    prev = p.keepN;
+  }
+  console.log('✅ pool size is monotonic in duration.');
+
+  // Bounded at the top: the audio budget is the dominant ranking cost, so a 6-hour VOD must not
+  // run whisper unboundedly — it samples a smaller fraction instead.
+  const sixH = candidatePool(6 * 3600, { storyboard: true });
+  assert.ok(sixH.keepN <= 200 && sixH.budgetSec <= 3600, 'pool and budget are capped');
+  assert.ok(sixH.budgetSec / (6 * 3600) < threeH.budgetSec / (3 * 3600), 'very long VODs sample a smaller fraction');
+  console.log(`✅ bounded: 6-hour capped at keepN ${sixH.keepN}, budget ${sixH.budgetSec}s.`);
+
+  // Short sources are never scaled DOWN below the tuned floor.
+  const short = candidatePool(600, { storyboard: true });
+  assert.strictEqual(short.keepN, 40, 'a short VOD keeps the floor pool');
+  // Non-storyboard mode is untouched.
+  const plain = candidatePool(3 * 3600, { storyboard: false });
+  assert.strictEqual(plain.keepN, 8);
+  assert.strictEqual(plain.budgetSec, 540);
+  // Degenerate durations are safe.
+  for (const d of [0, -5, NaN, undefined]) {
+    assert.doesNotThrow(() => candidatePool(d, { storyboard: true }));
+    assert.ok(candidatePool(d, { storyboard: true }).keepN >= 40);
+  }
+  console.log('✅ short floor held, plain mode untouched, degenerate durations safe.');
+  console.log('🚀 CANDIDATE POOL TESTS PASSED.');
 }
