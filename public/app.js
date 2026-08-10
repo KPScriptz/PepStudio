@@ -34,6 +34,10 @@ const hideProgress = () => {
 
 const state = { proj: null, highlights: [], selected: null, selClip: null, drag: null };
 const player = $('#player');
+// player.play() returns a promise that REJECTS if a pause()/seek interrupts it — which the J-K-L
+// shuttle, clip verify and In→Out loop all do routinely. Unhandled it surfaced as a console
+// AbortError on every fast transport tap, noise that would mask a real error. Swallow only that.
+const safePlay = () => { const p = player.play(); if (p && p.catch) p.catch(() => {}); return p; };
 const canvas = $('#timeline');
 const ctx = canvas.getContext('2d');
 const IC_PLAY = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2l10 6-10 6V2z"/></svg>';
@@ -498,7 +502,7 @@ function renderGhosts() {
 }
 
 function selectSeg(s) { state.selSeg = s.id; player.currentTime = s.start; renderGhosts(); draw(); }
-function verifySeg(s) { state.selSeg = s.id; player.currentTime = s.start; player.play(); s._stopAt = Math.min(s.end, s.start + 2); draw(); }
+function verifySeg(s) { state.selSeg = s.id; player.currentTime = s.start; safePlay(); s._stopAt = Math.min(s.end, s.start + 2); draw(); }
 function toggleSeg(s) {
   s._wasGhost = true;
   s.state = s.state === 'ghost' ? 'keep' : 'ghost';
@@ -590,7 +594,7 @@ function renderHighlights() {
       });
     });
     row.querySelector('[data-act=preview]').addEventListener('click', () => {
-      state.selected = h.id; player.currentTime = h.start; player.play();
+      state.selected = h.id; player.currentTime = h.start; safePlay();
       h._stopAt = h.end; draw();
     });
     row.querySelector('[data-act=keep]').addEventListener('click', () => {
@@ -1433,7 +1437,7 @@ function updateSeqPlayhead() {
 }
 function setupTransport() {
   const play = $('#tpPlay'); const back = $('#tpBack'); const fwd = $('#tpFwd'); const scrub = $('#tpScrub');
-  if (play) play.addEventListener('click', () => { if (player.paused) player.play(); else player.pause(); });
+  if (play) play.addEventListener('click', () => { if (player.paused) safePlay(); else player.pause(); });
   // Premiere-style frame stepping: click = 1 frame (from the source fps), Shift+click = 5s jump.
   const frameStep = () => 1 / ((state.proj && state.proj.meta && state.proj.meta.fps) || 30);
   if (back) back.addEventListener('click', (e) => { player.currentTime = Math.max(0, player.currentTime - (e.shiftKey ? 5 : frameStep())); });
@@ -1752,7 +1756,7 @@ window.addEventListener('keydown', (e) => {
   else if (e.code === 'Space' && !e.altKey) {
     e.preventDefault();
     if (document.activeElement && document.activeElement.tagName === 'BUTTON') document.activeElement.blur();
-    if (player.paused) player.play(); else player.pause();
+    if (player.paused) safePlay(); else player.pause();
   }
 });
 
@@ -2325,7 +2329,7 @@ function stopShuttle() { clearInterval(_shuttle.timer); _shuttle = { dir: 0, rat
 function shuttle(dir) {
   if (_shuttle.dir === dir) _shuttle.rate = Math.min(8, _shuttle.rate * 2);   // repeat press → 2x/4x/8x
   else { clearInterval(_shuttle.timer); _shuttle.dir = dir; _shuttle.rate = 1; }
-  if (dir > 0) { clearInterval(_shuttle.timer); _shuttle.timer = null; player.playbackRate = _shuttle.rate; player.play(); }
+  if (dir > 0) { clearInterval(_shuttle.timer); _shuttle.timer = null; player.playbackRate = _shuttle.rate; safePlay(); }
   else {
     player.pause(); player.playbackRate = 1;
     clearInterval(_shuttle.timer);
@@ -2371,12 +2375,12 @@ window.addEventListener('keydown', (e) => {
   // In→Out playback: Ctrl+L loop toggle, Option+Space play-once
   if (e.ctrlKey && (e.key === 'l' || e.key === 'L')) {
     e.preventDefault(); _loopIO = !_loopIO;
-    if (_loopIO && state.inPoint != null) { player.currentTime = state.inPoint; player.play(); }
+    if (_loopIO && state.inPoint != null) { player.currentTime = state.inPoint; safePlay(); }
     toast(_loopIO ? 'Looping In→Out' : 'Loop off'); return;
   }
   if (e.altKey && e.code === 'Space') {
     e.preventDefault();
-    if (state.inPoint != null && state.outPoint != null) { _playToOut = true; player.currentTime = state.inPoint; player.play(); }
+    if (state.inPoint != null && state.outPoint != null) { _playToOut = true; player.currentTime = state.inPoint; safePlay(); }
     return;
   }
   if (e.key === 'Home') {
@@ -3006,7 +3010,7 @@ $('#hookLab')?.addEventListener('click', (e) => {
   clearTimeout(_hookStopTimer);
   try {
     player.currentTime = start;
-    player.play();
+    safePlay();
     _hookStopTimer = setTimeout(() => { try { player.pause(); } catch (_) {} }, (end - start) * 1000);
   } catch (_) {}
 });

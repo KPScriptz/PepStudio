@@ -655,7 +655,9 @@ html.isMac .view-picker { background: rgba(12, 12, 14, 0.72); }
 .nle-right .panels .funnyBtn,.nle-right .panels .pepaiBtn{ white-space:normal; }
 
 /* ===== Track 2 polish: transport bar + sequence playhead + clip color tiers ===== */
-.transport{ display:flex; align-items:center; gap:8px; padding:6px 8px; margin-top:2px;
+/* flex-wrap so a narrow window pushes the timecode onto its own row rather than crushing either
+   the scrubber or the clock. At the 1000px minimum window the scrubber used to collapse to 0px. */
+.transport{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:6px 8px; margin-top:2px;
   background:rgba(0,0,0,.3); border:1px solid var(--glass-border); border-radius:8px; }
 .tpBtn{ background:var(--panel2); border:1px solid var(--line); color:var(--text);
   border-radius:6px; padding:4px 9px; cursor:pointer; font-size:13px; line-height:1; }
@@ -663,9 +665,13 @@ html.isMac .view-picker { background: rgba(12, 12, 14, 0.72); }
 .tpPlay{ min-width:36px; font-size:14px; }
 /* NLE scrub rail: thin track, cyan played-progress fill (via --val, set in the transport update),
    glowing white/cyan playhead thumb — Resolve/Premiere-style, replacing the default range slider. */
-.tpScrub{ flex:1; min-width:0; cursor:pointer; -webkit-appearance:none; appearance:none; height:5px;
-  border-radius:3px; background:linear-gradient(90deg, var(--accent-cyan,#00e5ff) var(--val,0%), rgba(150,150,160,.22) var(--val,0%)); }
-.tpScrub::-webkit-slider-runnable-track{ height:5px; border-radius:3px; background:transparent; }
+/* The input's own box IS the grab area, so a 5px-tall slider was a 5px-tall hit target — hard to
+   catch with a mouse and worse with a trackpad. Keep the TRACK thin (moved onto the pseudo-element)
+   and give the input a 16px box, so it looks identical but is three times easier to grab. */
+.tpScrub{ flex:1; min-width:0; cursor:pointer; -webkit-appearance:none; appearance:none; height:16px;
+  background:transparent; border-radius:3px; }
+.tpScrub::-webkit-slider-runnable-track{ height:5px; border-radius:3px;
+  background:linear-gradient(90deg, var(--accent-cyan,#00e5ff) var(--val,0%), rgba(150,150,160,.22) var(--val,0%)); }
 .tpScrub::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:13px; height:13px; border-radius:50%;
   background:#fff; border:2px solid var(--accent-cyan,#00e5ff); margin-top:-4px; cursor:pointer;
   box-shadow:0 0 6px rgba(0,229,255,.55), 0 1px 3px rgba(0,0,0,.4); transition:box-shadow .12s; }
@@ -673,7 +679,12 @@ html.isMac .view-picker { background: rgba(12, 12, 14, 0.72); }
 .tpScrub:focus{ outline:none; }
 .tpScrub:focus-visible{ outline:2px solid var(--accent-cyan,#00e5ff); outline-offset:3px; }
 /* Scrub wrapper hosts the marker/in-out rail overlay; the scrub itself fills it. */
-.scrubWrap{ position:relative; flex:1; min-width:0; display:flex; align-items:center; }
+/* min-width is load-bearing: scrubWrap is the ONLY flexible child of .transport, so with
+   min-width:0 it was squeezed to literally 0px at the app's minimum window size (1000x640) while
+   the timecode readout kept its full 166px. That silently removed BOTH the scrub bar and the
+   marker rail — you couldn't scrub or see a single marker pin. Give it a floor and let the
+   timecode shrink instead; a monospace clock reflows far more gracefully than a slider vanishing. */
+.scrubWrap{ position:relative; flex:1 1 120px; min-width:110px; display:flex; align-items:center; }
 .scrubWrap .tpScrub{ width:100%; flex:none; }
 .tpRail{ position:absolute; inset:0; pointer-events:none; }
 /* Marker pin: small green flag above the rail (click to seek). */
@@ -706,7 +717,11 @@ html.isMac .view-picker { background: rgba(12, 12, 14, 0.72); }
   font-size:12px; font-weight:600; color:#fff; background:rgba(0,0,0,.72); border-radius:7px; white-space:nowrap; pointer-events:none; }
 .fcOverlay .fcBox{ position:absolute; border:2px solid var(--px-accent,#2d76ff);
   background:rgba(45,118,255,.18); box-shadow:0 0 12px rgba(45,118,255,.4); pointer-events:none; }
-.tpTime{ font-variant-numeric:tabular-nums; font-size:11px; min-width:88px; text-align:right; }
+/* Keeps its full timecode (a clock truncated mid-digits is worse than useless). When it and the
+   scrubber can't both fit, .transport wraps and this takes its own row instead of either being
+   squashed — see the flex-wrap on .transport. */
+.tpTime{ font-variant-numeric:tabular-nums; font-size:11px; min-width:88px; flex:0 0 auto;
+  text-align:right; white-space:nowrap; }
 
 /* Sequence playhead across the multi-track lanes (#trackLanes is position:relative) */
 .seqPlayhead{ position:absolute; top:0; bottom:0; width:2px; background:var(--hl);
@@ -1342,8 +1357,11 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
 .tlZoom button{ min-width:24px; height:22px; padding:0 7px; border-radius:5px; border:1px solid var(--line, rgba(255,255,255,.09));
   background:var(--panel2, rgba(0,0,0,.25)); color:var(--muted); font-size:12px; font-weight:700; cursor:pointer; }
 .tlZoom button:hover{ color:var(--text); border-color:var(--px-accent,#2d76ff); }
-.tlZoom input[type=range]{ width:110px; -webkit-appearance:none; appearance:none; height:4px; border-radius:2px;
-  background:rgba(150,150,160,.25); cursor:pointer; }
+/* Same grab-area fix as .tpScrub: a 4px box was a 4px hit target. */
+.tlZoom input[type=range]{ width:110px; -webkit-appearance:none; appearance:none; height:16px;
+  background:transparent; cursor:pointer; }
+.tlZoom input[type=range]::-webkit-slider-runnable-track{ height:4px; border-radius:2px;
+  background:rgba(150,150,160,.25); }
 .tlZoom input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:11px; height:11px;
   border-radius:50%; background:var(--px-accent,#2d76ff); border:0; margin-top:0; cursor:pointer; }
 /* Media bin tile: thumbnail + duration badge + Premiere-blue ring. */
