@@ -169,6 +169,19 @@ async function sourceFor(id) {
   } catch { return null; }
 }
 
+// A project outlives its footage: the analysis is persisted, but the source can be moved, renamed,
+// deleted or sat on an unmounted external drive. Every render then failed with a raw ffmpeg wall
+// ("Error opening input file ... No such file or directory") which reads like corruption rather
+// than "your video moved". Resolve + verify in one place so every route can say so plainly.
+async function sourceForChecked(id) {
+  const file = await sourceFor(id);
+  if (!file) return { file: null, error: 'Unknown project id — re-import the video.' };
+  if (!fs.existsSync(file)) {
+    return { file: null, error: `Source file is missing: ${path.basename(file)}. It was moved, renamed or deleted (or lives on a drive that isn't mounted). Re-import it to continue.` };
+  }
+  return { file, error: null };
+}
+
 // expandTilde reads USERPROFILE on Windows — process.env.HOME is undefined there, so the old
 // path.join(undefined, ...) threw a TypeError and crashed POST /api/analyze for any ~ path.
 const tildeExpand = (p) => expandTilde(p);
@@ -482,8 +495,9 @@ function resolveLevel(body) {
 
 app.post('/api/pacing/preview', async (req, res) => {
   try {
-    const file = await sourceFor(req.body.id);
-    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const src = await sourceForChecked(req.body.id);
+    if (src.error) return res.status(404).json({ error: src.error });
+    const file = src.file;
     const s = Number(req.body.clip && req.body.clip.start);
     const e = Number(req.body.clip && req.body.clip.end);
     if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) return res.status(400).json({ error: 'Invalid clip.' });
@@ -498,8 +512,9 @@ app.post('/api/pacing/preview', async (req, res) => {
 // 5-min raw assembly collapses into a zero-fluff master in one pass. Returns the segments + totals.
 app.post('/api/pacing/sequence', async (req, res) => {
   try {
-    const file = await sourceFor(req.body.id);
-    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const src = await sourceForChecked(req.body.id);
+    if (src.error) return res.status(404).json({ error: src.error });
+    const file = src.file;
     const clips = capBatch(req.body.clips)
       .map((c) => [Number(c.start), Number(c.end)])
       .filter(([s, e]) => Number.isFinite(s) && Number.isFinite(e) && e > s)
@@ -523,8 +538,9 @@ app.post('/api/pacing/sequence', async (req, res) => {
 // the client renders them through the existing /api/export/sequence path.
 app.post('/api/fillers', async (req, res) => {
   try {
-    const file = await sourceFor(req.body.id);
-    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const src = await sourceForChecked(req.body.id);
+    if (src.error) return res.status(404).json({ error: src.error });
+    const file = src.file;
     if (!captionsReady()) return res.status(503).json({ error: 'Whisper is not installed — filler detection needs it.' });
     const clips = capBatch(req.body.clips)
       .map((c) => [Number(c.start), Number(c.end)])
@@ -560,8 +576,9 @@ app.post('/api/fillers', async (req, res) => {
 // timestamps so the panel can seek the playhead and cut by word.
 app.post('/api/transcript', async (req, res) => {
   try {
-    const file = await sourceFor(req.body.id);
-    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const src = await sourceForChecked(req.body.id);
+    if (src.error) return res.status(404).json({ error: src.error });
+    const file = src.file;
     if (!captionsReady()) return res.status(503).json({ error: 'Whisper is not installed — transcription needs it.' });
     const clips = capBatch(req.body.clips)
       .map((c) => ({ id: c.id, start: Number(c.start), end: Number(c.end) }))
@@ -688,8 +705,9 @@ app.get('/api/cover', async (req, res) => {
 
 app.post('/api/captions', async (req, res) => {
   try {
-    const file = await sourceFor(req.body.id);
-    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const src = await sourceForChecked(req.body.id);
+    if (src.error) return res.status(404).json({ error: src.error });
+    const file = src.file;
     const assPath = path.join(RENDERS, req.body.id, 'captions.ass');
     const range = req.body.range && req.body.range.length === 2 ? req.body.range : undefined;
     const { chunks, srt } = await generateCaptions(file, assPath, { range });
@@ -708,8 +726,9 @@ app.post('/api/captions', async (req, res) => {
 app.post('/api/highlights/funny', async (req, res) => {
   try {
     const id = req.body.id;
-    const file = await sourceFor(id);
-    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const src = await sourceForChecked(id);
+    if (src.error) return res.status(404).json({ error: src.error });
+    const file = src.file;
     const cap = captionsReady();
     if (!cap.bin || !cap.model) {
       return res.status(400).json({ error: `Reaction ranking needs whisper.cpp. ${installHint('whisper-cli')}` });
@@ -1049,8 +1068,9 @@ app.post('/api/pepai/chat', async (req, res) => {
 
 app.post('/api/export/sequence', async (req, res) => {
   try {
-    const file = await sourceFor(req.body.id);
-    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const src = await sourceForChecked(req.body.id);
+    if (src.error) return res.status(404).json({ error: src.error });
+    const file = src.file;
     const clips = capBatch(req.body.clips);
     if (!clips.length) return res.status(400).json({ error: 'No clips in the sequence.' });
 
@@ -1079,8 +1099,9 @@ app.post('/api/export/sequence', async (req, res) => {
 
 app.post('/api/export/longcut', async (req, res) => {
   try {
-    const file = await sourceFor(req.body.id);
-    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const src = await sourceForChecked(req.body.id);
+    if (src.error) return res.status(404).json({ error: src.error });
+    const file = src.file;
     const segments = capBatch(req.body.segments).map((s) => [s.start, s.end]);
     if (!segments.length) return res.status(400).json({ error: 'No segments selected' });
     const out = path.join(RENDERS, req.body.id, 'longcut.mp4');
@@ -1095,8 +1116,9 @@ app.post('/api/export/longcut', async (req, res) => {
 
 app.post('/api/export/shorts', async (req, res) => {
   try {
-    const file = await sourceFor(req.body.id);
-    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const src = await sourceForChecked(req.body.id);
+    if (src.error) return res.status(404).json({ error: src.error });
+    const file = src.file;
     const clips = capBatch(req.body.clips);
     if (!clips.length) return res.status(400).json({ error: 'No clips selected' });
     const subs = req.body.captions ? path.join(RENDERS, req.body.id, 'captions.ass') : undefined;
@@ -1132,8 +1154,9 @@ app.post('/api/export/shorts', async (req, res) => {
 // ---- TikTok pack: top moments as vertical 1080x1920 clips, each with aligned captions. ----
 app.post('/api/export/tiktok', async (req, res) => {
   try {
-    const file = await sourceFor(req.body.id);
-    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const src = await sourceForChecked(req.body.id);
+    if (src.error) return res.status(404).json({ error: src.error });
+    const file = src.file;
     const clips = capBatch(req.body.clips);
     if (!clips.length) return res.status(400).json({ error: 'No clips selected' });
     const wantCaps = req.body.captions !== false && captionsReady().bin && captionsReady().model;
@@ -1191,8 +1214,9 @@ app.post('/api/export/tiktok', async (req, res) => {
 // ---- YouTube cut: cold-open hook + tight (dead-air-removed) body, captions aligned to the cut. ----
 app.post('/api/export/youtube', async (req, res) => {
   try {
-    const file = await sourceFor(req.body.id);
-    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const src = await sourceForChecked(req.body.id);
+    if (src.error) return res.status(404).json({ error: src.error });
+    const file = src.file;
     const keep = capBatch(req.body.segments).map((s) => [s.start, s.end]);
     if (!keep.length) return res.status(400).json({ error: 'No segments to export' });
     const hook = req.body.hook && req.body.hook.length === 2 ? [req.body.hook[0], req.body.hook[1]] : null;
@@ -1223,8 +1247,9 @@ app.post('/api/export/youtube', async (req, res) => {
 // ---- Premiere / NLE handoff: EDL + FCP7 XML of the Phantasm cut (relinks to source). ----
 app.post('/api/export/premiere', async (req, res) => {
   try {
-    const file = await sourceFor(req.body.id);
-    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const src = await sourceForChecked(req.body.id);
+    if (src.error) return res.status(404).json({ error: src.error });
+    const file = src.file;
     const segments = capBatch(req.body.segments).filter((s) => s && s.end > s.start);
     if (!segments.length) return res.status(400).json({ error: 'No segments to hand off' });
 
@@ -1257,8 +1282,9 @@ app.post('/api/export/premiere', async (req, res) => {
 // Grab high-res thumbnail frames at the given times (highlight peaks).
 app.post('/api/export/thumbs', async (req, res) => {
   try {
-    const file = await sourceFor(req.body.id);
-    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const src = await sourceForChecked(req.body.id);
+    if (src.error) return res.status(404).json({ error: src.error });
+    const file = src.file;
     const times = capBatch(req.body.times);
     if (!times.length) return res.status(400).json({ error: 'No times provided' });
     // Single-frame grabs are cheap and independent — grab them in parallel, isolating failures.
