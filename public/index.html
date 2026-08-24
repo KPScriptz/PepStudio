@@ -106,8 +106,10 @@
             <div class="scrubWrap">
               <input id="tpScrub" class="tpScrub" type="range" min="0" max="100" value="0" step="0.01" />
               <div id="tpRail" class="tpRail" aria-hidden="true"></div>
+              <div id="railTip" class="railTip hidden" aria-hidden="true"></div>
             </div>
             <span id="tpTime" class="tpTime muted">0:00 / 0:00</span>
+            <button id="guidesBtn" class="tpBtn" title="Cycle monitor guides: thirds → safe margins → crosshair → off"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="1"/><path d="M6 1.5v13M10 1.5v13M1.5 6h13M1.5 10h13"/></svg></button>
             <button id="ioExportBtn" class="tpBtn ioExport hidden" title="Export just the In→Out region (horizontal cut)">Export I/O</button>
           </div>
           <div class="playerMeta">
@@ -194,6 +196,15 @@
             <button id="seqExportBtn" class="big seqBtn">Export sequence<small>kept clips in order + text overlays</small></button>
             <label class="check"><input type="checkbox" id="capPublish" checked /> Captions on publish exports</label>
             <label class="check" title="Word-by-word captions that hit on each spoken word — the short-form retention style."><input type="checkbox" id="capKinetic" /> Kinetic captions (word-by-word)</label>
+            <label class="blueprintRow" title="Visual style for burned-in captions on shorts.">
+              <span>Captions</span>
+              <select id="capStyleSel" class="blueprintSel">
+                <option value="pop" selected>Punchy (default)</option>
+                <option value="bold">TikTok Bold — yellow, thick stroke</option>
+                <option value="clean">YouTube Clean — boxed white</option>
+                <option value="minimal">Minimal Studio — small, low-key</option>
+              </select>
+            </label>
             <div class="fcRow">
               <button id="fcSetBtn" class="pkGhost">Set facecam box</button>
               <span id="fcStatus" class="fcStatus">not set — shorts use center-crop</span>

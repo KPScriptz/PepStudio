@@ -978,6 +978,56 @@ async function buildThumbnail() {
 }
 $('#vtBtn')?.addEventListener('click', buildThumbnail);
 
+// ---- Monitor guides (thirds / safe margins / crosshair) — composition overlays sized to the
+// DISPLAYED video rect (object-fit-contain math, same as the facecam drawer) so lines align to
+// the frame, not the letterbox. Cycled by the guides button; pure overlay, pointer-events none.
+const GUIDE_MODES = ['off', 'thirds', 'safe', 'cross'];
+let _guideMode = 0;
+function renderGuides() {
+  let ov = document.getElementById('monGuides');
+  const mon = document.querySelector('.nle-center .monitor');
+  const mode = GUIDE_MODES[_guideMode];
+  if (!mon) return;
+  if (mode === 'off' || !player.videoWidth) { ov?.remove(); return; }
+  const mr = mon.getBoundingClientRect();
+  const pr = player.getBoundingClientRect();
+  const scale = Math.min(pr.width / player.videoWidth, pr.height / player.videoHeight);
+  const dw = player.videoWidth * scale, dh = player.videoHeight * scale;
+  const ox = pr.left - mr.left + (pr.width - dw) / 2, oy = pr.top - mr.top + (pr.height - dh) / 2;
+  if (!ov) { ov = document.createElement('div'); ov.id = 'monGuides'; ov.className = 'monGuides'; mon.appendChild(ov); }
+  ov.style.cssText = `left:${ox}px;top:${oy}px;width:${dw}px;height:${dh}px`;
+  const L = (x1, y1, x2, y2) => `<line x1="${x1}%" y1="${y1}%" x2="${x2}%" y2="${y2}%"/>`;
+  let svg = '';
+  if (mode === 'thirds') svg = L(33.33, 0, 33.33, 100) + L(66.66, 0, 66.66, 100) + L(0, 33.33, 100, 33.33) + L(0, 66.66, 100, 66.66);
+  else if (mode === 'safe') svg = '<rect x="5%" y="5%" width="90%" height="90%"/><rect x="10%" y="10%" width="80%" height="80%"/>';
+  else if (mode === 'cross') svg = L(50, 44, 50, 56) + L(44, 50, 56, 50) + '<circle cx="50%" cy="50%" r="1.2%"/>';
+  ov.innerHTML = `<svg width="100%" height="100%">${svg}</svg>`;
+}
+$('#guidesBtn')?.addEventListener('click', () => {
+  _guideMode = (_guideMode + 1) % GUIDE_MODES.length;
+  renderGuides();
+  toast(`Guides: ${GUIDE_MODES[_guideMode]}`);
+});
+window.addEventListener('resize', () => renderGuides());
+player.addEventListener('loadedmetadata', () => renderGuides());
+
+// ---- Scrub-rail hover timecode: a floating frame-exact readout following the cursor. ----
+(() => {
+  const wrap = document.querySelector('.scrubWrap'); const tip = $('#railTip');
+  if (!wrap || !tip) return;
+  wrap.addEventListener('mousemove', (e) => {
+    const dur = (state.proj && state.proj.duration) || player.duration || 0;
+    if (!dur) return;
+    const r = wrap.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    const fps = (state.proj && state.proj.meta && state.proj.meta.fps) || 30;
+    tip.textContent = tc(frac * dur, fps);
+    tip.style.left = `${Math.max(28, Math.min(r.width - 28, e.clientX - r.left))}px`;
+    tip.classList.remove('hidden');
+  });
+  wrap.addEventListener('mouseleave', () => tip.classList.add('hidden'));
+})();
+
 // ---- Micro-cut Pacing: jump-cut internal dead air out of the top moment. Preview shows the gain
 // per level; export renders the tightened sub-segments through the existing sequence pipeline. ----
 // The clip the context tools (Covers, Micro-Cut) act on: the clip explicitly SELECTED on the
@@ -1881,7 +1931,7 @@ async function runTikTokPack() {
   try {
     const res = await fetch('/api/export/tiktok', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: state.proj.id, clips, captions: caps, kinetic: !!($('#capKinetic') && $('#capKinetic').checked), facecam: state.facecam || undefined }),
+      body: JSON.stringify({ id: state.proj.id, clips, captions: caps, kinetic: !!($('#capKinetic') && $('#capKinetic').checked), capStyle: ($('#capStyleSel') && $('#capStyleSel').value) || 'pop', facecam: state.facecam || undefined }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
