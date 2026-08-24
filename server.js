@@ -238,6 +238,23 @@ app.post('/api/prefs', async (req, res) => {
 // throw from any probe became an unhandled rejection, Express never replied, and the UI sat on a
 // blank status forever — most likely on a fresh install where the external tools are missing.
 // Each probe is now individually defaulted, so one absent tool can't take the whole route down.
+// Mixer: measure REAL EBU R128 loudness of the last sequence export (integrated LUFS, loudness
+// range, true peak) via ffmpeg's loudnorm analysis pass — actual measurement, not a live-meter
+// simulation. Audio-only decode of the rendered file, so it's a few seconds.
+app.post('/api/measureloudness', async (req, res) => {
+  try {
+    const f = path.join(RENDERS, req.body.id || '', 'sequence.mp4');
+    if (!req.body.id || !fs.existsSync(f)) return res.status(404).json({ error: 'No sequence export yet — render a cut first.' });
+    let err = '';
+    await ffmpeg(['-nostdin', '-i', f, '-af', 'loudnorm=I=-14:TP=-1.5:LRA=11:print_format=json', '-f', 'null', '-'],
+      { onStderr: (s) => { err += s; } });
+    const m = err.match(/\{[^{}]*"input_i"[\s\S]*?\}/);
+    if (!m) throw new Error('loudnorm produced no measurement');
+    const j = JSON.parse(m[0]);
+    res.json({ i: +j.input_i, lra: +j.input_lra, tp: +j.input_tp, thresh: +j.input_thresh });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
 // Update check (beta item 299): compare the running version (package.json) against the newest
 // GitHub tag. Cached 1h; network failure degrades to {ok:false} silently — never blocks the UI.
 let _updCache = null, _updAt = 0;
@@ -1143,7 +1160,8 @@ app.post('/api/export/sequence', async (req, res) => {
       if (meta.height) resOpt = Math.min(resOpt, meta.height);
     }
     const crfOpt = { high: 18, compact: 23 }[req.body.quality] || 0;
-    await exportSequence(file, segs, out, { vertical, draft: req.body.draft === true, fps: fpsOpt, res: resOpt, crf: crfOpt });
+    const gainDb = Math.max(-12, Math.min(12, Number(req.body.gainDb) || 0));
+    await exportSequence(file, segs, out, { vertical, draft: req.body.draft === true, fps: fpsOpt, res: resOpt, crf: crfOpt, gainDb });
     res.json({ url: `/renders/${req.body.id}/sequence.mp4`, file: out, clips: clips.length, zoomed });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });

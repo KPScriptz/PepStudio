@@ -703,6 +703,19 @@ html.isMac .view-picker { background: rgba(12, 12, 14, 0.72); }
 .ioExport{ font-size:11px; font-weight:700; padding:0 9px !important; color:#fff !important;
   background:var(--px-accent,#2d76ff) !important; border-radius:6px; white-space:nowrap; }
 .ioExport:disabled{ opacity:.6; }
+/* Mixer card: live meter, peak light, preview/export gain. */
+.mixerBox{ margin:10px 0 6px; padding:11px; border:1px solid var(--line); border-radius:10px; background:var(--panel2); }
+.mixerBox #masterMeter{ display:block; width:100%; height:12px; margin:8px 0 4px; border-radius:3px; }
+.peakLight{ font-size:10px; font-weight:800; letter-spacing:.08em; padding:2px 8px; border-radius:5px; cursor:pointer;
+  color:var(--muted); background:rgba(127,127,127,.14); transition:background .12s, color .12s; }
+.peakLight.lit{ color:#fff; background:#ef4444; box-shadow:0 0 8px rgba(239,68,68,.6); }
+.mixGainWrap{ display:inline-flex; align-items:center; gap:5px; font-size:11px; color:var(--muted); }
+.mixGainWrap input{ width:58px; padding:4px 6px; font-size:12px; font-family:var(--font-mono);
+  color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:6px; }
+.mixerBox input[type=range]{ flex:1; -webkit-appearance:none; appearance:none; height:4px; border-radius:2px;
+  background:rgba(150,150,160,.25); cursor:pointer; }
+.mixerBox input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:12px; height:12px;
+  border-radius:50%; background:var(--px-accent,#2d76ff); border:0; cursor:pointer; }
 /* Clip Insight audio-fade inputs. */
 .ciFades{ display:flex; align-items:center; gap:10px; margin-top:8px; padding-top:8px;
   border-top:1px solid var(--line, rgba(255,255,255,.08)); font-size:11px; color:var(--muted); }

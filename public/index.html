@@ -232,6 +232,16 @@
               <div id="sizeEst" class="hint"></div>
               <div class="hint">Applies to sequence exports (Storyboard, Edit for Me, In/Out, tight cuts). Shorts stay 1080×1920 — the platform standard.</div>
             </details>
+
+            <div class="mixerBox">
+              <div class="pkHead"><span>Mixer</span><span id="peakLight" class="peakLight" title="Peak indicator — lights red on clipping; click to clear">PEAK</span></div>
+              <canvas id="masterMeter" width="240" height="12" aria-label="Master level meter"></canvas>
+              <label class="blueprintRow"><span>Preview vol</span><input id="mixPreview" type="range" min="0" max="1.4" step="0.02" value="1" /></label>
+              <label class="blueprintRow"><span>Export gain</span><span class="mixGainWrap"><input id="mixGain" type="number" min="-12" max="12" step="0.5" value="0" /> dB</span></label>
+              <div class="pkBtns"><button id="loudBtn" class="pkGhost">Measure last export (LUFS)</button></div>
+              <div id="loudOut" class="hint"></div>
+              <div class="hint">One real audio stream — this is the master. Live meter + preview volume; export gain is burned by ffmpeg. Shorts auto-normalize to −16 LUFS regardless.</div>
+            </div>
             <div class="fcRow">
               <button id="fcSetBtn" class="pkGhost">Set facecam box</button>
               <span id="fcStatus" class="fcStatus">not set — shorts use center-crop</span>

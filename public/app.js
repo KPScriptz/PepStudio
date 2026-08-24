@@ -979,6 +979,54 @@ async function buildThumbnail() {
 }
 $('#vtBtn')?.addEventListener('click', buildThumbnail);
 
+// ---- Mixer: live master meter + peak light via WebAudio on the player (the ONE real audio
+// stream), preview volume (GainNode — preview only), export gain (rides exportPrefs → ffmpeg
+// volume filter), and real EBU R128 measurement of the last export. Lazy init on first play —
+// createMediaElementSource is once-per-element and reroutes audio through the graph. ----
+let _mix = null;
+function initMixer() {
+  if (_mix || !window.AudioContext) return;
+  try {
+    const ctx = new AudioContext();
+    const src = ctx.createMediaElementSource(player);
+    const gain = ctx.createGain();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    src.connect(gain); gain.connect(analyser); analyser.connect(ctx.destination);
+    _mix = { ctx, gain, analyser, buf: new Float32Array(analyser.fftSize), peakHold: 0, clipped: false };
+    $('#mixPreview')?.addEventListener('input', (e) => { _mix.gain.gain.value = +e.target.value; });
+    $('#peakLight')?.addEventListener('click', () => { _mix.clipped = false; $('#peakLight').classList.remove('lit'); });
+    (function meter() {
+      requestAnimationFrame(meter);
+      const c = $('#masterMeter'); if (!c || !_mix) return;
+      _mix.analyser.getFloatTimeDomainData(_mix.buf);
+      let peak = 0;
+      for (let i = 0; i < _mix.buf.length; i++) { const a = Math.abs(_mix.buf[i]); if (a > peak) peak = a; }
+      _mix.peakHold = Math.max(peak, _mix.peakHold * 0.96);
+      if (peak >= 0.99 && !_mix.clipped) { _mix.clipped = true; $('#peakLight')?.classList.add('lit'); }
+      const g = c.getContext('2d'); const w = c.width, h = c.height;
+      g.clearRect(0, 0, w, h);
+      const px = Math.min(w, peak * w);
+      const grad = g.createLinearGradient(0, 0, w, 0);
+      grad.addColorStop(0, '#22c55e'); grad.addColorStop(0.75, '#f59e0b'); grad.addColorStop(0.95, '#ef4444');
+      g.fillStyle = 'rgba(127,127,127,.15)'; g.fillRect(0, 0, w, h);
+      g.fillStyle = grad; g.fillRect(0, 0, px, h);
+      g.fillStyle = '#fff'; g.fillRect(Math.min(w - 2, _mix.peakHold * w), 0, 2, h);
+    })();
+  } catch { /* WebAudio unavailable — meter stays empty, nothing breaks */ }
+}
+player.addEventListener('play', () => { initMixer(); _mix?.ctx.resume().catch(() => {}); });
+$('#loudBtn')?.addEventListener('click', async () => {
+  if (!state.proj) { toast('Load a project first.', true); return; }
+  const btn = $('#loudBtn'); const o = btn.textContent; btn.disabled = true; btn.textContent = 'Measuring…';
+  try {
+    const r = await fetch('/api/measureloudness', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: state.proj.id }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Measurement failed.');
+    $('#loudOut').textContent = `Last export: ${d.i.toFixed(1)} LUFS integrated · LRA ${d.lra.toFixed(1)} · true peak ${d.tp.toFixed(1)} dBTP`;
+  } catch (e) { toast(e.message, true); } finally { btn.disabled = false; btn.textContent = o; }
+});
+
 // ---- Update check: one non-blocking probe against the newest GitHub tag; a quiet toast only
 // when an update actually exists. Network failure = silence (never nags, never blocks). ----
 setTimeout(() => {
@@ -995,6 +1043,7 @@ function exportPrefs() {
   const res = Number($('#expRes')?.value); if (res && res !== 1080) p.res = res;
   const fps = Number($('#expFps')?.value); if (fps && fps !== 30) p.fps = fps;
   const q = $('#expQuality')?.value; if (q && q !== 'standard') p.quality = q;
+  const g = Number($('#mixGain')?.value); if (g) p.gainDb = Math.max(-12, Math.min(12, g));
   return p;
 }
 // Live "≈ size" estimate for the current kept cut — an honest heuristic from measured renders
