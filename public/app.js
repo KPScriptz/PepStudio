@@ -843,6 +843,7 @@ $('#seqExportBtn')?.addEventListener('click', async () => {
   if (!state.proj) return;
   const clips = state.highlights.filter((h) => h.keep).map((h) => ({
     start: h.start, end: h.end,
+    fadeIn: h.fadeIn || 0, fadeOut: h.fadeOut || 0,
     overlays: (h.overlays || []).filter((o) => o.content && o.content.trim()),
   }));
   if (!clips.length) return toast('Keep at least one clip to export the sequence.', true);
@@ -977,6 +978,14 @@ async function buildThumbnail() {
   } catch (e) { toast(e.message, true); } finally { btn.disabled = false; btn.textContent = o; }
 }
 $('#vtBtn')?.addEventListener('click', buildThumbnail);
+
+// ---- Update check: one non-blocking probe against the newest GitHub tag; a quiet toast only
+// when an update actually exists. Network failure = silence (never nags, never blocks). ----
+setTimeout(() => {
+  fetch('/api/updatecheck').then((r) => r.json()).then((u) => {
+    if (u && u.ok && u.newer) toast(`Update available: v${u.latest} (you're on v${u.local}) — pull + npm run dist to update.`);
+  }).catch(() => {});
+}, 4000);
 
 // ---- Export presets (resolution / fps / quality) — spread into every sequence-export request.
 // Defaults return {} so behavior is byte-identical until the user changes a setting. Quality is a
@@ -2815,7 +2824,7 @@ function scheduleStateSave() {
   _stateSaveTimer = setTimeout(() => {
     const edit = {
       keeps: (state.highlights || []).filter((h) => h.keep).map((h) => String(h.id)),
-      clips: (state.highlights || []).map((h) => ({ id: String(h.id), start: h.start, end: h.end, title: h.title || '', keep: !!h.keep, score: h.score || 0 })),
+      clips: (state.highlights || []).map((h) => ({ id: String(h.id), start: h.start, end: h.end, title: h.title || '', keep: !!h.keep, score: h.score || 0, fadeIn: h.fadeIn || 0, fadeOut: h.fadeOut || 0 })),
       markers: (state.markers || []).map((m) => ({ t: m.t, label: m.label || '' })),
       inPoint: state.inPoint, outPoint: state.outPoint,
     };
@@ -2934,8 +2943,22 @@ function renderClipInsight() {
   box.innerHTML = `<div class="ciHead">Clip Insight<span class="ciClose" title="close">×</span></div>`
     + `<div class="ciChain">${chain.join('')}</div>${alts}`
     + `<div class="ciScores">${bar('Story', sc.story)}${bar('Humor', sc.humor)}${bar('Context', sc.context)}${bar('Callback', sc.callback)}${bar('Retention', sc.retention)}</div>`
-    + `${s.why ? `<div class="ciWhy">${s.why}</div>` : ''}${debt}`;
+    + `${s.why ? `<div class="ciWhy">${s.why}</div>` : ''}${debt}`
+    + `<div class="ciFades"><span>Audio fade</span>`
+    + `<label>in <input type="number" class="ciFadeIn" min="0" max="3" step="0.1" value="${h.fadeIn || 0}"/>s</label>`
+    + `<label>out <input type="number" class="ciFadeOut" min="0" max="3" step="0.1" value="${h.fadeOut || 0}"/>s</label></div>`;
   box.querySelector('.ciClose')?.addEventListener('click', () => { state.selClip = null; box.classList.add('hidden'); renderTracks(); });
+  // Per-clip audio fades (0–3s) — applied at export (afade in the sequence pipeline); every cut
+  // already gets a 4ms anti-pop micro-fade even at 0.
+  const clampFade = (v) => Math.max(0, Math.min(3, Number(v) || 0));
+  box.querySelector('.ciFadeIn')?.addEventListener('change', (e) => {
+    h.fadeIn = clampFade(e.target.value); e.target.value = h.fadeIn;
+    logEdit('fade', { id: h.id, fadeIn: h.fadeIn });
+  });
+  box.querySelector('.ciFadeOut')?.addEventListener('change', (e) => {
+    h.fadeOut = clampFade(e.target.value); e.target.value = h.fadeOut;
+    logEdit('fade', { id: h.id, fadeOut: h.fadeOut });
+  });
 }
 
 // ---- "Edit for Me": the one-click auto-pilot. Assembles the best moments (the Story Cut
@@ -2952,6 +2975,7 @@ async function autoEdit() {
   const { kept, total } = assembleStoryCut();   // pick + order the best moments
   const clips = state.highlights.filter((h) => h.keep).sort((a, b) => a.start - b.start).map((h) => ({
     start: h.start, end: h.end,
+    fadeIn: h.fadeIn || 0, fadeOut: h.fadeOut || 0,
     overlays: (h.overlays || []).filter((o) => o.content && o.content.trim()),
   }));
   if (!clips.length) { toast('No strong moments found to edit — try Rank funny moments first.', true); return; }

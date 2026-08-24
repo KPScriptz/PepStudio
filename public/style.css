@@ -703,6 +703,12 @@ html.isMac .view-picker { background: rgba(12, 12, 14, 0.72); }
 .ioExport{ font-size:11px; font-weight:700; padding:0 9px !important; color:#fff !important;
   background:var(--px-accent,#2d76ff) !important; border-radius:6px; white-space:nowrap; }
 .ioExport:disabled{ opacity:.6; }
+/* Clip Insight audio-fade inputs. */
+.ciFades{ display:flex; align-items:center; gap:10px; margin-top:8px; padding-top:8px;
+  border-top:1px solid var(--line, rgba(255,255,255,.08)); font-size:11px; color:var(--muted); }
+.ciFades label{ display:inline-flex; align-items:center; gap:4px; margin:0; font-size:11px; color:var(--muted); }
+.ciFades input{ width:52px; padding:3px 5px; font-size:11.5px; font-family:var(--font-mono);
+  color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:5px; }
 /* Monitor guides overlay (thirds / safe / crosshair) — cyan hairlines over the displayed frame. */
 .monGuides{ position:absolute; pointer-events:none; z-index:5; }
 .monGuides svg line, .monGuides svg rect, .monGuides svg circle{

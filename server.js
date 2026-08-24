@@ -238,6 +238,27 @@ app.post('/api/prefs', async (req, res) => {
 // throw from any probe became an unhandled rejection, Express never replied, and the UI sat on a
 // blank status forever — most likely on a fresh install where the external tools are missing.
 // Each probe is now individually defaulted, so one absent tool can't take the whole route down.
+// Update check (beta item 299): compare the running version (package.json) against the newest
+// GitHub tag. Cached 1h; network failure degrades to {ok:false} silently — never blocks the UI.
+let _updCache = null, _updAt = 0;
+app.get('/api/updatecheck', async (req, res) => {
+  try {
+    if (_updCache && Date.now() - _updAt < 3600e3) return res.json(_updCache);
+    const local = JSON.parse(await fsp.readFile(path.join(__dirname, 'package.json'), 'utf8')).version;
+    const r = await fetch('https://api.github.com/repos/KPScriptz/PepStudio/tags?per_page=1', {
+      headers: { accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(6000),
+    });
+    if (!r.ok) throw new Error(`github ${r.status}`);
+    const tags = await r.json();
+    const latest = String(tags[0]?.name || '').replace(/^v/, '');
+    const num = (v) => String(v).split('-')[0].split('.').map((n) => parseInt(n, 10) || 0);
+    const cmp = (a, b) => { const [x, y] = [num(a), num(b)]; for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0); } return 0; };
+    _updCache = { ok: true, local, latest, newer: !!latest && cmp(latest, local) > 0 };
+    _updAt = Date.now();
+    res.json(_updCache);
+  } catch { res.json({ ok: false }); }
+});
+
 app.get('/api/status', async (req, res) => {
   const safe = async (fn, fallback) => { try { return await fn(); } catch { return fallback; } };
   try {
