@@ -33,6 +33,8 @@ import { findOutliers, pacingMetrics, aggregateBenchmark, suggestFromBenchmark }
 import { scoreHook, hookCandidates } from './lib/hooks.js';
 import { buildChapters, suggestHashtags, buildDescription } from './lib/publishkit.js';
 import { coverCandidates } from './lib/thumbnails.js';
+import { buildViralThumb } from './lib/thumbstudio.js';
+import { DRAWTEXT_FONT } from './lib/exporter.js';
 import { consumeFeedback } from './lib/feedbackConsumer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -670,6 +672,26 @@ app.post('/api/facecam', async (req, res) => {
     a.facecam = ok ? { x: r.x, y: r.y, w: r.w, h: r.h } : null;   // null clears it
     await fsp.writeFile(p, JSON.stringify(a), 'utf8');
     res.json({ facecam: a.facecam });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
+// Thumbnail Studio: compose a creator-style thumbnail from a peak frame + the project's facecam
+// box + 1-3 words of text. Pure ffmpeg; falls back to background+text when no facecam box is set.
+app.post('/api/thumbstudio', async (req, res) => {
+  try {
+    const file = await sourceFor(req.body.id);
+    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const t = Math.max(0, Number(req.body.t) || 0);
+    const meta = await probe(file);
+    // Prefer the rect in the request; else the one persisted on the project's analysis.
+    let rect = req.body.facecam || null;
+    if (!rect) {
+      try { rect = JSON.parse(await fsp.readFile(path.join(DATA, req.body.id, 'analysis.json'), 'utf8')).facecam || null; } catch {}
+    }
+    const out = path.join(RENDERS, req.body.id, `thumbnail-${t.toFixed(1)}.jpg`);
+    await buildViralThumb(file, t, rect, req.body.text || '', out,
+      { fontFile: DRAWTEXT_FONT, srcW: meta.width || 1920, srcH: meta.height || 1080, badge: req.body.badge || '' });
+    res.json({ url: `/renders/${req.body.id}/${path.basename(out)}`, file: out, usedFacecam: !!rect });
   } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
 

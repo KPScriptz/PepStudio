@@ -952,6 +952,32 @@ async function suggestCovers() {
 }
 $('#cpBtn')?.addEventListener('click', suggestCovers);
 
+// ---- Thumbnail Studio: one-click creator thumbnail — peak frame background (saturated + blurred),
+// the facecam box as the face layer with a cyan rim-glow, bold stroke text, optional badge pill.
+// Text defaults to the active clip's title (real transcript-derived words, never canned clickbait).
+async function buildThumbnail() {
+  const btn = $('#vtBtn'); if (!btn) return;
+  if (!state.proj) { toast('Load and analyze a video first.', true); return; }
+  const clip = activeClip();
+  const t = clip ? (Number.isFinite(clip.t) ? clip.t : (clip.start + clip.end) / 2) : (player.currentTime || 1);
+  const suggested = ((clip && clip.title) || '').split(' ').slice(0, 3).join(' ').toUpperCase();
+  const text = prompt('Thumbnail text (1–3 words):', suggested || 'CLIPPED');
+  if (text == null) return;
+  const o = btn.textContent; btn.disabled = true; btn.textContent = 'Composing…';
+  try {
+    const res = await fetch('/api/thumbstudio', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: state.proj.id, t, text, facecam: state.facecam || undefined, badge: 'STREAM HIGHLIGHTS' }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Thumbnail failed.');
+    addOutput('Thumbnail', data, 'thumb');
+    logEdit('thumb_studio', { t: +t.toFixed(1), usedFacecam: !!data.usedFacecam });
+    toast(`Thumbnail composed${data.usedFacecam ? ' with facecam layer' : ' (no facecam box set — background + text only)'} ✓`);
+  } catch (e) { toast(e.message, true); } finally { btn.disabled = false; btn.textContent = o; }
+}
+$('#vtBtn')?.addEventListener('click', buildThumbnail);
+
 // ---- Micro-cut Pacing: jump-cut internal dead air out of the top moment. Preview shows the gain
 // per level; export renders the tightened sub-segments through the existing sequence pipeline. ----
 // The clip the context tools (Covers, Micro-Cut) act on: the clip explicitly SELECTED on the
