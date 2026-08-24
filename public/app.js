@@ -854,7 +854,7 @@ $('#seqExportBtn')?.addEventListener('click', async () => {
   if (!state.proj) return;
   const clips = state.highlights.filter((h) => h.keep).map((h) => ({
     start: h.start, end: h.end,
-    fadeIn: h.fadeIn || 0, fadeOut: h.fadeOut || 0,
+    fadeIn: h.fadeIn || 0, fadeOut: h.fadeOut || 0, speed: h.speed || 1,
     overlays: (h.overlays || []).filter((o) => o.content && o.content.trim()),
   }));
   if (!clips.length) return toast('Keep at least one clip to export the sequence.', true);
@@ -1264,6 +1264,8 @@ function exportPrefs() {
   const g = Number($('#mixGain')?.value); if (g) p.gainDb = Math.max(-12, Math.min(12, g));
   const vs = $('#expVert')?.value; if (vs && vs !== 'crop') p.vstyle = vs;
   if ($('#expNorm')?.checked) p.normalize = true;
+  if ($('#expClean')?.checked) p.voiceclean = true;
+  if ($('#expBleep')?.checked) p.bleep = true;
   return p;
 }
 // Live "≈ size" estimate for the current kept cut — an honest heuristic from measured renders
@@ -3093,7 +3095,7 @@ function scheduleStateSave() {
   _stateSaveTimer = setTimeout(() => {
     const edit = {
       keeps: (state.highlights || []).filter((h) => h.keep).map((h) => String(h.id)),
-      clips: (state.highlights || []).map((h) => ({ id: String(h.id), start: h.start, end: h.end, title: h.title || '', keep: !!h.keep, score: h.score || 0, fadeIn: h.fadeIn || 0, fadeOut: h.fadeOut || 0 })),
+      clips: (state.highlights || []).map((h) => ({ id: String(h.id), start: h.start, end: h.end, title: h.title || '', keep: !!h.keep, score: h.score || 0, fadeIn: h.fadeIn || 0, fadeOut: h.fadeOut || 0, speed: h.speed || 1 })),
       markers: (state.markers || []).map((m) => ({ t: m.t, label: m.label || '' })),
       inPoint: state.inPoint, outPoint: state.outPoint,
     };
@@ -3215,7 +3217,9 @@ function renderClipInsight() {
     + `${s.why ? `<div class="ciWhy">${s.why}</div>` : ''}${debt}`
     + `<div class="ciFades"><span>Audio fade</span>`
     + `<label>in <input type="number" class="ciFadeIn" min="0" max="3" step="0.1" value="${h.fadeIn || 0}"/>s</label>`
-    + `<label>out <input type="number" class="ciFadeOut" min="0" max="3" step="0.1" value="${h.fadeOut || 0}"/>s</label></div>`;
+    + `<label>out <input type="number" class="ciFadeOut" min="0" max="3" step="0.1" value="${h.fadeOut || 0}"/>s</label></div>`
+    + `<div class="ciFades"><span>Speed</span>`
+    + `<label><input type="number" class="ciSpeed" min="0.25" max="4" step="0.05" value="${h.speed || 1}"/>× — slow-mo/speed-up at export, pitch preserved</label></div>`;
   box.querySelector('.ciClose')?.addEventListener('click', () => { state.selClip = null; box.classList.add('hidden'); renderTracks(); });
   // Per-clip audio fades (0–3s) — applied at export (afade in the sequence pipeline); every cut
   // already gets a 4ms anti-pop micro-fade even at 0.
@@ -3227,6 +3231,13 @@ function renderClipInsight() {
   box.querySelector('.ciFadeOut')?.addEventListener('change', (e) => {
     h.fadeOut = clampFade(e.target.value); e.target.value = h.fadeOut;
     logEdit('fade', { id: h.id, fadeOut: h.fadeOut });
+  });
+  // Per-clip playback speed (0.25–4x) — applied at export (video PTS + pitch-preserving atempo).
+  box.querySelector('.ciSpeed')?.addEventListener('change', (e) => {
+    const v = Math.max(0.25, Math.min(4, Number(e.target.value) || 1));
+    h.speed = v; e.target.value = v;
+    logEdit('speed', { id: h.id, speed: v });
+    scheduleStateSave();
   });
 }
 
@@ -3244,7 +3255,7 @@ async function autoEdit() {
   const { kept, total } = assembleStoryCut();   // pick + order the best moments
   const clips = state.highlights.filter((h) => h.keep).sort((a, b) => a.start - b.start).map((h) => ({
     start: h.start, end: h.end,
-    fadeIn: h.fadeIn || 0, fadeOut: h.fadeOut || 0,
+    fadeIn: h.fadeIn || 0, fadeOut: h.fadeOut || 0, speed: h.speed || 1,
     overlays: (h.overlays || []).filter((o) => o.content && o.content.trim()),
   }));
   if (!clips.length) { toast('No strong moments found to edit — try Rank funny moments first.', true); return; }

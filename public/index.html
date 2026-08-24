@@ -253,6 +253,12 @@
               <label class="blueprintRow" title="Post-pass on the finished mix: measure real integrated LUFS, apply the exact offset, brickwall-limit at −1 dBTP."><span>Normalize</span>
                 <span class="mixGainWrap"><input id="expNorm" type="checkbox" /> hit −14 LUFS (YouTube) on export</span>
               </label>
+              <label class="blueprintRow" title="80 Hz high-pass (rumble/handling noise) + ffmpeg's built-in FFT denoiser on the export."><span>Voice clean</span>
+                <span class="mixGainWrap"><input id="expClean" type="checkbox" /> rumble cut + de-noise on export</span>
+              </label>
+              <label class="blueprintRow" title="Word-accurate: whisper finds each profanity token and the export silences exactly that span. Conservative list — a token must BE the word, so clean words never match."><span>Profanity</span>
+                <span class="mixGainWrap"><input id="expBleep" type="checkbox" /> mute cursing on export (needs whisper)</span>
+              </label>
               <div class="pkBtns"><button id="loudBtn" class="pkGhost">Measure last export (LUFS)</button></div>
               <div id="loudOut" class="hint"></div>
               <div class="hint">One real audio stream — this is the master. Live meter + preview volume; export gain is burned by ffmpeg. Normalize runs last (after music), so it wins over gain. Shorts auto-normalize to −16 LUFS regardless.</div>

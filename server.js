@@ -1277,6 +1277,11 @@ app.post('/api/pepai/chat', async (req, res) => {
   }
 });
 
+// Profanity token matcher for the mute pass. Prefix-wildcards catch derivatives (fucking,
+// shitty); exact-only where a prefix would collide with clean words (no bare "ass"/"cock"/
+// "dick" — assist, cocktail, and the name Dick are not profanity).
+const PROFANITY = /^(fuck\w*|shit\w*|bitch\w*|cunt\w*|asshole\w*|motherfuck\w*|dickhead\w*|pussy|bastard\w*|goddamn\w*|nigg\w+|fagg\w+|retard\w*)$/;
+
 app.post('/api/export/sequence', async (req, res) => {
   try {
     const src = await sourceForChecked(req.body.id);
@@ -1287,15 +1292,34 @@ app.post('/api/export/sequence', async (req, res) => {
 
     // Zoom parity with the TikTok pack: ONE batched whisper pass over the clips → per-clip
     // emphasis chunks → punch-in zoom filter, attached to each segment. Off the hot path.
+    // The same pass also feeds the profanity mute, so zoom+bleep never transcribe twice.
     let segs = clips;
     let zoomed = false;
+    let mutedWords = 0;
     const cap = captionsReady();
-    if (req.body.zoom !== false && cap.bin && cap.model) {
-      const transcribed = await transcribeWindows(file, clips);
-      segs = clips.map((c, i) => {
+    const wantZoom = req.body.zoom !== false && cap.bin && cap.model;
+    const wantBleep = req.body.bleep === true && cap.bin && cap.model;
+    let transcribed = null;
+    if (wantZoom || wantBleep) transcribed = await transcribeWindows(file, clips);
+    if (wantZoom) {
+      segs = segs.map((c, i) => {
         const z = buildTimelineZoomExpression(emphasisChunks(transcribed[i]?.words || [], c.start), 0);
         if (z.hasZoom) { zoomed = true; return { ...c, zoomFilter: z.filter }; }
         return c;
+      });
+    }
+    // Profanity mute (beta item 186): silence the exact word spans. Conservative by the
+    // fillers.js philosophy — a whisper token matches only when the token ITSELF is the
+    // profanity, so clean words can never collide. Times stay clip-relative SOURCE seconds;
+    // the exporter converts them to output time (speed-aware).
+    if (wantBleep) {
+      segs = segs.map((c, i) => {
+        const mutes = (transcribed[i]?.words || [])
+          .filter((w) => PROFANITY.test(String(w.w || '').toLowerCase().replace(/[^a-z']/g, '')))
+          .map((w) => [Math.max(0, w.t0 - c.start), Math.min(c.end - c.start, w.t1 - c.start)])
+          .filter(([a, b]) => b > a);
+        mutedWords += mutes.length;
+        return mutes.length ? { ...c, mutes } : c;
       });
     }
 
@@ -1323,7 +1347,7 @@ app.post('/api/export/sequence', async (req, res) => {
     } catch {}
     // Vertical style: hard crop-to-fill (default) or blur-fill (full frame on a blurred copy).
     const vstyle = req.body.vstyle === 'blur' ? 'blur' : 'crop';
-    await exportSequence(file, segs, out, { vertical, draft: req.body.draft === true, fps: fpsOpt, res: resOpt, crf: crfOpt, gainDb, lut: lutPath, look, watermark, vstyle });
+    await exportSequence(file, segs, out, { vertical, draft: req.body.draft === true, fps: fpsOpt, res: resOpt, crf: crfOpt, gainDb, lut: lutPath, look, watermark, vstyle, voiceclean: req.body.voiceclean === true });
     // Project music post-pass: mix the attached track over the finished render (video stream-
     // copied — seconds, not a re-encode). music:false in the request skips it for one export.
     let musicApplied = false;
@@ -1344,7 +1368,7 @@ app.post('/api/export/sequence', async (req, res) => {
       try { normalized = await normalizeLoudness(out, { targetI: -14, tp: -1 }); }
       catch (e) { console.log('[normalize] post-pass skipped:', String(e.message || e)); }
     }
-    res.json({ url: `/renders/${req.body.id}/sequence.mp4`, file: out, clips: clips.length, zoomed, music: musicApplied, normalized });
+    res.json({ url: `/renders/${req.body.id}/sequence.mp4`, file: out, clips: clips.length, zoomed, music: musicApplied, normalized, muted: mutedWords });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }
