@@ -851,7 +851,7 @@ $('#seqExportBtn')?.addEventListener('click', async () => {
   try {
     const res = await fetch('/api/export/sequence', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: state.proj.id, clips, vertical: true }),
+      body: JSON.stringify({ ...exportPrefs(), id: state.proj.id, clips, vertical: true }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
@@ -977,6 +977,33 @@ async function buildThumbnail() {
   } catch (e) { toast(e.message, true); } finally { btn.disabled = false; btn.textContent = o; }
 }
 $('#vtBtn')?.addEventListener('click', buildThumbnail);
+
+// ---- Export presets (resolution / fps / quality) — spread into every sequence-export request.
+// Defaults return {} so behavior is byte-identical until the user changes a setting. Quality is a
+// CRF preset, NOT a bitrate slider: the pipeline is CRF-based by benchmarked policy.
+function exportPrefs() {
+  const p = {};
+  const res = Number($('#expRes')?.value); if (res && res !== 1080) p.res = res;
+  const fps = Number($('#expFps')?.value); if (fps && fps !== 30) p.fps = fps;
+  const q = $('#expQuality')?.value; if (q && q !== 'standard') p.quality = q;
+  return p;
+}
+// Live "≈ size" estimate for the current kept cut — an honest heuristic from measured renders
+// (1080p30 standard ≈ 5.5 Mbps on this pipeline), scaled by the preset factors.
+function updateSizeEst() {
+  const el = $('#sizeEst'); if (!el) return;
+  const dur = (state.seqMap && state.seqMap.total) || 0;
+  if (!dur) { el.textContent = ''; return; }
+  const res = Number($('#expRes')?.value) || 1080;
+  const fps = Number($('#expFps')?.value) || 30;
+  const q = $('#expQuality')?.value || 'standard';
+  const mbps = 5.5 * ({ 720: 0.5, 1080: 1, 1440: 1.7 }[res] || 1)
+    * ({ 24: 0.85, 30: 1, 60: 1.55 }[fps] || 1)
+    * ({ high: 1.35, standard: 1, compact: 0.7 }[q] || 1);
+  el.textContent = `≈ ${(dur * mbps / 8 / 1024).toFixed(dur * mbps / 8 / 1024 < 1 ? 2 : 1)} GB estimated for the current ${fmt(dur)} cut`;
+}
+['expRes', 'expFps', 'expQuality'].forEach((id) => $(`#${id}`)?.addEventListener('change', updateSizeEst));
+$('#exportSettings')?.addEventListener('toggle', updateSizeEst);
 
 // ---- Monitor guides (thirds / safe margins / crosshair) — composition overlays sized to the
 // DISPLAYED video rect (object-fit-contain math, same as the facecam drawer) so lines align to
@@ -1131,7 +1158,7 @@ async function runTightPacing() {
     const clips = pr.segments.map((g) => ({ start: g.start, end: g.end, overlays: [] }));
     const res = await fetch('/api/export/sequence', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: state.proj.id, vertical: !seq, zoom: false, clips }),
+      body: JSON.stringify({ ...exportPrefs(), id: state.proj.id, vertical: !seq, zoom: false, clips }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Export failed.');
@@ -1219,6 +1246,7 @@ async function runCleanCut() {
     const res = await fetch('/api/export/sequence', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        ...exportPrefs(),
         id: state.proj.id, vertical: false, zoom: false,
         clips: d.segments.map((g) => ({ start: g.start, end: g.end, overlays: [] })),
       }),
@@ -2373,7 +2401,7 @@ $('#ioExportBtn')?.addEventListener('click', async () => {
   try {
     const res = await fetch('/api/export/sequence', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: state.proj.id, vertical: false, zoom: false, clips: [{ start: a, end: b, overlays: [] }] }),
+      body: JSON.stringify({ ...exportPrefs(), id: state.proj.id, vertical: false, zoom: false, clips: [{ start: a, end: b, overlays: [] }] }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Export failed.');
@@ -2936,7 +2964,7 @@ async function autoEdit() {
       // zoom:false = skip the batched whisper pass + per-frame emphasis-zoom rescale
       // (that eval=frame lanczos caps encode at ~14fps). The one-click stays fast + clean;
       // the manual "Render sequence" keeps the polished punch-ins.
-      body: JSON.stringify({ id: state.proj.id, clips, vertical: true, zoom: false }),
+      body: JSON.stringify({ ...exportPrefs(), id: state.proj.id, clips, vertical: true, zoom: false }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Export failed.');
@@ -3042,7 +3070,7 @@ async function storyboardCut() {
     showProgress(`Editing your ${fmt(finalSec)} story package…`);
     const res = await fetch('/api/export/sequence', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: state.proj.id, clips, vertical: false, zoom: false }),
+      body: JSON.stringify({ ...exportPrefs(), id: state.proj.id, clips, vertical: false, zoom: false }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Export failed.');

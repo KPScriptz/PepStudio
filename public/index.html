@@ -205,6 +205,33 @@
                 <option value="minimal">Minimal Studio — small, low-key</option>
               </select>
             </label>
+
+            <details class="advanced" id="exportSettings">
+              <summary>Export settings</summary>
+              <label class="blueprintRow"><span>Resolution</span>
+                <select id="expRes" class="blueprintSel">
+                  <option value="720">720p — compact</option>
+                  <option value="1080" selected>1080p (default)</option>
+                  <option value="1440">1440p — never upscaled</option>
+                </select>
+              </label>
+              <label class="blueprintRow"><span>Frame rate</span>
+                <select id="expFps" class="blueprintSel">
+                  <option value="24">24 fps — filmic</option>
+                  <option value="30" selected>30 fps (default)</option>
+                  <option value="60">60 fps — full motion</option>
+                </select>
+              </label>
+              <label class="blueprintRow"><span>Quality</span>
+                <select id="expQuality" class="blueprintSel">
+                  <option value="high">High — bigger files (CRF 18)</option>
+                  <option value="standard" selected>Standard (default)</option>
+                  <option value="compact">Compact — smaller files (CRF 23)</option>
+                </select>
+              </label>
+              <div id="sizeEst" class="hint"></div>
+              <div class="hint">Applies to sequence exports (Storyboard, Edit for Me, In/Out, tight cuts). Shorts stay 1080×1920 — the platform standard.</div>
+            </details>
             <div class="fcRow">
               <button id="fcSetBtn" class="pkGhost">Set facecam box</button>
               <span id="fcStatus" class="fcStatus">not set — shorts use center-crop</span>

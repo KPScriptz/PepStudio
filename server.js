@@ -1112,7 +1112,17 @@ app.post('/api/export/sequence', async (req, res) => {
 
     const out = path.join(RENDERS, req.body.id, 'sequence.mp4');
     await fsp.mkdir(path.dirname(out), { recursive: true });
-    await exportSequence(file, segs, out, { vertical: req.body.vertical !== false, draft: req.body.draft === true, fps: req.body.fps });
+    // Export presets (whitelisted): resolution, fps, quality→CRF. Horizontal res is clamped to
+    // the source height so a preset can never upscale; 'standard' keeps the benchmarked default.
+    const vertical = req.body.vertical !== false;
+    const fpsOpt = [24, 30, 60].includes(Number(req.body.fps)) ? Number(req.body.fps) : req.body.fps;
+    let resOpt = [720, 1080, 1440].includes(Number(req.body.res)) ? Number(req.body.res) : 0;
+    if (resOpt && !vertical) {
+      const meta = await probe(file);
+      if (meta.height) resOpt = Math.min(resOpt, meta.height);
+    }
+    const crfOpt = { high: 18, compact: 23 }[req.body.quality] || 0;
+    await exportSequence(file, segs, out, { vertical, draft: req.body.draft === true, fps: fpsOpt, res: resOpt, crf: crfOpt });
     res.json({ url: `/renders/${req.body.id}/sequence.mp4`, file: out, clips: clips.length, zoomed });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
