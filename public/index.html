@@ -242,6 +242,24 @@
               <div id="loudOut" class="hint"></div>
               <div class="hint">One real audio stream — this is the master. Live meter + preview volume; export gain is burned by ffmpeg. Shorts auto-normalize to −16 LUFS regardless.</div>
             </div>
+
+            <div class="musicBox">
+              <div class="pkHead"><span>Music</span><span id="musStatus" class="fcStatus">none attached</span></div>
+              <div class="row" style="margin-top:8px">
+                <input id="musPath" type="text" spellcheck="false" placeholder="~/Music/track.mp3 — path to YOUR audio file" />
+                <button id="musAttach" class="pkGhost">Attach</button>
+                <button id="musClear" class="pkGhost hidden">Clear</button>
+              </div>
+              <label class="blueprintRow"><span>Music level</span><input id="musVol" type="range" min="0.05" max="0.4" step="0.01" value="0.15" /></label>
+              <label class="blueprintRow"><span>Auto-duck</span>
+                <select id="musDuck" class="blueprintSel">
+                  <option value="gentle" selected>Gentle — dips under speech</option>
+                  <option value="strong">Strong — hard duck</option>
+                  <option value="off">Off — constant level</option>
+                </select>
+              </label>
+              <div class="hint">Loops under every sequence export, fades out at the end, and ducks under your audio (real sidechain compression). Heads-up: constant game/crowd noise keys the duck too, so on gameplay VODs the dip is subtle (≈3–6 dB); it recovers fully in true pauses. Your file, never bundled.</div>
+            </div>
             <div class="fcRow">
               <button id="fcSetBtn" class="pkGhost">Set facecam box</button>
               <span id="fcStatus" class="fcStatus">not set — shorts use center-crop</span>

@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFile } from 'node:child_process';
 
 import { analyze, analyzeAudio, analyzeVideo } from './lib/analyze.js';
-import { exportLongCut, exportShort, grabFrame, canBurnCaptions, exportSequence } from './lib/exporter.js';
+import { exportLongCut, exportShort, grabFrame, canBurnCaptions, exportSequence, mixMusicOnto } from './lib/exporter.js';
 import { generateCaptions, generateCutCaptions, captionsReady, transcribeRange, transcribeWindows, emphasisChunks, whisperFastModel } from './lib/captions.js';
 import { scoreWindow } from './lib/reactions.js';
 import { heuristicMeta, smartTitle } from './lib/titles.js';
@@ -238,6 +238,32 @@ app.post('/api/prefs', async (req, res) => {
 // throw from any probe became an unhandled rejection, Express never replied, and the UI sat on a
 // blank status forever — most likely on a fresh install where the external tools are missing.
 // Each probe is now individually defaulted, so one absent tool can't take the whole route down.
+// Project music: attach ONE user-supplied audio file (path validated + audio extension) that
+// every sequence export mixes in — looped to length, faded out, auto-ducked under speech.
+// Persisted in the analysis like the facecam box; null clears.
+app.post('/api/music', async (req, res) => {
+  try {
+    const id = req.body.id;
+    const p = path.join(DATA, id || '', 'analysis.json');
+    if (!id || !fs.existsSync(p)) return res.status(404).json({ error: 'Unknown project id' });
+    const a = JSON.parse(await fsp.readFile(p, 'utf8'));
+    const m = req.body.music;
+    if (m === null || m === undefined) { a.music = null; }
+    else {
+      const mp = tildeExpand(String(m.path || '').trim());
+      if (!mp || !fs.existsSync(mp)) return res.status(400).json({ error: `Music file not found: ${mp || '(empty)'}` });
+      if (!/\.(mp3|wav|m4a|aac|flac|ogg)$/i.test(mp)) return res.status(400).json({ error: 'Not an audio file (mp3/wav/m4a/aac/flac/ogg).' });
+      a.music = {
+        path: mp, name: path.basename(mp),
+        volume: Math.max(0.03, Math.min(0.6, Number(m.volume) || 0.15)),
+        duck: ['off', 'gentle', 'strong'].includes(m.duck) ? m.duck : 'gentle',
+      };
+    }
+    await fsp.writeFile(p, JSON.stringify(a), 'utf8');
+    res.json({ music: a.music });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
 // Mixer: measure REAL EBU R128 loudness of the last sequence export (integrated LUFS, loudness
 // range, true peak) via ffmpeg's loudnorm analysis pass — actual measurement, not a live-meter
 // simulation. Audio-only decode of the rendered file, so it's a few seconds.
@@ -1162,7 +1188,19 @@ app.post('/api/export/sequence', async (req, res) => {
     const crfOpt = { high: 18, compact: 23 }[req.body.quality] || 0;
     const gainDb = Math.max(-12, Math.min(12, Number(req.body.gainDb) || 0));
     await exportSequence(file, segs, out, { vertical, draft: req.body.draft === true, fps: fpsOpt, res: resOpt, crf: crfOpt, gainDb });
-    res.json({ url: `/renders/${req.body.id}/sequence.mp4`, file: out, clips: clips.length, zoomed });
+    // Project music post-pass: mix the attached track over the finished render (video stream-
+    // copied — seconds, not a re-encode). music:false in the request skips it for one export.
+    let musicApplied = false;
+    if (req.body.music !== false) {
+      try {
+        const a = JSON.parse(await fsp.readFile(path.join(DATA, req.body.id, 'analysis.json'), 'utf8'));
+        if (a.music && a.music.path) {
+          await mixMusicOnto(out, a.music.path, { volume: a.music.volume, duck: a.music.duck });
+          musicApplied = true;
+        }
+      } catch (e) { console.log('[music] post-pass skipped:', String(e.message || e)); }
+    }
+    res.json({ url: `/renders/${req.body.id}/sequence.mp4`, file: out, clips: clips.length, zoomed, music: musicApplied });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }

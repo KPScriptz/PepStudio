@@ -716,6 +716,14 @@ html.isMac .view-picker { background: rgba(12, 12, 14, 0.72); }
   background:rgba(150,150,160,.25); cursor:pointer; }
 .mixerBox input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:12px; height:12px;
   border-radius:50%; background:var(--px-accent,#2d76ff); border:0; cursor:pointer; }
+/* Music card (project track attach). */
+.musicBox{ margin:10px 0 6px; padding:11px; border:1px solid var(--line); border-radius:10px; background:var(--panel2); }
+.musicBox .row{ display:flex; gap:6px; }
+.musicBox #musPath{ flex:1; min-width:0; font-size:12px; }
+.musicBox input[type=range]{ flex:1; -webkit-appearance:none; appearance:none; height:4px; border-radius:2px;
+  background:rgba(150,150,160,.25); cursor:pointer; }
+.musicBox input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:12px; height:12px;
+  border-radius:50%; background:var(--px-accent,#2d76ff); border:0; cursor:pointer; }
 /* Clip Insight audio-fade inputs. */
 .ciFades{ display:flex; align-items:center; gap:10px; margin-top:8px; padding-top:8px;
   border-top:1px solid var(--line, rgba(255,255,255,.08)); font-size:11px; color:var(--muted); }

@@ -368,6 +368,8 @@ function loadProject(data) {
   if (typeof renderHookLab === 'function') renderHookLab({});   // reset cold-open health for the new project
   state.facecam = data.facecam || null;                          // per-project facecam box (persisted in analysis)
   if (typeof renderFcStatus === 'function') renderFcStatus();
+  state.music = data.music || null;                              // per-project music track (mixed into sequence exports)
+  if (typeof renderMusicStatus === 'function') setTimeout(renderMusicStatus, 0);
   if (typeof resetUndoBaseline === 'function') setTimeout(resetUndoBaseline, 0);   // undo history starts at the loaded state
   if (data.videoReady) {
     const st = data.phantasmStats || {};
@@ -683,6 +685,7 @@ function renderTracks() {
     aSpeech.push(blk('speech', pct(s), pct(d), '', null, waveform(h)));
     const auto = h.automation || {};
     if (auto.bgMusic && auto.bgMusic.path) aMusic.push(blk('music', pct(s), pct(d), 'music'));
+    if (state.music && !aMusic.length) aMusic.push(blk('music', 0, 100, escapeHtml(state.music.name || 'music'), 'Project music — loops under the cut, ducks under speech'));
     (auto.sfxTrack || []).forEach((sfx) => aSfx.push(blk('sfx', pct(s + (sfx.time || 0)), 1.2, '◆', `SFX @ ${(sfx.time || 0)}s`)));
     (h.overlays || []).forEach((ov) => {
       const os = s + (ov.startTime ?? 0); const oe = s + (ov.endTime ?? d);
@@ -1026,6 +1029,39 @@ $('#loudBtn')?.addEventListener('click', async () => {
     $('#loudOut').textContent = `Last export: ${d.i.toFixed(1)} LUFS integrated · LRA ${d.lra.toFixed(1)} · true peak ${d.tp.toFixed(1)} dBTP`;
   } catch (e) { toast(e.message, true); } finally { btn.disabled = false; btn.textContent = o; }
 });
+
+// ---- Project music: attach a user-supplied audio file — persisted on the project (like the
+// facecam box) and mixed into every sequence export (looped, faded out, sidechain-ducked). ----
+function renderMusicStatus() {
+  const st = $('#musStatus'); if (!st) return;
+  const m = state.music;
+  st.textContent = m ? `${m.name} · vol ${Math.round(m.volume * 100)}% · duck ${m.duck}` : 'none attached';
+  $('#musClear')?.classList.toggle('hidden', !m);
+  if (m) { const v = $('#musVol'); if (v) v.value = m.volume; const d = $('#musDuck'); if (d) d.value = m.duck; }
+  if (typeof renderTracks === 'function') renderTracks();   // A2 lane block reflects attachment
+}
+async function saveMusic(music) {
+  if (!state.proj) { toast('Load a project first.', true); return; }
+  try {
+    const r = await fetch('/api/music', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: state.proj.id, music }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Music save failed.');
+    state.music = d.music;
+    renderMusicStatus();
+    toast(d.music ? `Music attached: ${d.music.name} — mixes into every sequence export.` : 'Music cleared.');
+  } catch (e) { toast(e.message, true); }
+}
+$('#musAttach')?.addEventListener('click', () => {
+  const p = ($('#musPath')?.value || '').trim();
+  if (!p) { toast('Type the path to an audio file first.', true); return; }
+  saveMusic({ path: p, volume: Number($('#musVol')?.value) || 0.15, duck: $('#musDuck')?.value || 'gentle' });
+});
+$('#musClear')?.addEventListener('click', () => saveMusic(null));
+// Level/duck changes re-save when music is attached (small write, same route).
+['musVol', 'musDuck'].forEach((id) => $(`#${id}`)?.addEventListener('change', () => {
+  if (state.music) saveMusic({ path: state.music.path, volume: Number($('#musVol').value), duck: $('#musDuck').value });
+}));
 
 // ---- Update check: one non-blocking probe against the newest GitHub tag; a quiet toast only
 // when an update actually exists. Network failure = silence (never nags, never blocks). ----
