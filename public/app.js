@@ -140,7 +140,12 @@ async function openRecent(id) {
 // ready for ingest. Source state is cleared, but no project is loaded yet.
 function newProject() {
   hidePicker();
+  if (_stateSaveTimer) saveStateNow();   // flush the outgoing project's pending autosave
   state.proj = null; state.highlights = []; state.segments = []; state.selected = null;
+  state.selClip = null;
+  { const ci = $('#clipInsight'); if (ci) { ci.classList.add('hidden'); ci.innerHTML = ''; } }
+  _tr = null; _trStruck.clear(); if (typeof renderTranscript === 'function') renderTranscript();
+  clearInterval(_proxyPoll); _proxyPoll = null;
   try { player.removeAttribute('src'); player.load(); } catch {}
   $('#editor').classList.remove('hidden');
   $('#monitorPlaceholder')?.classList.remove('hidden');
@@ -336,19 +341,36 @@ async function analyze() {
 }
 
 function loadProject(data) {
+  // Flush the OUTGOING project's pending debounced autosave before state is overwritten —
+  // an edit made <1.5s before switching projects was silently dropped (or worse, saved
+  // against the new project's id once the timer fired).
+  if (_stateSaveTimer) saveStateNow();
   state.proj = data;
   pushRecent(data.id, data.name);   // remember for the project picker
   state.highlights = (data.highlights || []).map((h) => ({ ...h }));
   // Restore autosaved curation (crash/relaunch-safe): saved clip windows/titles/keeps replace the
   // base set (they may include razor splits the base never had), re-merged with the base clips'
   // rich fields (snippet/hits/story) by id so ranking context survives.
-  if (data.edit && Array.isArray(data.edit.clips) && data.edit.clips.length) {
+  if (data.edit && Array.isArray(data.edit.clips) && (data.edit.clips.length || data.edit.cleared)) {
     const base = Object.fromEntries(state.highlights.map((h) => [String(h.id), h]));
     state.highlights = data.edit.clips.map((c) => ({ ...(base[c.id] || {}), ...c }));
     state.markers = (data.edit.markers || []).map((m) => ({ t: m.t, label: m.label || '' }));
     state.inPoint = Number.isFinite(data.edit.inPoint) ? data.edit.inPoint : null;
     state.outPoint = Number.isFinite(data.edit.outPoint) ? data.edit.outPoint : null;
   } else { state.markers = []; state.inPoint = null; state.outPoint = null; }
+  // Restored razor splits carry persisted m/t ids — the mint counter restarts at 0 each page
+  // load, so without this bump a NEW split re-mints an existing id and every id-keyed lookup
+  // (Clip Insight, Delete, transcript cuts) acts on the wrong clip.
+  _splitSeq = Math.max(0, ...state.highlights.map((h) => Number((String(h.id).match(/^[mt](\d+)$/) || [])[1] || 0)));
+  // Per-project panels/state that must NOT survive a project switch: the transcript (its word
+  // times + clip ids belong to the OLD source — cutting from it would splice the old project's
+  // timestamps into the new timeline), the Clip Insight panel (its handlers close over the old
+  // project's clip object), and the proxy poll (would toggle the new project's player).
+  _tr = null; _trStruck.clear(); if (typeof renderTranscript === 'function') renderTranscript();
+  state.selClip = null;
+  { const ci = $('#clipInsight'); if (ci) { ci.classList.add('hidden'); ci.innerHTML = ''; } }
+  clearInterval(_proxyPoll); _proxyPoll = null;
+  { const wp = $('#wmPath'); if (wp) wp.value = ''; const mp = $('#musPath'); if (mp) mp.value = ''; const lp = $('#lutPath'); if (lp) lp.value = ''; }
   if (typeof renderRail === 'function') setTimeout(renderRail, 0);   // rail exists after this script block
   state.segments = (data.phantasm || []).map((s) => ({ ...s }));
   state.selSeg = null;
@@ -711,7 +733,7 @@ function renderTracks() {
       const a = Math.max(0, Number(i.atSec) || 0);
       const b = Math.max(a + 0.15, Number(i.endSec ?? i.atSec) || a + 0.15);   // always visible
       const t = HEAT_TYPES[i.type];
-      return `<div class="heatBlk ${t.cls}" style="left:${pct(a)};width:${pct(Math.min(b, total) - a)}"`
+      return `<div class="heatBlk ${t.cls}" style="left:${pct(a)}%;width:${pct(Math.min(b, total) - a)}%"`
         + ` title="${escapeHtml(t.label)} · ${escapeHtml(i.detail || '')}"></div>`;
     }).join('');
 
@@ -1097,6 +1119,7 @@ function renderMusicStatus() {
   st.textContent = m ? `${m.name} · vol ${Math.round(m.volume * 100)}% · duck ${m.duck}` : 'none attached';
   $('#musClear')?.classList.toggle('hidden', !m);
   if (m) { const v = $('#musVol'); if (v) v.value = m.volume; const d = $('#musDuck'); if (d) d.value = m.duck; }
+  else { const v = $('#musVol'); if (v) v.value = 0.15; const d = $('#musDuck'); if (d) d.value = 'gentle'; }
   if (typeof renderTracks === 'function') renderTracks();   // A2 lane block reflects attachment
 }
 async function saveMusic(music) {
@@ -1174,7 +1197,7 @@ async function saveLook(look) {
     sat: $('#lookSat') ? Number($('#lookSat').value) : 1,   // 0 is a real value (full B&W)
   }), 250);
 }));
-$('#lookReset')?.addEventListener('click', () => { saveLook(null); toast('Color correction reset — original color.'); });
+$('#lookReset')?.addEventListener('click', () => { clearTimeout(_lookTimer); saveLook(null); toast('Color correction reset — original color.'); });
 
 // ---- Watermark: attach YOUR transparent PNG logo — persisted like the LUT; composited onto
 // every sequence export at the chosen corner, opacity and size. ----
@@ -1187,6 +1210,12 @@ function renderWmStatus() {
     const p = $('#wmPos'); if (p) p.value = w.pos;
     const o = $('#wmOpacity'); if (o) o.value = w.opacity;
     const s = $('#wmSize'); if (s) s.value = w.size;
+  } else {
+    // Back to the markup defaults — otherwise attaching on a fresh project silently reuses the
+    // PREVIOUS project's corner/opacity/size (the Look card already resets; this matches it).
+    const p = $('#wmPos'); if (p) p.value = 'br';
+    const o = $('#wmOpacity'); if (o) o.value = 0.6;
+    const s = $('#wmSize'); if (s) s.value = 0.12;
   }
 }
 async function saveWatermark(watermark) {
@@ -1236,6 +1265,7 @@ async function proxyClick() {
   toast('Generating 540p proxy in the background — I\'ll switch when it\'s ready.');
   clearInterval(_proxyPoll);
   _proxyPoll = setInterval(async () => {
+    if (!state.proj) { clearInterval(_proxyPoll); return; }   // project closed mid-generation
     const s = await (await fetch(`/api/proxy?id=${encodeURIComponent(state.proj.id)}`)).json().catch(() => ({}));
     if (s.ready) { clearInterval(_proxyPoll); setProxy(true); toast('Proxy ready — 540p preview ON.'); }
     else if (!s.generating) { clearInterval(_proxyPoll); toast('Proxy generation failed — check the server log.', true); }
@@ -1272,7 +1302,12 @@ function exportPrefs() {
 // (1080p30 standard ≈ 5.5 Mbps on this pipeline), scaled by the preset factors.
 function updateSizeEst() {
   const el = $('#sizeEst'); if (!el) return;
-  const dur = (state.seqMap && state.seqMap.total) || 0;
+  // OUTPUT duration, not source duration: per-clip speed changes the rendered length
+  // (2x halves it), so sum kept clips at their speeds; fall back to the seqMap total.
+  const kept = (state.highlights || []).filter((h) => h.keep);
+  const dur = kept.length
+    ? kept.reduce((n, h) => n + Math.max(0, h.end - h.start) / (Number(h.speed) || 1), 0)
+    : (state.seqMap && state.seqMap.total) || 0;
   if (!dur) { el.textContent = ''; return; }
   const res = Number($('#expRes')?.value) || 1080;
   const fps = Number($('#expFps')?.value) || 30;
@@ -1584,6 +1619,8 @@ function applyCutSegments(perClip) {
         ...parent,
         id: k === 0 ? parent.id : `t${++_splitSeq}`,
         start: g.start, end: g.end, keep: true, snapped: false,
+        // own copy — a shared array means deleting an overlay from one half strips the other
+        overlays: (parent.overlays || []).map((o) => ({ ...o })),
       }));
     if (!subs.length) continue;
     state.highlights.splice(idx, 1, ...subs);
@@ -2105,7 +2142,7 @@ function splitClipAt(clip, cut) {
   cut = +cut.toFixed(3);
   if (cut - clip.start < MIN || clip.end - cut < MIN) { toast('Too close to an edge to split.', true); return false; }
   const idx = state.highlights.indexOf(clip);
-  const right = { ...clip, id: `m${++_splitSeq}`, start: cut, snapped: false };
+  const right = { ...clip, id: `m${++_splitSeq}`, start: cut, snapped: false, overlays: (clip.overlays || []).map((o) => ({ ...o })) };
   clip.end = cut; clip.snapped = false;
   state.highlights.splice(idx + 1, 0, right);
   logEdit('split', { id: clip.id, at: cut });
@@ -3074,6 +3111,10 @@ function _applyUndoState(snap) {
   state.highlights = s.h; state.markers = s.m; state.inPoint = s.i; state.outPoint = s.o;
   renderHighlights(); draw();
   if (typeof renderRail === 'function') renderRail();
+  // Undo replaces every highlight OBJECT — an open Clip Insight would keep writing fades/speed
+  // into the pre-undo orphans (displayed but never exported). Re-render so its handlers close
+  // over the live objects; renderClipInsight hides itself if the clip no longer exists.
+  if (state.selClip && typeof renderClipInsight === 'function') renderClipInsight();
   scheduleStateSave();
 }
 function undoEdit() {
@@ -3089,20 +3130,37 @@ function resetUndoBaseline() { _undoStack = []; _undoPtr = -1; pushUndo(); }
 // debounced so bursts of edits coalesce into one small write. Crash/relaunch-safe: loadProject
 // restores it. logEdit is the chokepoint every edit action already flows through.
 let _stateSaveTimer = null;
+function saveStateNow() {
+  clearTimeout(_stateSaveTimer); _stateSaveTimer = null;
+  if (!state.proj) return;   // New Project can race the debounce — a null proj is a no-op, not a crash
+  const edit = {
+    keeps: (state.highlights || []).filter((h) => h.keep).map((h) => String(h.id)),
+    clips: (state.highlights || []).map((h) => {
+      const c = { id: String(h.id), start: h.start, end: h.end, title: h.title || '', keep: !!h.keep, score: h.score || 0, fadeIn: h.fadeIn || 0, fadeOut: h.fadeOut || 0, speed: h.speed || 1 };
+      // Optional fields only when present — a null here would CLOBBER the analysis clip's own
+      // value on the ...base,...c restore merge. `t` anchors thumbnails/hook on razor splits;
+      // overlays are client-authored and exist nowhere else.
+      if (h.t != null) c.t = h.t;
+      if (h.overlays && h.overlays.length) c.overlays = h.overlays.map((o) => ({ ...o }));
+      return c;
+    }),
+    // Distinguishes "user deleted every clip" from "never edited" — restore honors an
+    // intentionally-empty timeline instead of resurrecting the ranked highlights.
+    cleared: !(state.highlights || []).length,
+    markers: (state.markers || []).map((m) => ({ t: m.t, label: m.label || '' })),
+    inPoint: state.inPoint, outPoint: state.outPoint,
+  };
+  fetch('/api/state', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: state.proj.id, edit }), keepalive: true }).catch(() => {});
+}
 function scheduleStateSave() {
   if (!state.proj) return;
   clearTimeout(_stateSaveTimer);
-  _stateSaveTimer = setTimeout(() => {
-    const edit = {
-      keeps: (state.highlights || []).filter((h) => h.keep).map((h) => String(h.id)),
-      clips: (state.highlights || []).map((h) => ({ id: String(h.id), start: h.start, end: h.end, title: h.title || '', keep: !!h.keep, score: h.score || 0, fadeIn: h.fadeIn || 0, fadeOut: h.fadeOut || 0, speed: h.speed || 1 })),
-      markers: (state.markers || []).map((m) => ({ t: m.t, label: m.label || '' })),
-      inPoint: state.inPoint, outPoint: state.outPoint,
-    };
-    fetch('/api/state', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: state.proj.id, edit }), keepalive: true }).catch(() => {});
-  }, 1500);
+  _stateSaveTimer = setTimeout(saveStateNow, 1500);
 }
+// Edits made <1.5s before quitting/navigating away are flushed, not dropped (keepalive fetch
+// survives pagehide). Project SWITCHES flush explicitly in loadProject/newProject.
+window.addEventListener('pagehide', () => { if (_stateSaveTimer) saveStateNow(); });
 function refreshEditCount() {
   const el = $('#editCount'); if (!el) return;
   fetch('/api/feedback/count').then((r) => r.json()).then((d) => {

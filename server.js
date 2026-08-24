@@ -838,6 +838,7 @@ app.post('/api/state', async (req, res) => {
     a.edit = {
       keeps: Array.isArray(e.keeps) ? e.keeps.slice(0, 500) : [],
       clips: Array.isArray(e.clips) ? e.clips.slice(0, 500) : [],
+      cleared: e.cleared === true,   // "user deleted every clip" vs "never edited"
       markers: Array.isArray(e.markers) ? e.markers.slice(0, 200) : [],
       inPoint: Number.isFinite(e.inPoint) ? e.inPoint : null,
       outPoint: Number.isFinite(e.outPoint) ? e.outPoint : null,
@@ -1287,8 +1288,33 @@ app.post('/api/export/sequence', async (req, res) => {
     const src = await sourceForChecked(req.body.id);
     if (src.error) return res.status(404).json({ error: src.error });
     const file = src.file;
-    const clips = capBatch(req.body.clips);
+    // Strip server-generated fields from the request: a client-sent zoomFilter would be spliced
+    // RAW into filter_complex (filter-graph injection — every other request string that reaches
+    // the graph is clamped/sanitized); mutes are transcript-derived, never trusted from outside.
+    const clips = capBatch(req.body.clips).map((c) => {
+      const { zoomFilter, mutes, ...rest } = c || {};
+      return rest;
+    });
     if (!clips.length) return res.status(400).json({ error: 'No clips in the sequence.' });
+
+    // Export presets (whitelisted): resolution, fps, quality→CRF. Horizontal res is clamped to
+    // the source height so a preset can never upscale; 'standard' keeps the benchmarked default.
+    // Parsed BEFORE the zoom pass — the zoom chain hard-codes its scale/crop geometry, so it
+    // must be built at the ACTUAL output size or the concat-copy invariant breaks.
+    const vertical = req.body.vertical !== false;
+    const fpsOpt = [24, 30, 60].includes(Number(req.body.fps)) ? Number(req.body.fps) : req.body.fps;
+    let resOpt = [720, 1080, 1440].includes(Number(req.body.res)) ? Number(req.body.res) : 0;
+    let meta = null;
+    if (!vertical) meta = await probe(file);
+    if (resOpt && !vertical && meta.height) resOpt = Math.min(resOpt, meta.height);
+    // Per-clip output geometry — what every temp clip actually encodes at (mirrors exporter.js).
+    let zw, zh;
+    if (vertical) { zw = resOpt || 1080; zh = Math.round(zw * 16 / 9 / 2) * 2; }
+    else {
+      const srcW = meta.width || 1920, srcH = meta.height || 1080;
+      zh = resOpt || srcH;
+      zw = Math.round(srcW * zh / srcH / 2) * 2;
+    }
 
     // Zoom parity with the TikTok pack: ONE batched whisper pass over the clips → per-clip
     // emphasis chunks → punch-in zoom filter, attached to each segment. Off the hot path.
@@ -1298,12 +1324,21 @@ app.post('/api/export/sequence', async (req, res) => {
     let mutedWords = 0;
     const cap = captionsReady();
     const wantZoom = req.body.zoom !== false && cap.bin && cap.model;
-    const wantBleep = req.body.bleep === true && cap.bin && cap.model;
+    // Bleep is an explicit ask — exporting UNMUTED cursing because whisper happens to be missing
+    // would be a silent lie. Fail loud with the install command (zoom degrades quietly because
+    // it's a default-on nicety, not a request).
+    const wantBleep = req.body.bleep === true;
+    if (wantBleep && !(cap.bin && cap.model)) {
+      return res.status(400).json({ error: `Profanity mute needs whisper.cpp + a model. ${installHint('whisper-cli')}` });
+    }
     let transcribed = null;
     if (wantZoom || wantBleep) transcribed = await transcribeWindows(file, clips);
     if (wantZoom) {
       segs = segs.map((c, i) => {
-        const z = buildTimelineZoomExpression(emphasisChunks(transcribed[i]?.words || [], c.start), 0);
+        // Zoom at the export's real geometry — the old hard-coded 1080x1920 made a zoomed clip
+        // encode at a different size than its neighbors at res 720/1440 (broken concat) and
+        // force-squished horizontal exports into portrait.
+        const z = buildTimelineZoomExpression(emphasisChunks(transcribed[i]?.words || [], c.start), 0, { w: zw, h: zh });
         if (z.hasZoom) { zoomed = true; return { ...c, zoomFilter: z.filter }; }
         return c;
       });
@@ -1325,15 +1360,6 @@ app.post('/api/export/sequence', async (req, res) => {
 
     const out = path.join(RENDERS, req.body.id, 'sequence.mp4');
     await fsp.mkdir(path.dirname(out), { recursive: true });
-    // Export presets (whitelisted): resolution, fps, quality→CRF. Horizontal res is clamped to
-    // the source height so a preset can never upscale; 'standard' keeps the benchmarked default.
-    const vertical = req.body.vertical !== false;
-    const fpsOpt = [24, 30, 60].includes(Number(req.body.fps)) ? Number(req.body.fps) : req.body.fps;
-    let resOpt = [720, 1080, 1440].includes(Number(req.body.res)) ? Number(req.body.res) : 0;
-    if (resOpt && !vertical) {
-      const meta = await probe(file);
-      if (meta.height) resOpt = Math.min(resOpt, meta.height);
-    }
     const crfOpt = { high: 18, compact: 23 }[req.body.quality] || 0;
     const gainDb = Math.max(-12, Math.min(12, Number(req.body.gainDb) || 0));
     // Project LUT + color look + watermark (persisted on the analysis) style every sequence
@@ -1605,7 +1631,9 @@ app.post('/api/reveal', async (req, res) => {
 // to the Electron parent over IPC so there's never an EADDRINUSE race.
 export function start(port = process.env.PORT || 4178) {
   return new Promise((resolve) => {
-    const server = app.listen(Number(port), () => {
+    // Loopback only: this is a local desktop app (100% local by design) — binding all
+    // interfaces exposed every render/file route to the LAN for no benefit.
+    const server = app.listen(Number(port), '127.0.0.1', () => {
       const actual = server.address().port;
       console.log(`PepStudio running -> http://localhost:${actual}`);
       if (process.send) { try { process.send({ type: 'pepstudio-port', port: actual }); } catch {} }
