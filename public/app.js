@@ -371,8 +371,12 @@ function loadProject(data) {
   state.music = data.music || null;                              // per-project music track (mixed into sequence exports)
   if (typeof renderMusicStatus === 'function') setTimeout(renderMusicStatus, 0);
   state.lut = data.lut || null;                                  // per-project color look (applied at export)
+  state.look = data.look || null;                                // per-project B/C/S correction (applied at export)
+  state.watermark = data.watermark || null;                      // per-project watermark PNG (composited at export)
   state.proxyOn = false;                                         // always open on the ORIGINAL
   if (typeof renderLutStatus === 'function') setTimeout(renderLutStatus, 0);
+  if (typeof renderLookSliders === 'function') setTimeout(renderLookSliders, 0);
+  if (typeof renderWmStatus === 'function') setTimeout(renderWmStatus, 0);
   if (typeof resetUndoBaseline === 'function') setTimeout(resetUndoBaseline, 0);   // undo history starts at the loaded state
   if (data.videoReady) {
     const st = data.phantasmStats || {};
@@ -1143,6 +1147,69 @@ $('#lutAttach')?.addEventListener('click', () => {
 });
 $('#lutClear')?.addEventListener('click', () => saveLut(null));
 
+// ---- Color correction (brightness/contrast/saturation) — persisted like the LUT, applied per
+// clip BEFORE the LUT at export. All-default stores null (zero filter steps, byte-identical). ----
+function renderLookSliders() {
+  const l = state.look || {};
+  const set = (id, v) => { const el = $(`#${id}`); if (el) el.value = v; };
+  set('lookBri', l.bri ?? 0); set('lookCon', l.con ?? 1); set('lookSat', l.sat ?? 1);
+  $('#lookReset')?.classList.toggle('hidden', !state.look);
+}
+let _lookTimer = null;
+async function saveLook(look) {
+  if (!state.proj) return;
+  try {
+    const r = await fetch('/api/look', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: state.proj.id, look }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Look save failed.');
+    state.look = d.look; renderLookSliders();
+  } catch (e) { toast(e.message, true); }
+}
+['lookBri', 'lookCon', 'lookSat'].forEach((id) => $(`#${id}`)?.addEventListener('input', () => {
+  clearTimeout(_lookTimer);
+  _lookTimer = setTimeout(() => saveLook({
+    bri: Number($('#lookBri')?.value) || 0,
+    con: Number($('#lookCon')?.value) || 1,
+    sat: $('#lookSat') ? Number($('#lookSat').value) : 1,   // 0 is a real value (full B&W)
+  }), 250);
+}));
+$('#lookReset')?.addEventListener('click', () => { saveLook(null); toast('Color correction reset — original color.'); });
+
+// ---- Watermark: attach YOUR transparent PNG logo — persisted like the LUT; composited onto
+// every sequence export at the chosen corner, opacity and size. ----
+function renderWmStatus() {
+  const st = $('#wmStatus'); if (!st) return;
+  const w = state.watermark;
+  st.textContent = w ? `${w.name} · ${({ tl: 'top-left', tr: 'top-right', bl: 'bottom-left', br: 'bottom-right' })[w.pos]} · ${Math.round(w.opacity * 100)}%` : 'none — clean frame';
+  $('#wmClear')?.classList.toggle('hidden', !w);
+  if (w) {
+    const p = $('#wmPos'); if (p) p.value = w.pos;
+    const o = $('#wmOpacity'); if (o) o.value = w.opacity;
+    const s = $('#wmSize'); if (s) s.value = w.size;
+  }
+}
+async function saveWatermark(watermark) {
+  if (!state.proj) { toast('Load a project first.', true); return; }
+  try {
+    const r = await fetch('/api/watermark', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: state.proj.id, watermark }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Watermark save failed.');
+    state.watermark = d.watermark; renderWmStatus();
+    toast(d.watermark ? `Watermark attached: ${d.watermark.name} — branded onto every sequence export.` : 'Watermark cleared.');
+  } catch (e) { toast(e.message, true); }
+}
+$('#wmAttach')?.addEventListener('click', () => {
+  const p = ($('#wmPath')?.value || '').trim();
+  if (!p) { toast('Type the path to a transparent PNG first.', true); return; }
+  saveWatermark({ path: p, pos: $('#wmPos')?.value || 'br', opacity: Number($('#wmOpacity')?.value) || 0.6, size: Number($('#wmSize')?.value) || 0.12 });
+});
+$('#wmClear')?.addEventListener('click', () => saveWatermark(null));
+['wmPos', 'wmOpacity', 'wmSize'].forEach((id) => $(`#${id}`)?.addEventListener('change', () => {
+  if (state.watermark) saveWatermark({ path: state.watermark.path, pos: $('#wmPos').value, opacity: Number($('#wmOpacity').value), size: Number($('#wmSize').value) });
+}));
+
 // ---- Preview proxy: 540p side-encode for smooth scrubbing. PREVIEW-ONLY — exports always use
 // the original (server-enforced). Toggle swaps the player src, preserving position. ----
 state.proxyOn = false;
@@ -1195,6 +1262,8 @@ function exportPrefs() {
   const fps = Number($('#expFps')?.value); if (fps && fps !== 30) p.fps = fps;
   const q = $('#expQuality')?.value; if (q && q !== 'standard') p.quality = q;
   const g = Number($('#mixGain')?.value); if (g) p.gainDb = Math.max(-12, Math.min(12, g));
+  const vs = $('#expVert')?.value; if (vs && vs !== 'crop') p.vstyle = vs;
+  if ($('#expNorm')?.checked) p.normalize = true;
   return p;
 }
 // Live "≈ size" estimate for the current kept cut — an honest heuristic from measured renders

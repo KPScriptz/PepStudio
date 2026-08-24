@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFile } from 'node:child_process';
 
 import { analyze, analyzeAudio, analyzeVideo } from './lib/analyze.js';
-import { exportLongCut, exportShort, grabFrame, canBurnCaptions, exportSequence, mixMusicOnto } from './lib/exporter.js';
+import { exportLongCut, exportShort, grabFrame, canBurnCaptions, exportSequence, mixMusicOnto, normalizeLoudness } from './lib/exporter.js';
 import { generateCaptions, generateCutCaptions, captionsReady, transcribeRange, transcribeWindows, emphasisChunks, whisperFastModel, diarizeRange, TDRZ_INSTALL } from './lib/captions.js';
 import { scoreWindow } from './lib/reactions.js';
 import { heuristicMeta, smartTitle } from './lib/titles.js';
@@ -277,6 +277,54 @@ app.post('/api/lut', async (req, res) => {
     }
     await fsp.writeFile(p, JSON.stringify(a), 'utf8');
     res.json({ lut: a.lut });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
+// Primary color correction (brightness/contrast/saturation) — persisted like the LUT; applied
+// per clip BEFORE the LUT at export. All-default → stored as null (no filter step is built).
+app.post('/api/look', async (req, res) => {
+  try {
+    const id = req.body.id;
+    const p = path.join(DATA, id || '', 'analysis.json');
+    if (!id || !fs.existsSync(p)) return res.status(404).json({ error: 'Unknown project id' });
+    const a = JSON.parse(await fsp.readFile(p, 'utf8'));
+    const l = req.body.look;
+    if (l === null || l === undefined) a.look = null;
+    else {
+      const num = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
+      const bri = Math.max(-0.3, Math.min(0.3, num(l.bri, 0)));
+      const con = Math.max(0.5, Math.min(1.5, num(l.con, 1)));
+      const sat = Math.max(0, Math.min(2, num(l.sat, 1)));
+      a.look = (bri === 0 && con === 1 && sat === 1) ? null : { bri, con, sat };
+    }
+    await fsp.writeFile(p, JSON.stringify(a), 'utf8');
+    res.json({ look: a.look });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
+// Watermark: ONE user-supplied transparent PNG (asset-agnostic — your logo, never bundled),
+// persisted like the LUT; composited onto every sequence export at a corner + opacity + size.
+app.post('/api/watermark', async (req, res) => {
+  try {
+    const id = req.body.id;
+    const p = path.join(DATA, id || '', 'analysis.json');
+    if (!id || !fs.existsSync(p)) return res.status(404).json({ error: 'Unknown project id' });
+    const a = JSON.parse(await fsp.readFile(p, 'utf8'));
+    const w = req.body.watermark;
+    if (w === null || w === undefined) a.watermark = null;
+    else {
+      const wp = tildeExpand(String(w.path || '').trim());
+      if (!wp || !fs.existsSync(wp)) return res.status(400).json({ error: `Watermark image not found: ${wp || '(empty)'}` });
+      if (!/\.(png|webp)$/i.test(wp)) return res.status(400).json({ error: 'Not a PNG/WebP image (transparent PNG recommended).' });
+      a.watermark = {
+        path: wp, name: path.basename(wp),
+        pos: ['tl', 'tr', 'bl', 'br'].includes(w.pos) ? w.pos : 'br',
+        opacity: Math.max(0.1, Math.min(1, Number(w.opacity) || 0.6)),
+        size: Math.max(0.05, Math.min(0.3, Number(w.size) || 0.12)),
+      };
+    }
+    await fsp.writeFile(p, JSON.stringify(a), 'utf8');
+    res.json({ watermark: a.watermark });
   } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
 
@@ -1264,12 +1312,18 @@ app.post('/api/export/sequence', async (req, res) => {
     }
     const crfOpt = { high: 18, compact: 23 }[req.body.quality] || 0;
     const gainDb = Math.max(-12, Math.min(12, Number(req.body.gainDb) || 0));
-    // Project LUT (persisted on the analysis) grades every sequence export; lut:false skips once.
-    let lutPath = null;
-    if (req.body.lut !== false) {
-      try { const a = JSON.parse(await fsp.readFile(path.join(DATA, req.body.id, 'analysis.json'), 'utf8')); lutPath = (a.lut && a.lut.path) || null; } catch {}
-    }
-    await exportSequence(file, segs, out, { vertical, draft: req.body.draft === true, fps: fpsOpt, res: resOpt, crf: crfOpt, gainDb, lut: lutPath });
+    // Project LUT + color look + watermark (persisted on the analysis) style every sequence
+    // export; lut:false / watermark:false skip each for one export.
+    let lutPath = null, look = null, watermark = null;
+    try {
+      const a = JSON.parse(await fsp.readFile(path.join(DATA, req.body.id, 'analysis.json'), 'utf8'));
+      if (req.body.lut !== false) lutPath = (a.lut && a.lut.path) || null;
+      look = a.look || null;
+      if (req.body.watermark !== false) watermark = a.watermark || null;
+    } catch {}
+    // Vertical style: hard crop-to-fill (default) or blur-fill (full frame on a blurred copy).
+    const vstyle = req.body.vstyle === 'blur' ? 'blur' : 'crop';
+    await exportSequence(file, segs, out, { vertical, draft: req.body.draft === true, fps: fpsOpt, res: resOpt, crf: crfOpt, gainDb, lut: lutPath, look, watermark, vstyle });
     // Project music post-pass: mix the attached track over the finished render (video stream-
     // copied — seconds, not a re-encode). music:false in the request skips it for one export.
     let musicApplied = false;
@@ -1282,7 +1336,15 @@ app.post('/api/export/sequence', async (req, res) => {
         }
       } catch (e) { console.log('[music] post-pass skipped:', String(e.message || e)); }
     }
-    res.json({ url: `/renders/${req.body.id}/sequence.mp4`, file: out, clips: clips.length, zoomed, music: musicApplied });
+    // Loudness normalize post-pass (beta item 206): measure the finished mix (AFTER music) and
+    // hit −14 LUFS integrated with a −1 dBTP brickwall — the YouTube/Spotify target. Opt-in per
+    // export; video stream-copied, so it costs seconds.
+    let normalized = null;
+    if (req.body.normalize === true) {
+      try { normalized = await normalizeLoudness(out, { targetI: -14, tp: -1 }); }
+      catch (e) { console.log('[normalize] post-pass skipped:', String(e.message || e)); }
+    }
+    res.json({ url: `/renders/${req.body.id}/sequence.mp4`, file: out, clips: clips.length, zoomed, music: musicApplied, normalized });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }

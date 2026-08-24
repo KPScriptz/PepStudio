@@ -235,6 +235,12 @@
                   <option value="compact">Compact — smaller files (CRF 23)</option>
                 </select>
               </label>
+              <label class="blueprintRow"><span>Vertical style</span>
+                <select id="expVert" class="blueprintSel">
+                  <option value="crop" selected>Crop to fill (default)</option>
+                  <option value="blur">Blur-fill — full frame on blurred bg</option>
+                </select>
+              </label>
               <div id="sizeEst" class="hint"></div>
               <div class="hint">Applies to sequence exports (Storyboard, Edit for Me, In/Out, tight cuts). Shorts stay 1080×1920 — the platform standard.</div>
             </details>
@@ -244,9 +250,12 @@
               <canvas id="masterMeter" width="240" height="12" aria-label="Master level meter"></canvas>
               <label class="blueprintRow"><span>Preview vol</span><input id="mixPreview" type="range" min="0" max="1.4" step="0.02" value="1" /></label>
               <label class="blueprintRow"><span>Export gain</span><span class="mixGainWrap"><input id="mixGain" type="number" min="-12" max="12" step="0.5" value="0" /> dB</span></label>
+              <label class="blueprintRow" title="Post-pass on the finished mix: measure real integrated LUFS, apply the exact offset, brickwall-limit at −1 dBTP."><span>Normalize</span>
+                <span class="mixGainWrap"><input id="expNorm" type="checkbox" /> hit −14 LUFS (YouTube) on export</span>
+              </label>
               <div class="pkBtns"><button id="loudBtn" class="pkGhost">Measure last export (LUFS)</button></div>
               <div id="loudOut" class="hint"></div>
-              <div class="hint">One real audio stream — this is the master. Live meter + preview volume; export gain is burned by ffmpeg. Shorts auto-normalize to −16 LUFS regardless.</div>
+              <div class="hint">One real audio stream — this is the master. Live meter + preview volume; export gain is burned by ffmpeg. Normalize runs last (after music), so it wins over gain. Shorts auto-normalize to −16 LUFS regardless.</div>
             </div>
 
             <div class="musicBox">
@@ -268,13 +277,37 @@
             </div>
 
             <div class="musicBox">
-              <div class="pkHead"><span>Look (LUT)</span><span id="lutStatus" class="fcStatus">none — original color</span></div>
+              <div class="pkHead"><span>Look (color)</span><span id="lutStatus" class="fcStatus">none — original color</span></div>
               <div class="row" style="margin-top:8px">
                 <input id="lutPath" type="text" spellcheck="false" placeholder="~/Looks/teal-orange.cube — path to YOUR .cube LUT" />
                 <button id="lutAttach" class="pkGhost">Attach</button>
                 <button id="lutClear" class="pkGhost hidden">Clear</button>
               </div>
-              <div class="hint">Grades every sequence export through the LUT (full strength, ffmpeg lut3d). Preview stays ungraded — the look is applied at export.</div>
+              <label class="blueprintRow"><span>Brightness</span><input id="lookBri" type="range" min="-0.3" max="0.3" step="0.01" value="0" /></label>
+              <label class="blueprintRow"><span>Contrast</span><input id="lookCon" type="range" min="0.5" max="1.5" step="0.01" value="1" /></label>
+              <label class="blueprintRow"><span>Saturation</span><input id="lookSat" type="range" min="0" max="2" step="0.02" value="1" /></label>
+              <div class="pkBtns"><button id="lookReset" class="pkGhost hidden">Reset color</button></div>
+              <div class="hint">Correction first (brightness/contrast/saturation), then the LUT grades on top (ffmpeg eq + lut3d). Preview stays ungraded — the look is applied at export.</div>
+            </div>
+
+            <div class="musicBox">
+              <div class="pkHead"><span>Watermark</span><span id="wmStatus" class="fcStatus">none — clean frame</span></div>
+              <div class="row" style="margin-top:8px">
+                <input id="wmPath" type="text" spellcheck="false" placeholder="~/Brand/logo.png — path to YOUR transparent PNG" />
+                <button id="wmAttach" class="pkGhost">Attach</button>
+                <button id="wmClear" class="pkGhost hidden">Clear</button>
+              </div>
+              <label class="blueprintRow"><span>Corner</span>
+                <select id="wmPos" class="blueprintSel">
+                  <option value="br" selected>Bottom-right</option>
+                  <option value="bl">Bottom-left</option>
+                  <option value="tr">Top-right</option>
+                  <option value="tl">Top-left</option>
+                </select>
+              </label>
+              <label class="blueprintRow"><span>Opacity</span><input id="wmOpacity" type="range" min="0.1" max="1" step="0.05" value="0.6" /></label>
+              <label class="blueprintRow"><span>Size</span><input id="wmSize" type="range" min="0.05" max="0.3" step="0.01" value="0.12" /></label>
+              <div class="hint">Composites your logo onto every sequence export (size is a fraction of frame width). Your file, never bundled.</div>
             </div>
             <div class="fcRow">
               <button id="fcSetBtn" class="pkGhost">Set facecam box</button>
