@@ -9,7 +9,7 @@ import { execFile } from 'node:child_process';
 
 import { analyze, analyzeAudio, analyzeVideo } from './lib/analyze.js';
 import { exportLongCut, exportShort, grabFrame, canBurnCaptions, exportSequence, mixMusicOnto } from './lib/exporter.js';
-import { generateCaptions, generateCutCaptions, captionsReady, transcribeRange, transcribeWindows, emphasisChunks, whisperFastModel } from './lib/captions.js';
+import { generateCaptions, generateCutCaptions, captionsReady, transcribeRange, transcribeWindows, emphasisChunks, whisperFastModel, diarizeRange, TDRZ_INSTALL } from './lib/captions.js';
 import { scoreWindow } from './lib/reactions.js';
 import { heuristicMeta, smartTitle } from './lib/titles.js';
 import { pepaiReady, generateClipMeta, chatWithPepAI } from './lib/pepai.js';
@@ -238,6 +238,27 @@ app.post('/api/prefs', async (req, res) => {
 // throw from any probe became an unhandled rejection, Express never replied, and the UI sat on a
 // blank status forever — most likely on a fresh install where the external tools are missing.
 // Each probe is now individually defaulted, so one absent tool can't take the whole route down.
+// Speaker diarization (tinydiarize): detect speaker TURNS in a range via whisper.cpp -tdrz.
+// Range capped at 5 min per pass (a small.en pass, not the fast tiny model). Missing model →
+// 400 with the exact install command, same convention as every other whisper model here.
+app.post('/api/diarize', async (req, res) => {
+  try {
+    const file = await sourceFor(req.body.id);
+    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const s = Math.max(0, Number(req.body.start) || 0);
+    const e = Number(req.body.end);
+    if (!Number.isFinite(e) || e <= s) return res.status(400).json({ error: 'Invalid range.' });
+    if (e - s > 300) return res.status(400).json({ error: 'Range too long — diarize up to 5 minutes at a time (set In/Out or select a clip).' });
+    const segments = await diarizeRange(file, [s, e]);
+    res.json({ segments, turns: new Set(segments.map((x) => x.speaker)).size });
+  } catch (err) {
+    if (err.code === 'TDRZ_MISSING') {
+      return res.status(400).json({ error: `Speaker detection needs the tinydiarize model (~488 MB, one time):\n${TDRZ_INSTALL}` });
+    }
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
 // Project music: attach ONE user-supplied audio file (path validated + audio extension) that
 // every sequence export mixes in — looped to length, faded out, auto-ducked under speech.
 // Persisted in the analysis like the facecam box; null clears.

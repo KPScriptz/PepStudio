@@ -1030,6 +1030,57 @@ $('#loudBtn')?.addEventListener('click', async () => {
   } catch (e) { toast(e.message, true); } finally { btn.disabled = false; btn.textContent = o; }
 });
 
+// ---- Speaker diarization (tinydiarize): detect speaker turns in the In→Out range (or the
+// active clip), list them color-coded + click-to-seek, and optionally drop the turns as named
+// markers on the rail. S1/S2 are alternating TURN labels (stated in the card), not voice IDs. ----
+let _spkSegs = [];
+async function detectSpeakers() {
+  const btn = $('#spkBtn'); if (!btn) return;
+  if (!state.proj) { toast('Load and analyze a video first.', true); return; }
+  let s = state.inPoint, e = state.outPoint;
+  if (s == null || e == null || e <= s) {
+    const clip = activeClip();
+    if (!clip) { toast('Set In/Out (I/O) or select a clip first.', true); return; }
+    s = clip.start; e = clip.end;
+  }
+  const o = btn.textContent; btn.disabled = true; btn.textContent = 'Listening…';
+  try {
+    const r = await fetch('/api/diarize', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: state.proj.id, start: s, end: e }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Diarization failed.');
+    _spkSegs = d.segments || [];
+    const list = $('#spkList');
+    list.innerHTML = _spkSegs.length
+      ? _spkSegs.map((x) => `<button class="spkRow ${x.speaker.toLowerCase()}" data-t="${x.t0}">`
+          + `<b>${x.speaker}</b><i>${fmt(x.t0)}</i><span>${escapeHtml(x.text.slice(0, 70))}</span></button>`).join('')
+      : '<div class="hint">No speech detected in this range.</div>';
+    list.classList.remove('hidden');
+    $('#spkMarkBtn')?.classList.toggle('hidden', !_spkSegs.length);
+    logEdit('diarize', { start: +s.toFixed(1), end: +e.toFixed(1), segments: _spkSegs.length });
+    toast(`${_spkSegs.length} labeled segment${_spkSegs.length === 1 ? '' : 's'} across the range.`);
+  } catch (err) { toast(err.message, true); } finally { btn.disabled = false; btn.textContent = o; }
+}
+$('#spkBtn')?.addEventListener('click', detectSpeakers);
+$('#spkList')?.addEventListener('click', (e) => {
+  const row = e.target.closest('.spkRow'); if (!row) return;
+  player.currentTime = +row.dataset.t;
+});
+$('#spkMarkBtn')?.addEventListener('click', () => {
+  if (!_spkSegs.length) return;
+  let added = 0;
+  let last = null;
+  for (const x of _spkSegs) {
+    if (x.speaker !== last) {   // one marker per TURN, not per segment
+      state.markers.push({ t: x.t0, label: x.speaker });
+      added++; last = x.speaker;
+    }
+  }
+  state.markers.sort((a, b) => a.t - b.t);
+  renderRail(); scheduleStateSave();
+  toast(`${added} speaker-turn marker${added === 1 ? '' : 's'} added.`);
+});
+
 // ---- Project music: attach a user-supplied audio file — persisted on the project (like the
 // facecam box) and mixed into every sequence export (looped, faded out, sidechain-ducked). ----
 function renderMusicStatus() {

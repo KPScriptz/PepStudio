@@ -144,6 +144,12 @@
           <!-- Deterministic retention audit of the current cut, before rendering anything -->
           <div id="criticBox" class="criticBox hidden rtabPane" data-rtab="curate"></div>
           <div id="hookLab" class="hookLab hidden rtabPane" data-rtab="curate"></div>
+          <div id="spkCard" class="spkCard rtabPane" data-rtab="curate">
+            <div class="pkHead"><span>Speakers</span><button id="spkBtn" class="pkGhost">Detect (In→Out / clip)</button></div>
+            <div id="spkList" class="spkList hidden"></div>
+            <div class="pkBtns"><button id="spkMarkBtn" class="pkGhost hidden">Add turns as markers</button></div>
+            <div class="hint">Turn detection via local tinydiarize — S1/S2 are alternating turn labels, not voice IDs.</div>
+          </div>
           <div id="clipInsight" class="clipInsight hidden rtabPane" data-rtab="curate"></div>
           <!-- Transcript-driven editing: click a word to seek, strike words to cut those frames -->
           <div id="transcriptBox" class="transcriptBox rtabPane" data-rtab="curate">

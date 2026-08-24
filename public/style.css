@@ -716,6 +716,17 @@ html.isMac .view-picker { background: rgba(12, 12, 14, 0.72); }
   background:rgba(150,150,160,.25); cursor:pointer; }
 .mixerBox input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:12px; height:12px;
   border-radius:50%; background:var(--px-accent,#2d76ff); border:0; cursor:pointer; }
+/* Speakers card: turn-labeled transcript rows (S1 cyan / S2 amber), click to seek. */
+.spkCard{ margin:0 0 6px; padding:10px 11px; border:1px solid var(--line); border-radius:10px; background:var(--panel2); }
+.spkList{ display:flex; flex-direction:column; gap:3px; margin-top:8px; max-height:180px; overflow-y:auto; }
+.spkRow{ display:flex; align-items:baseline; gap:7px; width:100%; text-align:left; cursor:pointer;
+  padding:4px 7px; border:0; border-radius:6px; background:transparent; color:var(--muted); font-size:11.5px; }
+.spkRow:hover{ background:rgba(127,127,127,.12); color:var(--text); }
+.spkRow b{ flex:0 0 auto; font-size:10px; letter-spacing:.05em; padding:1px 6px; border-radius:4px; }
+.spkRow.s1 b{ color:#00131a; background:var(--accent-cyan,#00e5ff); }
+.spkRow.s2 b{ color:#1a1200; background:#f59e0b; }
+.spkRow i{ flex:0 0 auto; font-style:normal; font-family:var(--font-mono); font-size:10.5px; }
+.spkRow span{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 /* Music card (project track attach). */
 .musicBox{ margin:10px 0 6px; padding:11px; border:1px solid var(--line); border-radius:10px; background:var(--panel2); }
 .musicBox .row{ display:flex; gap:6px; }
