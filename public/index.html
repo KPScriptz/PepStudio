@@ -266,6 +266,16 @@
               </label>
               <div class="hint">Loops under every sequence export, fades out at the end, and ducks under your audio (real sidechain compression). Heads-up: constant game/crowd noise keys the duck too, so on gameplay VODs the dip is subtle (≈3–6 dB); it recovers fully in true pauses. Your file, never bundled.</div>
             </div>
+
+            <div class="musicBox">
+              <div class="pkHead"><span>Look (LUT)</span><span id="lutStatus" class="fcStatus">none — original color</span></div>
+              <div class="row" style="margin-top:8px">
+                <input id="lutPath" type="text" spellcheck="false" placeholder="~/Looks/teal-orange.cube — path to YOUR .cube LUT" />
+                <button id="lutAttach" class="pkGhost">Attach</button>
+                <button id="lutClear" class="pkGhost hidden">Clear</button>
+              </div>
+              <div class="hint">Grades every sequence export through the LUT (full strength, ffmpeg lut3d). Preview stays ungraded — the look is applied at export.</div>
+            </div>
             <div class="fcRow">
               <button id="fcSetBtn" class="pkGhost">Set facecam box</button>
               <span id="fcStatus" class="fcStatus">not set — shorts use center-crop</span>

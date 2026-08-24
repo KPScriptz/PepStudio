@@ -370,6 +370,9 @@ function loadProject(data) {
   if (typeof renderFcStatus === 'function') renderFcStatus();
   state.music = data.music || null;                              // per-project music track (mixed into sequence exports)
   if (typeof renderMusicStatus === 'function') setTimeout(renderMusicStatus, 0);
+  state.lut = data.lut || null;                                  // per-project color look (applied at export)
+  state.proxyOn = false;                                         // always open on the ORIGINAL
+  if (typeof renderLutStatus === 'function') setTimeout(renderLutStatus, 0);
   if (typeof resetUndoBaseline === 'function') setTimeout(resetUndoBaseline, 0);   // undo history starts at the loaded state
   if (data.videoReady) {
     const st = data.phantasmStats || {};
@@ -404,7 +407,8 @@ function renderMediaAsset() {
         <span class="assetDur">${fmt(state.proj.duration)}</span>
       </div>
       <div class="assetName">${escapeHtml(state.proj.name || 'source')}</div>
-      <div class="assetMeta">${m.width || '?'}×${m.height || '?'} · ${m.fps || '?'}fps · ${fmt(state.proj.duration)}</div>`;
+      <div class="assetMeta">${m.width || '?'}×${m.height || '?'} · ${m.fps || '?'}fps · ${fmt(state.proj.duration)}</div>
+      <button id="proxyBtn" class="pkGhost proxyBtn${state.proxyOn ? ' on' : ''}" title="540p preview proxy for smooth scrubbing — exports always use the original">${state.proxyOn ? 'Proxy: ON (540p preview)' : 'Proxy playback'}</button>`;
   if (!card) {
     card = document.createElement('div');
     card.id = 'mediaAsset'; card.className = 'mediaAsset';
@@ -1113,6 +1117,66 @@ $('#musClear')?.addEventListener('click', () => saveMusic(null));
 ['musVol', 'musDuck'].forEach((id) => $(`#${id}`)?.addEventListener('change', () => {
   if (state.music) saveMusic({ path: state.music.path, volume: Number($('#musVol').value), duck: $('#musDuck').value });
 }));
+
+// ---- Look (LUT): attach a user-supplied .cube — persisted on the project; every sequence
+// export grades through it. Preview stays ungraded (stated in the card). ----
+function renderLutStatus() {
+  const st = $('#lutStatus'); if (!st) return;
+  st.textContent = state.lut ? `${state.lut.name} — applied at export` : 'none — original color';
+  $('#lutClear')?.classList.toggle('hidden', !state.lut);
+}
+async function saveLut(lut) {
+  if (!state.proj) { toast('Load a project first.', true); return; }
+  try {
+    const r = await fetch('/api/lut', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: state.proj.id, lut }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'LUT save failed.');
+    state.lut = d.lut; renderLutStatus();
+    toast(d.lut ? `Look attached: ${d.lut.name} — exports grade through it.` : 'Look cleared — original color.');
+  } catch (e) { toast(e.message, true); }
+}
+$('#lutAttach')?.addEventListener('click', () => {
+  const p = ($('#lutPath')?.value || '').trim();
+  if (!p) { toast('Type the path to a .cube LUT first.', true); return; }
+  saveLut({ path: p });
+});
+$('#lutClear')?.addEventListener('click', () => saveLut(null));
+
+// ---- Preview proxy: 540p side-encode for smooth scrubbing. PREVIEW-ONLY — exports always use
+// the original (server-enforced). Toggle swaps the player src, preserving position. ----
+state.proxyOn = false;
+let _proxyPoll = null;
+function setProxy(on) {
+  if (!state.proj) return;
+  const t = player.currentTime; const wasPaused = player.paused;
+  state.proxyOn = on;
+  player.src = `/api/video?id=${encodeURIComponent(state.proj.id)}${on ? '&proxy=1' : ''}`;
+  player.addEventListener('loadedmetadata', function once() {
+    player.removeEventListener('loadedmetadata', once);
+    player.currentTime = t;
+    if (!wasPaused) player.play().catch(() => {});
+  });
+  renderMediaAsset();
+}
+async function proxyClick() {
+  if (!state.proj) return;
+  const st = await (await fetch(`/api/proxy?id=${encodeURIComponent(state.proj.id)}`)).json();
+  if (st.ready) { setProxy(!state.proxyOn); toast(state.proxyOn ? 'Proxy playback ON (540p preview — exports use the original).' : 'Proxy OFF — original playback.'); return; }
+  if (st.generating) { toast('Proxy is still generating…'); return; }
+  const r = await (await fetch('/api/proxy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: state.proj.id }) })).json();
+  if (r.ready) { setProxy(true); return; }
+  toast('Generating 540p proxy in the background — I\'ll switch when it\'s ready.');
+  clearInterval(_proxyPoll);
+  _proxyPoll = setInterval(async () => {
+    const s = await (await fetch(`/api/proxy?id=${encodeURIComponent(state.proj.id)}`)).json().catch(() => ({}));
+    if (s.ready) { clearInterval(_proxyPoll); setProxy(true); toast('Proxy ready — 540p preview ON.'); }
+    else if (!s.generating) { clearInterval(_proxyPoll); toast('Proxy generation failed — check the server log.', true); }
+  }, 5000);
+}
+document.querySelector('#importBar')?.addEventListener('click', (e) => {
+  if (e.target.closest('#proxyBtn')) proxyClick();
+});
 
 // ---- Update check: one non-blocking probe against the newest GitHub tag; a quiet toast only
 // when an update actually exists. Network failure = silence (never nags, never blocks). ----

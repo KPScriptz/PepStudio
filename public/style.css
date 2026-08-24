@@ -1829,3 +1829,6 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
 .corrGrid{ display:grid; grid-template-columns:1fr 1fr; gap:5px; }
 .corrTag{ padding:7px 9px !important; font-size:11px !important; text-align:left !important; background:var(--px-hover,#22252a) !important; border:1px solid var(--px-divider,rgba(255,255,255,.06)) !important; border-radius:6px !important; color:var(--px-text,#ececec) !important; cursor:pointer; transition:background .12s, border-color .12s; }
 .corrTag:hover{ background:#2d3340 !important; border-color:#2d76ff !important; transform:none !important; }
+/* Proxy toggle in the media tile. */
+.proxyBtn{ margin-top:6px; width:100%; }
+.proxyBtn.on{ border-color:var(--px-accent,#2d76ff) !important; color:#fff !important; background:var(--px-accent,#2d76ff) !important; }

@@ -259,6 +259,56 @@ app.post('/api/diarize', async (req, res) => {
   }
 });
 
+// Color look: attach ONE user-supplied .cube LUT — persisted like music/facecam; every sequence
+// export grades through it (full strength; ffmpeg lut3d). null clears.
+app.post('/api/lut', async (req, res) => {
+  try {
+    const id = req.body.id;
+    const p = path.join(DATA, id || '', 'analysis.json');
+    if (!id || !fs.existsSync(p)) return res.status(404).json({ error: 'Unknown project id' });
+    const a = JSON.parse(await fsp.readFile(p, 'utf8'));
+    const l = req.body.lut;
+    if (l === null || l === undefined) a.lut = null;
+    else {
+      const lp = tildeExpand(String(l.path || '').trim());
+      if (!lp || !fs.existsSync(lp)) return res.status(400).json({ error: `LUT file not found: ${lp || '(empty)'}` });
+      if (!/\.cube$/i.test(lp)) return res.status(400).json({ error: 'Not a .cube LUT file.' });
+      a.lut = { path: lp, name: path.basename(lp) };
+    }
+    await fsp.writeFile(p, JSON.stringify(a), 'utf8');
+    res.json({ lut: a.lut });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
+// Preview proxy: a 540p side-encode for smooth scrubbing of heavy sources. PREVIEW-ONLY by
+// construction — every export path resolves the ORIGINAL via sourceFor(); the proxy is served
+// solely by /api/video?proxy=1. Same fps as the source so frame-stepping math holds.
+const _proxyGen = new Set();
+const proxyPath = (id) => path.join(DATA, id, 'proxy.mp4');
+app.post('/api/proxy', async (req, res) => {
+  try {
+    const id = req.body.id;
+    const file = await sourceFor(id);
+    if (!file) return res.status(404).json({ error: 'Unknown project id' });
+    const out = proxyPath(id);
+    if (fs.existsSync(out)) return res.json({ ready: true });
+    if (_proxyGen.has(id)) return res.json({ ready: false, generating: true });
+    _proxyGen.add(id);
+    const tmp = `${out}.tmp.mp4`;
+    ffmpeg(['-nostdin', '-y', '-i', file, '-vf', 'scale=-2:540:flags=bilinear',
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '28',
+      '-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart', tmp])
+      .then(() => fsp.rename(tmp, out))
+      .catch((e) => { console.log('[proxy] generation failed:', String(e.message || e)); fsp.rm(tmp, { force: true }).catch(() => {}); })
+      .finally(() => _proxyGen.delete(id));
+    res.json({ ready: false, generating: true, started: true });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+app.get('/api/proxy', (req, res) => {
+  const id = req.query.id || '';
+  res.json({ ready: fs.existsSync(proxyPath(id)), generating: _proxyGen.has(id) });
+});
+
 // Project music: attach ONE user-supplied audio file (path validated + audio extension) that
 // every sequence export mixes in — looped to length, faded out, auto-ducked under speech.
 // Persisted in the analysis like the facecam box; null clears.
@@ -493,7 +543,13 @@ function pipeRange(res, file, opts) {
 // negative Content-Length. A browser <video> and download managers all send these forms.
 app.get('/api/video', async (req, res) => {
   try {
-    const file = await sourceFor(req.query.id);
+    let file = await sourceFor(req.query.id);
+    // ?proxy=1 serves the 540p preview proxy when it exists — PLAYBACK ONLY; exports never
+    // touch this path (they resolve the original through sourceFor directly).
+    if (req.query.proxy === '1') {
+      const pp = proxyPath(req.query.id || '');
+      if (fs.existsSync(pp)) file = pp;
+    }
     if (!file || !fs.existsSync(file)) return res.status(404).end('not found');
     const stat = fs.statSync(file);
     const size = stat.size;
@@ -1208,7 +1264,12 @@ app.post('/api/export/sequence', async (req, res) => {
     }
     const crfOpt = { high: 18, compact: 23 }[req.body.quality] || 0;
     const gainDb = Math.max(-12, Math.min(12, Number(req.body.gainDb) || 0));
-    await exportSequence(file, segs, out, { vertical, draft: req.body.draft === true, fps: fpsOpt, res: resOpt, crf: crfOpt, gainDb });
+    // Project LUT (persisted on the analysis) grades every sequence export; lut:false skips once.
+    let lutPath = null;
+    if (req.body.lut !== false) {
+      try { const a = JSON.parse(await fsp.readFile(path.join(DATA, req.body.id, 'analysis.json'), 'utf8')); lutPath = (a.lut && a.lut.path) || null; } catch {}
+    }
+    await exportSequence(file, segs, out, { vertical, draft: req.body.draft === true, fps: fpsOpt, res: resOpt, crf: crfOpt, gainDb, lut: lutPath });
     // Project music post-pass: mix the attached track over the finished render (video stream-
     // copied — seconds, not a re-encode). music:false in the request skips it for one export.
     let musicApplied = false;
