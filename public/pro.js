@@ -144,7 +144,8 @@ function loadProject(data) {
   player.src = `/api/video?id=${encodeURIComponent(data.id)}`;
   $('#monEmpty').classList.remove('on');
   renderTimeline(); renderDeadAir(); renderSel(); updateProjStat();
-  $('#coverStrip').innerHTML = ''; $('#thumbCanvas').innerHTML = '<span class="monEmpty on">suggest covers to pick a peak frame</span>';
+  $('#coverStrip').innerHTML = '';
+  if (typeof resetThumbEditor === 'function') resetThumbEditor();
   gotoTab('tabEdit');
 }
 function updateProjStat() {
@@ -405,19 +406,133 @@ $('#coversBtn').addEventListener('click', async () => {
       `<img src="/api/cover?id=${encodeURIComponent(state.proj.id)}&t=${c.t}&w=480" data-t="${c.t}" alt="cover at ${fmt(c.t)}" title="${fmt(c.t)}">`).join('');
   } catch (err) { status('#pkStatus', err.message, true); }
 });
+// ---------- thumbnail canvas editor ----------
+// The old server-side builder pasted the facecam TWICE (the burned-in one survives in the
+// frame), blurred the whole moment away, and set timid type. This compositor keeps the frame
+// SHARP, lets you zoom/reframe to crop burned-in overlays out, draws ONE facecam layer with a
+// ring, and sets poster-weight type — all draggable, saved server-side as the finished JPEG.
+const TC = $('#thumbC'), tctx = TC.getContext('2d');
+const TH = {
+  img: null, zoom: 1, bx: 0.5, by: 0.5,
+  cam: { on: true, cx: 0.80, cy: 0.26, w: 0.30 },
+  text: { x: 0.05, y: 0.90, size: 132, color: '#FFFFFF' },
+  hit: {}, drag: null,
+};
+function resetThumbEditor() {
+  TH.img = null; TH.zoom = 1; TH.bx = 0.5; TH.by = 0.5; state.coverT = null;
+  $('#tZoom').value = 1;
+  $('#thumbEmpty').classList.add('on');
+  tctx.clearRect(0, 0, 1280, 720);
+}
+function drawThumb() {
+  if (!TH.img) return;
+  const W = 1280, H = 720;
+  tctx.clearRect(0, 0, W, H);
+  // background — sharp, pan+zoom (cover-fit so no gaps)
+  const img = TH.img;
+  const s = Math.max(W / img.width, H / img.height) * TH.zoom;
+  const dw = img.width * s, dh = img.height * s;
+  const dx = Math.max(W - dw, Math.min(0, W / 2 - TH.bx * dw));
+  const dy = Math.max(H - dh, Math.min(0, H / 2 - TH.by * dh));
+  tctx.drawImage(img, dx, dy, dw, dh);
+  // legibility gradient along the bottom third — not a full-frame blur
+  const g = tctx.createLinearGradient(0, H * 0.6, 0, H);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.62)');
+  tctx.fillStyle = g; tctx.fillRect(0, H * 0.6, W, H * 0.4);
+  // facecam — ONE layer, cropped from the source frame's cam rect, rounded + gold ring
+  TH.hit.cam = null;
+  const fc = state.proj && state.proj.facecam;
+  if (TH.cam.on && fc && fc.w) {
+    // facecam rect is stored as FRACTIONS of the frame — scale by the image's own dimensions
+    const sx = fc.x * img.width, sy = fc.y * img.height;
+    const sw = fc.w * img.width, sh = fc.h * img.height;
+    const cw = TH.cam.w * W, ch = cw * (sh / sw);
+    const cx = TH.cam.cx * W - cw / 2, cy = TH.cam.cy * H - ch / 2;
+    const r = 20;
+    tctx.save();
+    tctx.shadowColor = 'rgba(0,0,0,.55)'; tctx.shadowBlur = 26; tctx.shadowOffsetY = 8;
+    tctx.beginPath(); tctx.roundRect(cx, cy, cw, ch, r); tctx.fillStyle = '#000'; tctx.fill();
+    tctx.restore();
+    tctx.save();
+    tctx.beginPath(); tctx.roundRect(cx, cy, cw, ch, r); tctx.clip();
+    tctx.drawImage(img, sx, sy, sw, sh, cx, cy, cw, ch);
+    tctx.restore();
+    tctx.beginPath(); tctx.roundRect(cx, cy, cw, ch, r);
+    tctx.lineWidth = 6; tctx.strokeStyle = '#FFD700'; tctx.stroke();
+    TH.hit.cam = { x: cx, y: cy, w: cw, h: ch };
+  }
+  // text — poster weight, auto-fit, slight tilt, hard shadow + fat stroke
+  TH.hit.text = null;
+  const raw = ($('#thumbText').value.trim() || '').toUpperCase();
+  if (raw) {
+    let size = TH.text.size;
+    tctx.font = `900 ${size}px Impact, 'Arial Black', sans-serif`;
+    while (size > 56 && tctx.measureText(raw).width > W * 0.92) {
+      size -= 4; tctx.font = `900 ${size}px Impact, 'Arial Black', sans-serif`;
+    }
+    const tx = TH.text.x * W, ty = TH.text.y * H;
+    tctx.save();
+    tctx.translate(tx, ty); tctx.rotate(-0.03);
+    tctx.lineJoin = 'round'; tctx.textBaseline = 'alphabetic';
+    const off = Math.max(4, size * 0.05);
+    tctx.fillStyle = 'rgba(0,0,0,.85)'; tctx.fillText(raw, off, off);
+    tctx.lineWidth = Math.max(8, size * 0.14); tctx.strokeStyle = '#000'; tctx.strokeText(raw, 0, 0);
+    tctx.fillStyle = TH.text.color; tctx.fillText(raw, 0, 0);
+    const m = tctx.measureText(raw);
+    tctx.restore();
+    TH.hit.text = { x: tx - 10, y: ty - size, w: m.width + 20, h: size * 1.25 };
+  }
+}
+function canvasPt(e) {
+  const r = TC.getBoundingClientRect();
+  return { x: (e.clientX - r.left) / r.width * 1280, y: (e.clientY - r.top) / r.height * 720 };
+}
+TC.addEventListener('pointerdown', (e) => {
+  if (!TH.img) return;
+  const p = canvasPt(e);
+  const inside = (b) => b && p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h;
+  TH.drag = inside(TH.hit.text) ? 'text' : inside(TH.hit.cam) ? 'cam' : 'bg';
+  TH.last = p;
+  TC.setPointerCapture(e.pointerId);
+});
+TC.addEventListener('pointermove', (e) => {
+  if (!TH.drag) return;
+  const p = canvasPt(e);
+  const mx = (p.x - TH.last.x), my = (p.y - TH.last.y);
+  if (TH.drag === 'text') { TH.text.x += mx / 1280; TH.text.y += my / 720; }
+  else if (TH.drag === 'cam') { TH.cam.cx += mx / 1280; TH.cam.cy += my / 720; }
+  else {
+    const s = Math.max(1280 / TH.img.width, 720 / TH.img.height) * TH.zoom;
+    TH.bx = Math.max(0, Math.min(1, TH.bx - mx / (TH.img.width * s)));
+    TH.by = Math.max(0, Math.min(1, TH.by - my / (TH.img.height * s)));
+  }
+  TH.last = p; drawThumb();
+});
+TC.addEventListener('pointerup', () => { TH.drag = null; });
+$('#thumbText').addEventListener('input', drawThumb);
+$('#tSize').addEventListener('input', () => { TH.text.size = Number($('#tSize').value); drawThumb(); });
+$('#tZoom').addEventListener('input', () => { TH.zoom = Number($('#tZoom').value); drawThumb(); });
+$('#tCam').addEventListener('change', () => { TH.cam.on = $('#tCam').checked; drawThumb(); });
+$('#tColors').addEventListener('click', (e) => {
+  const c = e.target.closest('.chip'); if (!c) return;
+  document.querySelectorAll('#tColors .chip').forEach((x) => x.classList.toggle('sel', x === c));
+  TH.text.color = c.dataset.c; drawThumb();
+});
 $('#coverStrip').addEventListener('click', (e) => {
   const img = e.target.closest('img'); if (!img) return;
   state.coverT = Number(img.dataset.t);
   document.querySelectorAll('#coverStrip img').forEach((i) => i.classList.toggle('sel', i === img));
-  $('#thumbCanvas').innerHTML = `<img src="/api/cover?id=${encodeURIComponent(state.proj.id)}&t=${state.coverT}&w=1280" alt="picked frame">`;
+  const full = new Image();
+  full.onload = () => { TH.img = full; $('#thumbEmpty').classList.remove('on'); drawThumb(); };
+  full.src = `/api/cover?id=${encodeURIComponent(state.proj.id)}&t=${state.coverT}&w=1920`;
 });
-$('#thumbBtn').addEventListener('click', async () => {
+$('#thumbSave').addEventListener('click', async () => {
   if (!state.proj) return;
-  if (state.coverT == null) { status('#pkStatus', 'Pick a cover frame first (Suggest covers).', true); return; }
+  if (!TH.img) { status('#pkStatus', 'Pick a cover frame first (Suggest covers).', true); return; }
   try {
-    const d = await api('/api/thumbstudio', { id: state.proj.id, t: state.coverT, text: $('#thumbText').value.trim() });
-    $('#thumbCanvas').innerHTML = `<img src="${d.url}?x=${Date.now()}" alt="built thumbnail">`;
-    status('#pkStatus', `Thumbnail built${d.usedFacecam ? ' with your facecam crop' : ''}.`);
+    const d = await api('/api/thumbsave', { id: state.proj.id, dataUrl: TC.toDataURL('image/jpeg', 0.92) });
+    status('#pkStatus', 'Thumbnail saved — revealed in Finder.');
+    api('/api/reveal', { path: d.file }).catch(() => {});
   } catch (err) { status('#pkStatus', err.message, true); }
 });
 

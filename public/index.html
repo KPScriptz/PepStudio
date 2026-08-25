@@ -106,12 +106,24 @@
       <div class="cardH">Thumbnail studio <button class="btnG" id="coversBtn">Suggest covers</button></div>
       <div class="coverStrip" id="coverStrip"></div>
       <div class="thumbCanvas" id="thumbCanvas">
-        <span class="monEmpty on">suggest covers to pick a peak frame</span>
+        <canvas id="thumbC" width="1280" height="720"></canvas>
+        <span class="monEmpty on" id="thumbEmpty">suggest covers to pick a peak frame</span>
       </div>
       <div class="thumbCtl">
-        <input class="urlIn grow" id="thumbText" placeholder="THE COMEBACK — big text on the thumb" spellcheck="false">
-        <button class="btnP" id="thumbBtn">Build thumbnail</button>
+        <input class="urlIn grow" id="thumbText" placeholder="THE COMEBACK — type, then drag it on the canvas" spellcheck="false">
+        <button class="btnP" id="thumbSave">Save thumbnail</button>
       </div>
+      <div class="thumbCtl thumbOpts">
+        <label class="tOpt">text <input type="range" id="tSize" min="60" max="220" step="4" value="132"></label>
+        <span class="chipRow" id="tColors">
+          <button class="chip sel" data-c="#FFFFFF" style="background:#fff" aria-label="white"></button>
+          <button class="chip" data-c="#FFD700" style="background:#FFD700" aria-label="gold"></button>
+          <button class="chip" data-c="#FF4757" style="background:#FF4757" aria-label="red"></button>
+        </span>
+        <label class="tOpt">zoom <input type="range" id="tZoom" min="1" max="2.5" step="0.02" value="1"></label>
+        <label class="tOpt chkOpt"><input type="checkbox" id="tCam" checked> facecam</label>
+      </div>
+      <div class="hintline" style="padding:0 16px 14px">Drag the text or facecam to place them · drag the background to reframe · zoom crops into the action (and crops out burned-in overlays).</div>
     </div>
   </div>
   <div class="pkCol" style="flex:4">

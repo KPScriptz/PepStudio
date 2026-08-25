@@ -885,6 +885,24 @@ app.post('/api/thumbstudio', async (req, res) => {
   } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
 
+// Save a client-composited thumbnail (the Pro UI's canvas editor renders the thumbnail in the
+// browser — real typography, draggable layers — and posts the finished JPEG here). Data-URL in,
+// file on disk out; the 8mb JSON body limit comfortably covers a 1280x720 JPEG.
+app.post('/api/thumbsave', async (req, res) => {
+  try {
+    const id = req.body.id;
+    if (!id || !fs.existsSync(path.join(DATA, id))) return res.status(404).json({ error: 'Unknown project id' });
+    const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(String(req.body.dataUrl || ''));
+    if (!m) return res.status(400).json({ error: 'Bad image data — expected a JPEG data URL.' });
+    const buf = Buffer.from(m[1], 'base64');
+    if (!buf.length || buf.length > 6e6) return res.status(400).json({ error: 'Image empty or too large.' });
+    const out = path.join(RENDERS, id, 'thumbnail-studio.jpg');
+    await fsp.mkdir(path.dirname(out), { recursive: true });
+    await fsp.writeFile(out, buf);
+    res.json({ url: `/renders/${id}/thumbnail-studio.jpg`, file: out });
+  } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
 // Cover-frame candidates for a clip (peak reaction / loudest / scene change). Pure compile — the
 // client renders each returned `t` as an <img src="/api/cover?...">.
 app.post('/api/covers', (req, res) => {
