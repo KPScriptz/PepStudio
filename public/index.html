@@ -1,526 +1,149 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PepStudio — local gameplay editor</title>
-  <link rel="icon" href="favicon.ico" />
-  <link rel="apple-touch-icon" href="icon-192.png" />
-  <link rel="stylesheet" href="style.css" />
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PepStudio Pro</title>
+<link rel="stylesheet" href="pro.css">
 </head>
 <body>
-  <!-- Project picker: a full-screen overlay shown on load. The whole editor lives untouched
-       underneath; "New Project" / opening a recent just hides this. No existing node moves. -->
-  <div id="view-project-picker" class="view-picker">
-    <aside class="picker-side">
-      <div class="picker-logo"><img src="icon-192.png" alt="" class="brandLogo" /><span>PepStudio</span></div>
-      <nav class="picker-nav"><div class="pnav active">Projects</div></nav>
-    </aside>
-    <main class="picker-main">
-      <div class="picker-head">
-        <h1>Projects</h1>
-        <button id="btnNewProject" class="picker-new">+ New Project</button>
-      </div>
-      <div id="crashBanner" class="crash-banner hidden"></div>
-      <div id="recentsGrid" class="recents-grid"></div>
-    </main>
+
+<nav class="nav">
+  <div class="mark">PEP<b>STUDIO</b>&nbsp;PRO</div>
+  <div class="tabs" role="tablist">
+    <button class="tab on" data-t="tabIngest" role="tab"><span class="n">1</span>Ingest</button>
+    <button class="tab" data-t="tabEdit" role="tab"><span class="n">2</span>Edit</button>
+    <button class="tab" data-t="tabPack" role="tab"><span class="n">3</span>Package</button>
   </div>
-
-  <!-- Workspace header ribbon -->
-  <header>
-    <button id="backToProjects" class="backBtn" title="Back to projects">‹ Projects</button>
-    <div class="brand"><img src="icon-192.png" alt="PepStudio" class="brandLogo" /></div>
-    <div id="activeProjectTitle" class="window-title-tab">Untitled Sequence 01</div>
-    <div class="sub">VOD → TikTok clips · YouTube cut · captions — local & free</div>
-    <div id="capStatus" class="badge muted">captions: checking…</div>
-    <button id="themeToggle" class="themeToggle" title="Toggle light / dark"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1a7 7 0 100 14A7 7 0 018 1zm0 1.6a5.4 5.4 0 010 10.8V2.6z"/></svg></button>
-  </header>
-
-  <div id="progress" class="card hidden">
-    <div class="spinner"></div>
-    <span id="progressText">Working…</span>
+  <div class="navR">
+    <span class="kbd" title="Settings">⌘ ,</span>
+    <button class="gear" id="settingsBtn" aria-label="Settings">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
   </div>
+</nav>
 
-  <!-- Track 2: 4-pane NLE workspace. #editor stays the toggled root; #importBar, .stage, .panels,
-       and the timelines are RELOCATED (not re-declared) into quadrants — every wired ID is preserved. -->
-  <main id="editor" class="hidden nleGrid">
-    <div class="nle-body">
-
-      <!-- Icon rail: collapses the left column to ~48px; each icon flies out one panel.
-           Honest — only the two real left sections (Media, Inspector). -->
-      <nav class="rail" id="railNav">
-        <button data-panel="media" title="Media" aria-label="Media"><svg viewBox="0 0 20 20" width="19" height="19" fill="currentColor"><path d="M2.5 5.5A1.5 1.5 0 014 4h3.2l1.4 1.6H16a1.5 1.5 0 011.5 1.5v7A1.5 1.5 0 0116 15.6H4a1.5 1.5 0 01-1.5-1.5v-8.6z"/></svg></button>
-        <button data-panel="inspector" title="Inspector" aria-label="Inspector"><svg viewBox="0 0 20 20" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 6h14M3 10h14M3 14h14"/><circle cx="7.5" cy="6" r="1.7" fill="currentColor" stroke="none"/><circle cx="12.5" cy="10" r="1.7" fill="currentColor" stroke="none"/><circle cx="6.5" cy="14" r="1.7" fill="currentColor" stroke="none"/></svg></button>
-      </nav>
-
-      <!-- QUADRANT 1 · LEFT: Effect Controls + Project Media Bin (#importBar / #pathInput) -->
-      <aside class="nle-left">
-        <div class="nle-pane fxPane">
-          <div class="paneTab">Effect Controls</div>
-          <div class="fxInspector">
-            <div class="fxGroup">▼ Transform</div>
-            <div class="fxRow"><span>Position</span><span class="fxVal">960 × 540</span></div>
-            <div class="fxRow"><span>Scale</span><span class="fxVal">100 %</span></div>
-            <div class="fxRow"><span>Opacity</span><span class="fxVal">100.0 %</span></div>
-            <div class="fxGroup">▼ Crop (9:16 auto)</div>
-            <div class="fxRow"><span>Top / Bottom</span><span class="fxVal">33.3% / 66.6%</span></div>
-          </div>
-        </div>
-        <div class="nle-pane grow">
-          <div class="paneTab">Project · Media Bin</div>
-          <section id="importBar" class="card">
-            <label>Paste a YouTube or Twitch VOD link</label>
-            <div class="row">
-              <input id="urlInput" type="text" spellcheck="false"
-                     placeholder="https://www.twitch.tv/videos/…   or   https://youtu.be/…" />
-              <button id="importBtn" class="primary">Import VOD</button>
-            </div>
-            <div id="urlProgress" class="urlProgress hidden">
-              <div class="bar"><div id="urlBarFill"></div></div>
-              <span id="urlProgressText" class="muted"></span>
-            </div>
-            <div class="orDivider"><span>or use a local file</span></div>
-            <div class="row">
-              <input id="pathInput" type="text" spellcheck="false"
-                     placeholder="/Users/you/Movies/raw-gameplay.mp4  (or ~/Movies/… — or drop a file here)" />
-              <button id="btn-import-file" class="filePickBtn" title="Choose a video file…">Choose…</button>
-              <button id="analyzeBtn">Analyze</button>
-            </div>
-            <div id="importHint" class="hint">Clip your own streams/VODs. Nothing is uploaded — files are processed locally.</div>
-          </section>
-        </div>
-      </aside>
-
-      <!-- QUADRANT 2 · CENTER: Program Viewport Monitor (#player) -->
-      <main class="nle-center">
-        <div class="paneTab">Program Monitor · Sequence 01</div>
-        <div class="stage">
-          <div class="monitor">
-            <video id="player" preload="metadata"></video>
-            <div id="monitorPlaceholder" class="monitorPlaceholder">No Media Loaded — import source footage to mount the timeline</div>
-          </div>
-          <div class="transport">
-            <button id="tpBack" class="tpBtn" title="Step back 1 frame (Shift: 5s)"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8.5 8l6.5-4.5v9L8.5 8zM1 8l6.5-4.5v9L1 8z"/></svg></button>
-            <button id="tpPlay" class="tpBtn tpPlay" title="Play / Pause"><svg class="icPlay" width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2l10 6-10 6V2z"/></svg><svg class="icPause" width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M3.5 2h3.4v12H3.5zM9.1 2h3.4v12H9.1z"/></svg></button>
-            <button id="tpFwd" class="tpBtn" title="Step forward 1 frame (Shift: 5s)"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M1 3.5L7.5 8 1 12.5v-9zM8.5 3.5L15 8l-6.5 4.5v-9z"/></svg></button>
-            <div class="scrubWrap">
-              <input id="tpScrub" class="tpScrub" type="range" min="0" max="100" value="0" step="0.01" />
-              <div id="tpRail" class="tpRail" aria-hidden="true"></div>
-              <div id="railTip" class="railTip hidden" aria-hidden="true"></div>
-            </div>
-            <span id="tpTime" class="tpTime muted">0:00 / 0:00</span>
-            <button id="guidesBtn" class="tpBtn" title="Cycle monitor guides: thirds → safe margins → crosshair → off"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="1"/><path d="M6 1.5v13M10 1.5v13M1.5 6h13M1.5 10h13"/></svg></button>
-            <button id="ioExportBtn" class="tpBtn ioExport hidden" title="Export just the In→Out region (horizontal cut)">Export I/O</button>
-          </div>
-          <div class="playerMeta">
-            <span id="metaName">—</span>
-            <span id="metaInfo" class="muted"></span>
-          </div>
-        </div>
-      </main>
-
-      <!-- QUADRANT 3 · RIGHT: Sequence Highlights Inspector (#hlList) + Ghost + Publish (nothing orphaned) -->
-      <section class="nle-right">
-        <div class="paneTab paneTabs" role="tablist">
-          <span class="rtab active" data-rtab="curate" role="tab">Curate</span>
-          <span class="rtab" data-rtab="publish" role="tab">Publish</span>
-        </div>
-        <div class="panels">
-          <button id="storyCutBtn" class="storyCutBtn rtabPane" data-rtab="curate" title="Storyboard Cut: analyze → rank a wide pool → lead with a cold-open hook of your best moment → assemble the chronological story arc at a length sized to your footage, and export it.">
-            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M9 1L3 9h4l-1 6 6-8H8l1-6z"/></svg>Storyboard Cut
-          </button>
-          <label id="blueprintRow" class="blueprintRow rtabPane" data-rtab="curate" title="Narrative blueprint: which kind of moments lead the cut, and how long the cold-open hook runs.">
-            <span>Blueprint</span>
-            <select id="blueprintSel" class="blueprintSel">
-              <option value="balanced" data-pace="natural" selected>Balanced</option>
-              <option value="chaos" data-pace="tight">Chaos — laughter-led, snappy</option>
-              <option value="clutch" data-pace="natural">Clutch vs Fail — tension → payoff</option>
-              <option value="story" data-pace="natural">Storytime — narrative arc</option>
-              <option value="fast" data-pace="relentless">Fast-Cut — high-density, reaction-led</option>
-            </select>
-          </label>
-          <!-- Live run-time plan: recomputed as the footage/blueprint change, before any export -->
-          <div id="runPlan" class="runPlan hidden rtabPane" data-rtab="curate"></div>
-          <!-- Deterministic retention audit of the current cut, before rendering anything -->
-          <div id="criticBox" class="criticBox hidden rtabPane" data-rtab="curate"></div>
-          <div id="hookLab" class="hookLab hidden rtabPane" data-rtab="curate"></div>
-          <div id="spkCard" class="spkCard rtabPane" data-rtab="curate">
-            <div class="pkHead"><span>Speakers</span><button id="spkBtn" class="pkGhost">Detect (In→Out / clip)</button></div>
-            <div id="spkList" class="spkList hidden"></div>
-            <div class="pkBtns"><button id="spkMarkBtn" class="pkGhost hidden">Add turns as markers</button></div>
-            <div class="hint">Turn detection via local tinydiarize — S1/S2 are alternating turn labels, not voice IDs.</div>
-          </div>
-          <div id="clipInsight" class="clipInsight hidden rtabPane" data-rtab="curate"></div>
-          <!-- Transcript-driven editing: click a word to seek, strike words to cut those frames -->
-          <div id="transcriptBox" class="transcriptBox rtabPane" data-rtab="curate">
-            <div class="pkHead"><span>Transcript</span><span id="trStat" class="qCount hidden"></span></div>
-            <div id="trWords" class="trWords hidden"></div>
-            <div class="pkBtns" style="margin-top:9px">
-              <button id="trLoadBtn" class="pkGhost">Load transcript</button>
-              <button id="trCutBtn" class="pkGen">Cut struck words</button>
-            </div>
-            <div class="hint">Click a word to jump the playhead there. Click-drag or Shift-click to strike a run of words, then cut — the struck frames are removed from the sequence and Cmd+Z puts them back.</div>
-          </div>
-          <!-- Step 5: correction capture — one-tap "why?" after a manual override -->
-          <div id="correctionShelf" class="correctionShelf hidden rtabPane" data-rtab="curate">
-            <div class="corrHead"><span>Why did you change <b id="corrWhat">this</b>?</span><span id="corrClose" class="corrClose" title="dismiss">×</span></div>
-            <div class="corrGrid">
-              <button class="corrTag" data-reason="BAD_TIMING">Bad timing / cut</button>
-              <button class="corrTag" data-reason="MISSED_SETUP">Missed setup</button>
-              <button class="corrTag" data-reason="BORING_FILLER">Boring filler</button>
-              <button class="corrTag" data-reason="PACING">Rhythm / pacing</button>
-            </div>
-          </div>
-          <div class="card ghostPanel rtabPane" data-rtab="curate">
-            <div class="panelHead">
-              <strong>Ghost clips</strong>
-              <span id="ghostCount" class="muted"></span>
-            </div>
-            <div class="ghostHint muted">Red = cut candidates, kept on the timeline so nothing is lost. Verify, then banish. <b>Silent-but-moving</b> (possible stealth play) — check before cutting.</div>
-            <div id="ghostList"></div>
-          </div>
-
-          <div class="card hlPanel rtabPane" data-rtab="curate">
-            <div class="panelHead">
-              <strong>Highlights</strong>
-              <span id="hlCount" class="muted"></span>
-              <button id="funnyBtn" class="funnyBtn" title="Transcribe the candidate moments and rank them by your reactions — laughter, hype, big moments">Rank funny moments</button>
-              <button id="pepaiBtn" class="pepaiBtn hidden" title="Upgrade titles/tags with local PepAI">Upgrade titles</button>
-            </div>
-            <div id="hlList"></div>
-          </div>
-
-          <div class="card exportPanel rtabPane" data-rtab="publish">
-            <div class="panelHead"><strong>Publish</strong></div>
-
-            <button id="publishAllBtn" class="big publishAllBtn" title="Auto-title clips, build the upload kit (chapters + description + hashtags), and grab cover frames — in one pass.">Publish Everything<small>titles · chapters · hashtags · covers, one click</small></button>
-
-            <div class="publishRow">
-              <button id="tiktokBtn" class="big">TikTok pack<small>vertical + burned captions</small></button>
-              <button id="youtubeBtn" class="big">YouTube cut<small>hook + tight edit</small></button>
-            </div>
-            <button id="seqExportBtn" class="big seqBtn">Export sequence<small>kept clips in order + text overlays</small></button>
-            <label class="check"><input type="checkbox" id="capPublish" checked /> Captions on publish exports</label>
-            <label class="check" title="Word-by-word captions that hit on each spoken word — the short-form retention style."><input type="checkbox" id="capKinetic" /> Kinetic captions (word-by-word)</label>
-            <label class="blueprintRow" title="Visual style for burned-in captions on shorts.">
-              <span>Captions</span>
-              <select id="capStyleSel" class="blueprintSel">
-                <option value="pop" selected>Punchy (default)</option>
-                <option value="bold">TikTok Bold — yellow, thick stroke</option>
-                <option value="clean">YouTube Clean — boxed white</option>
-                <option value="minimal">Minimal Studio — small, low-key</option>
-              </select>
-            </label>
-
-            <details class="advanced" id="exportSettings">
-              <summary>Export settings</summary>
-              <label class="blueprintRow"><span>Resolution</span>
-                <select id="expRes" class="blueprintSel">
-                  <option value="720">720p — compact</option>
-                  <option value="1080" selected>1080p (default)</option>
-                  <option value="1440">1440p — never upscaled</option>
-                </select>
-              </label>
-              <label class="blueprintRow"><span>Frame rate</span>
-                <select id="expFps" class="blueprintSel">
-                  <option value="24">24 fps — filmic</option>
-                  <option value="30" selected>30 fps (default)</option>
-                  <option value="60">60 fps — full motion</option>
-                </select>
-              </label>
-              <label class="blueprintRow"><span>Quality</span>
-                <select id="expQuality" class="blueprintSel">
-                  <option value="high">High — bigger files (CRF 18)</option>
-                  <option value="standard" selected>Standard (default)</option>
-                  <option value="compact">Compact — smaller files (CRF 23)</option>
-                </select>
-              </label>
-              <label class="blueprintRow"><span>Vertical style</span>
-                <select id="expVert" class="blueprintSel">
-                  <option value="crop" selected>Crop to fill (default)</option>
-                  <option value="blur">Blur-fill — full frame on blurred bg</option>
-                </select>
-              </label>
-              <div id="sizeEst" class="hint"></div>
-              <div class="hint">Applies to sequence exports (Storyboard, Edit for Me, In/Out, tight cuts). Shorts stay 1080×1920 — the platform standard.</div>
-            </details>
-
-            <div class="mixerBox">
-              <div class="pkHead"><span>Mixer</span><span id="peakLight" class="peakLight" title="Peak indicator — lights red on clipping; click to clear">PEAK</span></div>
-              <canvas id="masterMeter" width="240" height="12" aria-label="Master level meter"></canvas>
-              <label class="blueprintRow"><span>Preview vol</span><input id="mixPreview" type="range" min="0" max="1.4" step="0.02" value="1" /></label>
-              <label class="blueprintRow"><span>Export gain</span><span class="mixGainWrap"><input id="mixGain" type="number" min="-12" max="12" step="0.5" value="0" /> dB</span></label>
-              <label class="blueprintRow" title="Post-pass on the finished mix: measure real integrated LUFS, apply the exact offset, brickwall-limit at −1 dBTP."><span>Normalize</span>
-                <span class="mixGainWrap"><input id="expNorm" type="checkbox" /> hit −14 LUFS (YouTube) on export</span>
-              </label>
-              <label class="blueprintRow" title="80 Hz high-pass (rumble/handling noise) + ffmpeg's built-in FFT denoiser on the export."><span>Voice clean</span>
-                <span class="mixGainWrap"><input id="expClean" type="checkbox" /> rumble cut + de-noise on export</span>
-              </label>
-              <label class="blueprintRow" title="Word-accurate: whisper finds each profanity token and the export silences exactly that span. Conservative list — a token must BE the word, so clean words never match."><span>Profanity</span>
-                <span class="mixGainWrap"><input id="expBleep" type="checkbox" /> mute cursing on export (needs whisper)</span>
-              </label>
-              <div class="pkBtns"><button id="loudBtn" class="pkGhost">Measure last export (LUFS)</button></div>
-              <div id="loudOut" class="hint"></div>
-              <div class="hint">One real audio stream — this is the master. Live meter + preview volume; export gain is burned by ffmpeg. Normalize runs last (after music), so it wins over gain. Shorts auto-normalize to −16 LUFS regardless.</div>
-            </div>
-
-            <div class="musicBox">
-              <div class="pkHead"><span>Music</span><span id="musStatus" class="fcStatus">none attached</span></div>
-              <div class="row" style="margin-top:8px">
-                <input id="musPath" type="text" spellcheck="false" placeholder="~/Music/track.mp3 — path to YOUR audio file" />
-                <button id="musAttach" class="pkGhost">Attach</button>
-                <button id="musClear" class="pkGhost hidden">Clear</button>
-              </div>
-              <label class="blueprintRow"><span>Music level</span><input id="musVol" type="range" min="0.05" max="0.4" step="0.01" value="0.15" /></label>
-              <label class="blueprintRow"><span>Auto-duck</span>
-                <select id="musDuck" class="blueprintSel">
-                  <option value="gentle" selected>Gentle — dips under speech</option>
-                  <option value="strong">Strong — hard duck</option>
-                  <option value="off">Off — constant level</option>
-                </select>
-              </label>
-              <div class="hint">Loops under every sequence export, fades out at the end, and ducks under your audio (real sidechain compression). Heads-up: constant game/crowd noise keys the duck too, so on gameplay VODs the dip is subtle (≈3–6 dB); it recovers fully in true pauses. Your file, never bundled.</div>
-            </div>
-
-            <div class="musicBox">
-              <div class="pkHead"><span>Look (color)</span><span id="lutStatus" class="fcStatus">none — original color</span></div>
-              <div class="row" style="margin-top:8px">
-                <input id="lutPath" type="text" spellcheck="false" placeholder="~/Looks/teal-orange.cube — path to YOUR .cube LUT" />
-                <button id="lutAttach" class="pkGhost">Attach</button>
-                <button id="lutClear" class="pkGhost hidden">Clear</button>
-              </div>
-              <label class="blueprintRow"><span>Brightness</span><input id="lookBri" type="range" min="-0.3" max="0.3" step="0.01" value="0" /></label>
-              <label class="blueprintRow"><span>Contrast</span><input id="lookCon" type="range" min="0.5" max="1.5" step="0.01" value="1" /></label>
-              <label class="blueprintRow"><span>Saturation</span><input id="lookSat" type="range" min="0" max="2" step="0.02" value="1" /></label>
-              <div class="pkBtns"><button id="lookReset" class="pkGhost hidden">Reset color</button></div>
-              <div class="hint">Correction first (brightness/contrast/saturation), then the LUT grades on top (ffmpeg eq + lut3d). Preview stays ungraded — the look is applied at export.</div>
-            </div>
-
-            <div class="musicBox">
-              <div class="pkHead"><span>Watermark</span><span id="wmStatus" class="fcStatus">none — clean frame</span></div>
-              <div class="row" style="margin-top:8px">
-                <input id="wmPath" type="text" spellcheck="false" placeholder="~/Brand/logo.png — path to YOUR transparent PNG" />
-                <button id="wmAttach" class="pkGhost">Attach</button>
-                <button id="wmClear" class="pkGhost hidden">Clear</button>
-              </div>
-              <label class="blueprintRow"><span>Corner</span>
-                <select id="wmPos" class="blueprintSel">
-                  <option value="br" selected>Bottom-right</option>
-                  <option value="bl">Bottom-left</option>
-                  <option value="tr">Top-right</option>
-                  <option value="tl">Top-left</option>
-                </select>
-              </label>
-              <label class="blueprintRow"><span>Opacity</span><input id="wmOpacity" type="range" min="0.1" max="1" step="0.05" value="0.6" /></label>
-              <label class="blueprintRow"><span>Size</span><input id="wmSize" type="range" min="0.05" max="0.3" step="0.01" value="0.12" /></label>
-              <div class="hint">Composites your logo onto every sequence export (size is a fraction of frame width). Your file, never bundled.</div>
-            </div>
-            <div class="fcRow">
-              <button id="fcSetBtn" class="pkGhost">Set facecam box</button>
-              <span id="fcStatus" class="fcStatus">not set — shorts use center-crop</span>
-              <button id="fcClearBtn" class="pkGhost hidden">Clear</button>
-            </div>
-
-            <div class="publishKit">
-              <div class="pkHead"><span>Upload Kit</span><span class="pkBtns"><button id="pkTitleBtn" class="pkGhost">Auto-title clips</button><button id="pkGenBtn" class="pkGen">Generate</button></span></div>
-              <div id="pkBody" class="pkBody hidden">
-                <textarea id="pkText" class="pkText" readonly rows="9"></textarea>
-                <button id="pkCopyBtn" class="pkCopy">Copy description</button>
-              </div>
-              <div class="hint">YouTube chapters + description + hashtags from your kept cut. Nothing is posted — copy &amp; paste when you upload.</div>
-            </div>
-
-            <div class="coverPicker">
-              <div class="cpHead"><span>Thumbnail cover</span><span class="pkBtns"><button id="cpBtn" class="pkGhost">Suggest covers</button><button id="vtBtn" class="pkGen">Build thumbnail</button></span></div>
-              <div id="cpGrid" class="cpGrid hidden"></div>
-              <div class="hint">Peak-frame candidates for your top moment — reaction peak, loudest beat, scene change. Click one to open the full-res still.</div>
-            </div>
-
-            <div class="pacingBox">
-              <div class="pkHead"><span>Micro-cut Pacing</span>
-                <select id="paceLevel" class="blueprintSel pacingSel">
-                  <option value="natural">Natural</option>
-                  <option value="tight" selected>Tight</option>
-                  <option value="relentless">Relentless</option>
-                </select>
-              </div>
-              <label class="check pacingScope"><input type="checkbox" id="paceSeq" /> Apply to the whole sequence</label>
-              <div class="knobRow">
-                <label for="paceMinSil">Pause floor <span id="paceMinSilVal" class="knobVal">0.70s</span></label>
-                <input type="range" id="paceMinSil" min="0.2" max="2" step="0.05" value="0.7" />
-              </div>
-              <div class="knobRow">
-                <label for="paceDb">Silence is below <span id="paceDbVal" class="knobVal">−32 dB</span></label>
-                <input type="range" id="paceDb" min="-45" max="-15" step="1" value="-32" />
-              </div>
-              <div id="paceStat" class="paceStat hidden"></div>
-              <div class="pkBtns" style="margin-top:9px">
-                <button id="pacePreviewBtn" class="pkGhost">Preview</button>
-                <button id="paceExportBtn" class="pkGen">Export tight cut</button>
-              </div>
-              <div class="hint">Jump-cuts internal dead air for relentless pacing. Default: your top moment. Tick “whole sequence” to tighten every kept clip into one master cut. Preview the gain, then export.</div>
-            </div>
-
-            <div class="pacingBox">
-              <div class="pkHead"><span>Filler-Word Purge</span></div>
-              <label class="check pacingScope"><input type="checkbox" id="fillerAggressive" /> Also cut “like / so / basically”</label>
-              <div id="fillerStat" class="paceStat hidden"></div>
-              <div class="pkBtns" style="margin-top:9px">
-                <button id="fillerScanBtn" class="pkGhost">Find fillers</button>
-                <button id="fillerExportBtn" class="pkGen">Export clean cut</button>
-              </div>
-              <div class="hint">Transcribes your kept clips and cuts the “um / uh / you know” beats, leaving the speech either side intact. Scan first to see exactly what it found — the aggressive set catches real words, so check before exporting.</div>
-            </div>
-            <div class="field">
-              <label>TikTok clips</label>
-              <select id="tiktokCount">
-                <option value="3">Top 3 moments</option>
-                <option value="5" selected>Top 5 moments</option>
-                <option value="8">Top 8 moments</option>
-              </select>
-            </div>
-
-            <div class="field">
-              <label>Finish in your editor</label>
-              <button id="premiereBtn" style="width:100%">Send to Premiere (EDL + XML)</button>
-              <div class="hint">Rebuilds the Phantasm cut on your original footage in Premiere / Resolve / Final Cut — auto-relinked, highlights as markers.</div>
-            </div>
-            <div id="exportHint" class="hint"></div>
-
-            <details class="advanced">
-              <summary>Manual exports</summary>
-              <div class="field">
-                <label>Long-form cut source</label>
-                <select id="longMode">
-                  <option value="phantasm">Phantasm cut — keep green, banish red</option>
-                  <option value="highlights">Highlights reel (kept highlights only)</option>
-                </select>
-              </div>
-              <label class="check"><input type="checkbox" id="capLong" /> Burn captions into long cut</label>
-              <label class="check"><input type="checkbox" id="capShort" checked /> Burn captions into shorts</label>
-              <div class="btnRow">
-                <button id="captionsBtn">Generate captions</button>
-                <button id="longBtn">Export long cut</button>
-                <button id="shortsBtn">Export shorts</button>
-                <button id="thumbsBtn">Grab thumbnails</button>
-              </div>
-            </details>
-
-            <div class="pacingBox">
-              <div class="pkHead"><span>Export Queue</span><span id="queueCount" class="qCount hidden"></span></div>
-              <div class="qAdd">
-                <select id="queueJob" class="blueprintSel">
-                  <option value="tiktok">TikTok pack</option>
-                  <option value="youtube">YouTube cut</option>
-                  <option value="shorts">Vertical shorts</option>
-                  <option value="thumbs">Thumbnails</option>
-                  <option value="pacing">Tight cut (micro-cut)</option>
-                  <option value="fillers">Clean cut (filler purge)</option>
-                </select>
-                <button id="queueAddBtn" class="pkGhost">Add</button>
-              </div>
-              <div id="queueList" class="qList hidden"></div>
-              <div class="pkBtns" style="margin-top:9px">
-                <button id="queueRunBtn" class="pkGen">Run queue</button>
-                <button id="queueClearBtn" class="pkGhost">Clear</button>
-              </div>
-              <div class="hint">Line up several renders and run them back-to-back — each one uses the settings in effect when it starts, and finished files land in Outputs below as they complete. Keep editing while it works.</div>
-            </div>
-
-            <div id="outputs"></div>
-          </div>
-
-          <div class="card aiPanel rtabPane" data-rtab="curate">
-            <div class="panelHead">
-              <strong>AI Assistant</strong>
-              <span id="aiStatus" class="muted right"></span>
-            </div>
-            <!-- Action-first copilot: every action drives an EXISTING pipeline (see app.js
-                 AI_ACTIONS). Status + suggestions come from real analysis state. -->
-            <div id="aiActions" class="aiActions"></div>
-            <div id="aiCallbacks" class="aiCallbacks hidden"></div>
-            <div id="aiSuggest" class="aiSuggest"></div>
-            <div id="editCount" class="editCount" title="Your edits are recorded locally as a training corpus"></div>
-            <details class="aiAdvanced">
-              <summary>Advanced prompt</summary>
-            <div id="pepaiChatLog" class="aiLog">
-              <div class="aiMsg ai"><span class="aiWho">PepAI</span>Type a custom instruction — e.g. "keep only the screaming", "add trigger word BETRAYAL".</div>
-            </div>
-            <div class="aiRow">
-              <input id="pepaiChatInput" type="text" spellcheck="false" placeholder='"tighter pacing" · "list the current settings"' />
-              <button id="pepaiChatSend">Run</button>
-            </div>
-            </details>
-          </div>
-        </div>
-      </section>
-
+<!-- ═══════════ TAB 1 · INGEST ═══════════ -->
+<section class="stage on" id="tabIngest">
+  <div class="drop" id="dropZone">
+    <h1>Drop a VOD to start cutting</h1>
+    <p>Any local recording — the engine finds the dead air, ranks the moments, and builds your first cut before you touch a thing. Everything stays on this machine.</p>
+    <div class="orRow">
+      <input class="urlIn" id="pathInput" placeholder="/path/to/vod.mp4 — or drop the file here" spellcheck="false" aria-label="Video path">
+      <button class="btnP" id="analyzeBtn">Analyze</button>
     </div>
+    <div class="orRow" style="margin-top:10px">
+      <input class="urlIn" id="urlInput" placeholder="or paste a VOD link (yt-dlp)" spellcheck="false" aria-label="VOD URL">
+      <button class="btnG" id="urlBtn">Import</button>
+    </div>
+    <div class="hintline" id="ingestStatus"></div>
+  </div>
+  <div class="recents" id="recentsGrid"></div>
+</section>
 
-    <!-- QUADRANT 4 · BOTTOM: ONE full-width timeline zone. A toggle swaps between the
-         Timeline (edit / #trackLanes) and Phantasm (analysis / #timeline canvas) views —
-         they're different time-bases (output vs full source), so it's a swap, not a
-         misaligned overlay. Both renderers preserved. -->
-    <footer class="nle-bottom">
-      <div class="tlToolbar">
-        <div class="tlToggle" id="tlToggle" role="tablist">
-          <button data-view="seq" class="active" role="tab">Timeline</button>
-          <button data-view="phantasm" role="tab">Phantasm</button>
-        </div>
-        <div class="toolStrip" id="toolStrip" role="toolbar" aria-label="Timeline tools">
-          <button data-tool="select" class="active" title="Selection tool — click clips to select">
-            <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M4 1l8 7.5-4.6.4 2.4 4.6-1.8.9-2.4-4.7L4 12.9z"/></svg>
-          </button>
-          <button data-tool="razor" title="Razor tool (C) — click a clip to split it">
-            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M8 1v14M4.5 4.5C3 6 3 8 4.5 9.5L8 6zM11.5 4.5C13 6 13 8 11.5 9.5L8 6z"/><circle cx="5" cy="12.5" r="1.4"/><circle cx="11" cy="12.5" r="1.4"/></svg>
-          </button>
-          <button data-tool="hand" title="Hand tool (H) — drag to pan the zoomed timeline">
-            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7.5V3.7a1 1 0 012 0V7m0-3.9V2.6a1 1 0 012 0V7m0-3.6a1 1 0 012 0V8m0-2.4a1 1 0 012 0v4.2c0 2.9-1.8 4.7-4.4 4.7-2.2 0-3.3-.9-4.4-2.7L3.4 9.4a1 1 0 011.6-1.2l1 1.3"/></svg>
-          </button>
-        </div>
-        <div class="tlZoom" id="tlZoom" title="Timeline zoom — or Cmd+scroll on the tracks">
-          <button id="tlZoomOut" aria-label="Zoom out">−</button>
-          <input id="tlZoomSlider" type="range" min="1" max="8" step="0.25" value="1" aria-label="Timeline zoom" />
-          <button id="tlZoomIn" aria-label="Zoom in">+</button>
-          <button id="tlZoomFit" aria-label="Fit timeline">Fit</button>
-        </div>
+<!-- ═══════════ TAB 2 · EDIT ═══════════ -->
+<section class="stage" id="tabEdit">
+  <div class="editL">
+    <div class="monitor">
+      <video id="player" playsinline></video>
+      <div class="monEmpty" id="monEmpty">no project loaded — start in Ingest</div>
+    </div>
+    <div class="transport">
+      <div class="tbtns">
+        <button class="tbtn" id="stepBack" title="Back 1 frame (←)">‹</button>
+        <button class="tbtn play" id="playBtn" title="Play/Pause (Space)">▶</button>
+        <button class="tbtn" id="stepFwd" title="Forward 1 frame (→)">›</button>
       </div>
-      <div class="timelineWrap card">
-        <div class="tlHead">
-          <strong>Phantasm Timeline</strong>
-          <span class="legend"><i class="sw keep"></i>keep</span>
-          <span class="legend"><i class="sw silence"></i>silence</span>
-          <span class="legend"><i class="sw static"></i>static screen</span>
-          <span class="legend"><i class="sw risky"></i>check</span>
-          <span class="legend"><i class="sw scene"></i>cut</span>
-          <span class="legend"><i class="sw hl"></i>highlight</span>
-          <span id="tlTime" class="muted right">0:00 / 0:00</span>
-        </div>
-        <canvas id="timeline" height="240"></canvas>
-        <div class="phantasmBar">
-          <span id="phantasmSummary" class="muted">—</span>
-          <button id="banishBtn" class="danger right">Banish all red → export cut</button>
-        </div>
-        <div class="tlTip muted">Click a block to seek. Press <kbd>G</kbd> to toggle the selected block keep/ghost, <kbd>V</kbd> to verify (play 2s), <kbd>B</kbd> to banish.</div>
+      <div class="tcode num" id="tcode">00:00:00:00 <span>/ 00:00:00:00</span></div>
+      <div class="jkl">shuttle <b>J·K·L</b> · in/out <b>I·O</b> · keep <b>G</b></div>
+    </div>
+    <div class="tl">
+      <div class="tlRail" id="heatRail" title="dead air"></div>
+      <div class="tlLane">
+        <span class="laneTag">V1</span>
+        <div class="laneBody" id="laneV"><div class="playhead" id="playhead"></div></div>
       </div>
+      <div class="tlLane">
+        <span class="laneTag">A1</span>
+        <div class="laneBody a"><div class="wave" style="left:0.5%;width:99%"></div></div>
+      </div>
+    </div>
+  </div>
+  <aside class="editR">
+    <div class="railH">Auto-cut</div>
+    <button class="action" id="sbBtn">Storyboard — Fast-Cut <em id="sbInfo"></em></button>
+    <button class="action hot" id="deadInfo" disabled>Dead air found <em id="deadAmt">—</em></button>
+    <div class="railH">Selection</div>
+    <div class="selBox" id="selBox">click a clip to inspect</div>
+    <div class="spacer"></div>
+    <div class="railH">Render</div>
+    <label class="chk"><input type="checkbox" id="rVert"> vertical 9:16 (blur-fill)</label>
+    <button class="btnP renderBtn" id="renderBtn">Render cut <em id="keptInfo"></em></button>
+    <div class="hintline" id="renderStatus"></div>
+  </aside>
+</section>
 
-      <div class="trackPanel card">
-        <div class="trackTabs"><span class="ttab active">Sequence</span><button id="seqViewBtn" class="seqViewBtn hidden"></button><span id="seqDur" class="muted right">0:00</span></div>
-        <div class="trackBody">
-          <div class="trackHeaders">
-            <div class="trk vid">V2 · Overlay</div>
-            <div class="trk vid">V1 · Clips</div>
-            <div class="trk aud">A1 · Speech</div>
-            <div class="trk aud">A2 · Music</div>
-            <div class="trk aud">A3 · SFX</div>
-          </div>
-          <div class="trackLanes" id="trackLanes"></div>
-        </div>
+<!-- ═══════════ TAB 3 · PACKAGE ═══════════ -->
+<section class="stage" id="tabPack">
+  <div class="pkCol" style="flex:3">
+    <div class="card pkThumb">
+      <div class="cardH">Thumbnail studio <button class="btnG" id="coversBtn">Suggest covers</button></div>
+      <div class="coverStrip" id="coverStrip"></div>
+      <div class="thumbCanvas" id="thumbCanvas">
+        <span class="monEmpty on">suggest covers to pick a peak frame</span>
       </div>
-    </footer>
-  </main>
+      <div class="thumbCtl">
+        <input class="urlIn grow" id="thumbText" placeholder="THE COMEBACK — big text on the thumb" spellcheck="false">
+        <button class="btnP" id="thumbBtn">Build thumbnail</button>
+      </div>
+    </div>
+  </div>
+  <div class="pkCol" style="flex:4">
+    <div class="card pkTitles">
+      <div class="cardH">Titles &amp; chapters <button class="btnG" id="titlesBtn">Generate</button></div>
+      <div id="titleList" class="titleList"><div class="hintline" style="padding:14px 16px">titles come from your footage's own peaks — generate after a cut exists</div></div>
+      <div class="chapters" id="chaptersOut"></div>
+      <button class="btnG copyBtn hidden" id="copyDesc">Copy description</button>
+    </div>
+  </div>
+  <div class="pkCol pkRight">
+    <div class="card">
+      <div class="cardH">Export</div>
+      <div class="preset">YouTube cut <span class="num">1080p · −14 LUFS</span></div>
+      <div class="preset">Vertical <span class="num">9:16 · blur-fill</span></div>
+      <div class="preset">Thumbnail <span class="num">1280×720 JPEG</span></div>
+      <button class="btnP pkGo" id="pkExportBtn">Export the cut</button>
+      <div class="hintline" id="pkStatus" style="padding:0 16px 14px"></div>
+    </div>
+  </div>
+</section>
 
-  <div id="toast" class="toast hidden"></div>
-  <script src="app.js"></script>
+<footer class="statusbar">
+  <span id="engineDot"><i class="dotok"></i>engine ready · ffmpeg + whisper local</span>
+  <span class="num" id="projStat"></span>
+  <div class="grow"></div>
+  <span id="busyStat"></span>
+</footer>
+
+<!-- ═══════════ SETTINGS (⌘,) ═══════════ -->
+<div class="modalBack hidden" id="settingsModal">
+  <div class="modal card">
+    <div class="cardH">Settings <button class="btnG" id="settingsClose">Close (Esc)</button></div>
+    <div class="setGrid">
+      <label class="blueRow"><span>Resolution</span>
+        <select id="expRes"><option value="720">720p</option><option value="1080" selected>1080p</option><option value="1440">1440p</option></select></label>
+      <label class="blueRow"><span>Frame rate</span>
+        <select id="expFps"><option value="24">24</option><option value="30" selected>30</option><option value="60">60</option></select></label>
+      <label class="blueRow"><span>Quality</span>
+        <select id="expQuality"><option value="high">High (CRF 18)</option><option value="standard" selected>Standard</option><option value="compact">Compact (CRF 23)</option></select></label>
+      <label class="blueRow"><span>Normalize</span><span><input type="checkbox" id="expNorm"> hit −14 LUFS on export</span></label>
+      <label class="blueRow"><span>Voice clean</span><span><input type="checkbox" id="expClean"> rumble cut + de-noise</span></label>
+      <label class="blueRow"><span>Profanity</span><span><input type="checkbox" id="expBleep"> mute cursing (whisper)</span></label>
+      <div class="hintline">Every advanced knob (LUT, watermark, music, mixer, proxies, speakers) returns in the Day-2/3 passes — the engine behind them is untouched.</div>
+    </div>
+  </div>
+</div>
+
+<script src="pro.js"></script>
 </body>
 </html>
