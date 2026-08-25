@@ -121,6 +121,18 @@ input,select{font:inherit;color:var(--text)}
 .selBox{border:1px solid var(--line);border-radius:9px;padding:11px 13px;font-size:12px;color:var(--muted);line-height:1.6}
 .selBox b{color:var(--text)}
 .spacer{flex:1}
+.musRow{display:flex;gap:8px;align-items:center}
+.musRow .urlIn{width:auto;min-width:0}
+.musRow select{background:var(--ground);border:1px solid var(--line);border-radius:7px;padding:7px 8px;font-size:12px}
+.musLvl{display:flex;gap:6px;align-items:center;font-size:11.5px;color:var(--muted);flex:1}
+.musLvl input{flex:1;accent-color:var(--accent)}
+.hL,.hR{position:absolute;top:0;bottom:0;width:7px;cursor:ew-resize;background:var(--accent);opacity:.85;z-index:3}
+.hL{left:0;border-radius:5px 0 0 5px}
+.hR{right:0;border-radius:0 5px 5px 0}
+.scrubTip{position:fixed;z-index:40;pointer-events:none;background:var(--panel2);
+  border:1px solid var(--line);border-radius:8px;padding:4px;display:flex;flex-direction:column;gap:3px;align-items:center}
+.scrubTip img{width:160px;aspect-ratio:16/9;object-fit:cover;border-radius:5px;background:#000;display:block}
+.scrubTip span{font-size:10.5px;color:var(--text)}
 .chk{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--muted)}
 .renderBtn{width:100%;text-align:center;display:flex;justify-content:center;gap:8px}
 .renderBtn em{font-style:normal;font-family:var(--mono);font-size:11px;opacity:.75}

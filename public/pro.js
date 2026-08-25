@@ -138,6 +138,9 @@ function loadProject(data) {
     outPoint: (data.edit && data.edit.outPoint) ?? null,
   };
   pushRecent(data.id, data.name);
+  state.music = data.music || null; renderMusic();
+  $('#musPath').value = '';
+  state.undoSnap = null; $('#unpurgeBtn').classList.add('hidden');
   player.src = `/api/video?id=${encodeURIComponent(data.id)}`;
   $('#monEmpty').classList.remove('on');
   renderTimeline(); renderDeadAir(); renderSel(); updateProjStat();
@@ -160,11 +163,12 @@ function renderTimeline() {
   lane.querySelectorAll('.clip').forEach((n) => n.remove());
   state.highlights.forEach((h) => {
     const el = document.createElement('div');
-    el.className = 'clip' + (h.keep ? '' : ' off') + (state.sel === h.id ? ' sel' : '');
+    el.className = 'clip' + (h.keep ? '' : ' off') + (state.sel === String(h.id) ? ' sel' : '');
     el.style.left = `${(h.start / total * 100).toFixed(3)}%`;
     el.style.width = `${Math.max(0.4, (h.end - h.start) / total * 100).toFixed(3)}%`;
     el.textContent = h.title || h.id;
     el.dataset.id = h.id;
+    if (state.sel === String(h.id)) el.insertAdjacentHTML('beforeend', '<i class="hL"></i><i class="hR"></i>');
     lane.appendChild(el);
   });
 }
@@ -176,13 +180,137 @@ function renderDeadAir() {
   const st = (state.proj && state.proj.phantasmStats) || {};
   $('#deadAmt').textContent = st.ghostDuration ? fmt(st.ghostDuration) : '—';
 }
+let _justDragged = false;
 $('#laneV').addEventListener('click', (e) => {
-  const c = e.target.closest('.clip'); if (!c) return;
-  state.sel = c.dataset.id;
-  const h = state.highlights.find((x) => String(x.id) === c.dataset.id);
-  if (h) player.currentTime = h.start;
+  if (_justDragged) return;
+  const c = e.target.closest('.clip');
+  if (c) {
+    state.sel = c.dataset.id;
+    const h = state.highlights.find((x) => String(x.id) === c.dataset.id);
+    if (h) player.currentTime = h.start;
+    renderTimeline(); renderSel();
+    return;
+  }
+  // empty lane = seek there
+  const r = $('#laneV').getBoundingClientRect();
+  const total = (state.proj && state.proj.duration) || 1;
+  player.currentTime = Math.max(0, Math.min(total, (e.clientX - r.left) / r.width * total));
+});
+
+// ---------- trim handles (drag the selected clip's gold edges; absolute source seconds) ----------
+let _drag = null;
+$('#laneV').addEventListener('mousedown', (e) => {
+  const hnd = e.target.closest('.hL,.hR'); if (!hnd) return;
+  const clipEl = hnd.closest('.clip');
+  const h = state.highlights.find((x) => String(x.id) === clipEl.dataset.id);
+  if (!h) return;
+  e.preventDefault();
+  _drag = { h, side: hnd.classList.contains('hL') ? 'L' : 'R', rect: $('#laneV').getBoundingClientRect() };
+});
+window.addEventListener('mousemove', (e) => {
+  if (!_drag) return;
+  const total = (state.proj && state.proj.duration) || 1;
+  let t = Math.max(0, Math.min(total, (e.clientX - _drag.rect.left) / _drag.rect.width * total));
+  if (_drag.side === 'L') _drag.h.start = Math.min(t, _drag.h.end - 0.4);
+  else _drag.h.end = Math.max(t, _drag.h.start + 0.4);
+  player.currentTime = t;   // live frame feedback while trimming
   renderTimeline(); renderSel();
 });
+window.addEventListener('mouseup', () => {
+  if (!_drag) return;
+  _drag = null; _justDragged = true;
+  setTimeout(() => { _justDragged = false; }, 60);
+  updateProjStat(); scheduleStateSave();
+});
+
+// ---------- hover scrub (thumbnail preview riding the cursor; 2s buckets hit the thumb cache) ----------
+const _tip = $('#scrubTip');
+$('#laneV').addEventListener('mousemove', (e) => {
+  if (_drag || !state.proj) { _tip.classList.add('hidden'); return; }
+  const r = $('#laneV').getBoundingClientRect();
+  const total = state.proj.duration || 1;
+  const t = Math.max(0, Math.min(total, (e.clientX - r.left) / r.width * total));
+  const bucket = Math.max(1, Math.round(t / 2) * 2);
+  const img = _tip.querySelector('img');
+  const want = `/api/thumb?id=${encodeURIComponent(state.proj.id)}&t=${bucket}`;
+  if (img.dataset.want !== want) { img.dataset.want = want; img.src = want; }
+  _tip.querySelector('span').textContent = fmt(t);
+  _tip.style.left = `${Math.max(8, Math.min(window.innerWidth - 178, e.clientX - 84))}px`;
+  _tip.style.top = `${r.top - 132}px`;
+  _tip.classList.remove('hidden');
+});
+$('#laneV').addEventListener('mouseleave', () => _tip.classList.add('hidden'));
+
+// ---------- dead-air purge (subtract phantasm ghost ranges from every kept clip) ----------
+function subtractGhosts(s, e, ghosts) {
+  let segs = [[s, e]];
+  for (const g of ghosts) {
+    const next = [];
+    for (const [a, b] of segs) {
+      if (g.end <= a || g.start >= b) { next.push([a, b]); continue; }
+      if (g.start > a) next.push([a, g.start]);
+      if (g.end < b) next.push([g.end, b]);
+    }
+    segs = next;
+  }
+  return segs.filter(([a, b]) => b - a >= 0.4);
+}
+$('#purgeBtn').addEventListener('click', () => {
+  if (!state.proj) return;
+  const ghosts = ((state.proj.phantasm) || []).filter((x) => x.state === 'ghost')
+    .sort((a, b) => a.start - b.start);
+  if (!ghosts.length) { status('#renderStatus', 'No dead air mapped for this project.', true); return; }
+  state.undoSnap = JSON.stringify(state.highlights);
+  let reclaimed = 0;
+  const out = [];
+  for (const h of state.highlights) {
+    if (!h.keep) { out.push(h); continue; }
+    const segs = subtractGhosts(h.start, h.end, ghosts);
+    reclaimed += (h.end - h.start) - segs.reduce((n, [a, b]) => n + (b - a), 0);
+    if (segs.length === 1 && Math.abs(segs[0][0] - h.start) < 0.01 && Math.abs(segs[0][1] - h.end) < 0.01) { out.push(h); continue; }
+    segs.forEach(([a, b], k) => out.push({ ...h, id: segs.length === 1 ? h.id : `${h.id}.p${k + 1}`, start: a, end: b }));
+  }
+  state.highlights = out;
+  state.sel = null;
+  $('#unpurgeAmt').textContent = `+${fmt(reclaimed)}`;
+  $('#unpurgeBtn').classList.remove('hidden');
+  status('#renderStatus', `Purged ${fmt(reclaimed)} of dead air from the kept clips.`);
+  renderTimeline(); renderSel(); updateProjStat(); scheduleStateSave();
+});
+$('#unpurgeBtn').addEventListener('click', () => {
+  if (!state.undoSnap) return;
+  state.highlights = JSON.parse(state.undoSnap);
+  state.undoSnap = null; state.sel = null;
+  $('#unpurgeBtn').classList.add('hidden');
+  status('#renderStatus', 'Purge undone.');
+  renderTimeline(); renderSel(); updateProjStat(); scheduleStateSave();
+});
+
+// ---------- music (engine contract: /api/music — looped, faded, sidechain-ducked at render) ----------
+function renderMusic() {
+  const m = state.music;
+  $('#musStatus').textContent = m
+    ? `${m.name} · ${Math.round(m.volume * 100)}% · duck ${m.duck} — mixes into every render`
+    : 'none attached — loops under every render, ducks under speech (gentle ≈ 3–6 dB on gameplay audio)';
+  $('#musClear').classList.toggle('hidden', !m);
+  if (m) { $('#musVol').value = m.volume; $('#musDuck').value = m.duck; }
+}
+async function saveMusic(music) {
+  if (!state.proj) return;
+  try {
+    const d = await api('/api/music', { id: state.proj.id, music });
+    state.music = d.music; renderMusic();
+  } catch (err) { status('#musStatus', err.message, true); }
+}
+$('#musAttach').addEventListener('click', () => {
+  const p = $('#musPath').value.trim();
+  if (!p) { status('#musStatus', 'Type the path to an audio file first.', true); return; }
+  saveMusic({ path: p, volume: Number($('#musVol').value), duck: $('#musDuck').value });
+});
+$('#musClear').addEventListener('click', () => { $('#musPath').value = ''; saveMusic(null); });
+['musVol', 'musDuck'].forEach((id) => $('#' + id).addEventListener('change', () => {
+  if (state.music) saveMusic({ path: state.music.path, volume: Number($('#musVol').value), duck: $('#musDuck').value });
+}));
 function renderSel() {
   const h = state.highlights.find((x) => String(x.id) === state.sel);
   $('#selBox').innerHTML = h

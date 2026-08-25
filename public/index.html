@@ -72,9 +72,25 @@
   <aside class="editR">
     <div class="railH">Auto-cut</div>
     <button class="action" id="sbBtn">Storyboard — Fast-Cut <em id="sbInfo"></em></button>
-    <button class="action hot" id="deadInfo" disabled>Dead air found <em id="deadAmt">—</em></button>
+    <button class="action hot" id="purgeBtn">Purge dead air <em id="deadAmt">—</em></button>
+    <button class="action hidden" id="unpurgeBtn">Undo purge <em id="unpurgeAmt"></em></button>
     <div class="railH">Selection</div>
-    <div class="selBox" id="selBox">click a clip to inspect</div>
+    <div class="selBox" id="selBox">click a clip to inspect · drag its gold edges to trim</div>
+    <div class="railH">Music</div>
+    <div class="musRow">
+      <input class="urlIn grow" id="musPath" placeholder="~/Music/track.mp3" spellcheck="false" aria-label="Music path">
+      <button class="btnG" id="musAttach">Attach</button>
+    </div>
+    <div class="musRow">
+      <label class="musLvl">level <input type="range" id="musVol" min="0.05" max="0.4" step="0.01" value="0.15"></label>
+      <select id="musDuck" aria-label="Ducking">
+        <option value="gentle">duck: gentle</option>
+        <option value="strong">duck: strong</option>
+        <option value="off">duck: off</option>
+      </select>
+      <button class="btnG hidden" id="musClear">✕</button>
+    </div>
+    <div class="hintline" id="musStatus">none attached — loops under every render, ducks under speech</div>
     <div class="spacer"></div>
     <div class="railH">Render</div>
     <label class="chk"><input type="checkbox" id="rVert"> vertical 9:16 (blur-fill)</label>
@@ -117,6 +133,8 @@
     </div>
   </div>
 </section>
+
+<div class="scrubTip hidden" id="scrubTip"><img alt=""><span class="num"></span></div>
 
 <footer class="statusbar">
   <span id="engineDot"><i class="dotok"></i>engine ready · ffmpeg + whisper local</span>
