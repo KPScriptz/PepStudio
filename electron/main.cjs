@@ -9,7 +9,11 @@ const P = require('../lib/platform.cjs');
 
 const ROOT = path.join(__dirname, '..'); // server.js lives one level up
 const TEST = process.env.CLIPFORGE_TEST === '1';
-let win = null;
+// `electron . --booth` (npm run booth) launches straight into the Confessional Booth: the one
+// window IS the recorder. The full NLE is still one click away ("Send to PepStudio" opens it).
+const BOOTH_ONLY = process.argv.includes('--booth');
+let win = null;          // studio window (null when launched booth-only and never opened)
+let boothWin = null;     // Confessional Booth window
 let serverProc = null;
 let serverPort = 0;
 
@@ -166,14 +170,22 @@ const IS_MAC = process.platform === 'darwin';
 // apps use, and `vibrancy` gives the real NSVisualEffectView translucency — the genuine article,
 // not a CSS approximation. Both are ignored on Windows/Linux, where the standard frame is correct
 // and expected, so this is additive rather than a cross-platform regression.
-function windowOptions() {
-  const base = {
+function windowOptions(booth = false) {
+  const base = booth ? {
+    width: 1040, height: 760, minWidth: 720, minHeight: 520,
+    backgroundColor: '#09090b', title: 'Confessional Booth', show: false,
+    icon: path.join(__dirname, 'icon.png'),
+    webPreferences: { contextIsolation: true, preload: path.join(__dirname, 'preload.cjs') },
+  } : {
     width: 1320, height: 880, minWidth: 1000, minHeight: 640,
     backgroundColor: '#0b0f17', title: 'PepStudio', show: false,
     icon: path.join(__dirname, 'icon.png'),
     webPreferences: { contextIsolation: true, preload: path.join(__dirname, 'preload.cjs') },
   };
   if (!IS_MAC) return base;
+  // The booth gets the same unified title bar, but NOT vibrancy: it is an opaque camera monitor,
+  // and translucency behind a black video stage only muddies the crimson recording tally.
+  if (booth) return { ...base, titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 12, y: 12 } };
   return {
     ...base,
     titleBarStyle: 'hiddenInset',
@@ -186,9 +198,9 @@ function windowOptions() {
 
 // Restore the last window position/size, ignoring a geometry that no longer fits any connected
 // display (unplugging an external monitor would otherwise reopen the app off-screen).
-function savedBounds() {
+function savedBounds(file = 'window.json') {
   try {
-    const b = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'window.json'), 'utf8'));
+    const b = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), file), 'utf8'));
     if (!b || !Number.isFinite(b.width) || !Number.isFinite(b.height)) return null;
     const { screen } = require('electron');
     const fits = screen.getAllDisplays().some((d) => {
@@ -198,11 +210,11 @@ function savedBounds() {
     return fits ? b : null;
   } catch { return null; }
 }
-function trackBounds(w) {
+function trackBounds(w, file = 'window.json') {
   const save = () => {
     try {
       if (!w || w.isDestroyed() || w.isMinimized() || w.isFullScreen()) return;
-      fs.writeFileSync(path.join(app.getPath('userData'), 'window.json'), JSON.stringify(w.getBounds()));
+      fs.writeFileSync(path.join(app.getPath('userData'), file), JSON.stringify(w.getBounds()));
     } catch { /* geometry is a convenience — never fail the app over it */ }
   };
   let t = null;
@@ -212,11 +224,13 @@ function trackBounds(w) {
   w.on('close', save);
 }
 
-function makeWindow() {
-  const w = new BrowserWindow({ ...windowOptions(), ...(savedBounds() || {}) });
+function makeWindow(kind = 'studio') {
+  const booth = kind === 'booth';
+  const file = booth ? 'booth-window.json' : 'window.json';
+  const w = new BrowserWindow({ ...windowOptions(booth), ...(savedBounds(file) || {}) });
   w.once('ready-to-show', () => w.show());
   w.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
-  trackBounds(w);
+  trackBounds(w, file);
   return w;
 }
 
@@ -224,8 +238,56 @@ function makeWindow() {
 // "Keep Working" with no window left, and dock re-activation). boot() must not run twice — it
 // would fork a second server and re-register the ipcMain handler.
 function reopenWindow() {
-  win = makeWindow();
+  win = makeWindow('studio');
   win.loadURL(`http://localhost:${serverPort}`);
+}
+
+// ---- Confessional Booth ------------------------------------------------------------------------
+// A second, deliberately tiny window: camera monitor, two device pickers, one record button.
+// It is the SAME local server, so the booth also works as a plain browser tab (/booth.html) —
+// what the desktop shell adds is the macOS camera/mic consent prompt and the hand-off below.
+
+// macOS gates camera and microphone behind TCC. Chromium's own prompt is not enough for a
+// packaged app: the process must ask AVFoundation, which is what triggers the system dialog
+// (and, on a prior denial, returns false immediately instead of hanging the booth).
+async function askMediaAccess() {
+  if (!IS_MAC) return true;
+  try {
+    const { systemPreferences } = require('electron');
+    if (typeof systemPreferences.askForMediaAccess !== 'function') return true;
+    const cam = await systemPreferences.askForMediaAccess('camera');
+    const mic = await systemPreferences.askForMediaAccess('microphone');
+    return cam && mic;   // the booth renders its own "access is blocked" panel either way
+  } catch { return true; }
+}
+
+async function openBooth() {
+  if (boothWin && !boothWin.isDestroyed()) {
+    if (boothWin.isMinimized()) boothWin.restore();
+    boothWin.focus();
+    return true;
+  }
+  if (!serverPort) return false;
+  await askMediaAccess();
+  boothWin = makeWindow('booth');
+  boothWin.on('closed', () => { boothWin = null; });
+  await boothWin.loadURL(`http://localhost:${serverPort}/booth.html`);
+  return true;
+}
+
+// The editor window, created on demand. Launched with --booth there is no studio window until a
+// take is sent over, so "Send to PepStudio" has to be able to conjure one and wait for it to be
+// ready before poking pepResolveNativeFilePath into it.
+async function studioWindow() {
+  if (win && !win.isDestroyed()) return win;
+  reopenWindow();
+  await new Promise((resolve) => {
+    const wc = win.webContents;
+    if (!wc.isLoading()) return resolve();
+    wc.once('did-finish-load', resolve);
+    setTimeout(resolve, 15000);     // never hang the booth on a slow page
+  });
+  return win;
 }
 
 async function boot() {
@@ -278,6 +340,38 @@ async function boot() {
         return true;
       } catch { return false; }
     });
+    ipcMain.handle('booth:open', () => openBooth());
+
+    // Hand a finished take to the editor exactly as if it had been dropped on the media bin.
+    // JSON.stringify is the escaping here — a path with a quote or a backslash cannot break out
+    // of the expression, and the renderer treats it as data either way.
+    ipcMain.handle('booth:send', async (_e, filePath) => {
+      const p = String(filePath || '');
+      if (!p || !fs.existsSync(p)) return false;
+      const w = await studioWindow();
+      if (!w || w.isDestroyed()) return false;
+      if (w.isMinimized()) w.restore();
+      w.focus();
+      await w.webContents.executeJavaScript(
+        `window.pepResolveNativeFilePath && window.pepResolveNativeFilePath(${JSON.stringify(p)})`,
+      ).catch(() => {});
+      return true;
+    });
+
+    // Camera/mic for our own loopback origin only. Electron grants most permissions by default
+    // when no handler is set; being explicit means a page that somehow loaded from anywhere else
+    // can never reach the camera. The check handler is what makes enumerateDevices return real
+    // device LABELS, which the booth's pickers are useless without.
+    const { session } = require('electron');
+    const localOrigin = (u) => {
+      try { const h = new URL(u).hostname; return h === 'localhost' || h === '127.0.0.1'; } catch { return false; }
+    };
+    const MEDIA = new Set(['media', 'audioCapture', 'videoCapture']);
+    session.defaultSession.setPermissionRequestHandler((wc, permission, cb) => {
+      cb(MEDIA.has(permission) && localOrigin(wc ? wc.getURL() : ''));
+    });
+    session.defaultSession.setPermissionCheckHandler((_wc, permission, origin) => MEDIA.has(permission) && localOrigin(origin));
+
     await win.loadFile(path.join(__dirname, 'splash.html'));
   }
 
@@ -305,9 +399,20 @@ async function boot() {
     serverPort = port;
 
     if (TEST) { console.log(`ELECTRON_BOOT_OK port=${port}`); try { serverProc.kill(); } catch {} app.quit(); return; }
+    if (BOOTH_ONLY) {
+      // The window we booted the splash in becomes the booth. There is no studio window until
+      // a take asks for one, which is the whole point of this mode.
+      await askMediaAccess();
+      boothWin = win;
+      win = null;
+      boothWin.on('closed', () => { boothWin = null; });
+      await boothWin.loadURL(`http://localhost:${port}/booth.html`);
+      return;
+    }
     await win.loadURL(`http://localhost:${port}`);
   } catch (e) {
     if (TEST) { console.error('ELECTRON_BOOT_FAIL', e.message); app.exit(1); return; }
+    if (!win || win.isDestroyed()) return;
     await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(
       `<body style="background:#0b0f17;color:#e6edf3;font:15px -apple-system;padding:40px">
        <h2>PepStudio couldn't start</h2><pre style="color:#ff8a8a;white-space:pre-wrap">${String(e.stack || e)}</pre></body>`));
@@ -326,7 +431,8 @@ if (!app.requestSingleInstanceLock()) {
 app.on('window-all-closed', () => app.quit());
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length !== 0) return;
-  if (serverPort) reopenWindow(); else boot();
+  if (!serverPort) { boot(); return; }
+  if (BOOTH_ONLY) openBooth(); else reopenWindow();
 });
 // Quit guard: if an export / whisper pass is mid-flight, confirm before abandoning it.
 // preventDefault must run synchronously, so the busy check re-triggers quit via the flag.

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PepStudio — Confessional Booth</title>
+  <link rel="icon" href="favicon.ico" />
+  <link rel="stylesheet" href="booth.css" />
+</head>
+<body>
+<div class="booth">
+
+  <!-- Title strip. Doubles as the macOS drag region (the window is frameless-inset there). -->
+  <header class="bar">
+    <div class="barTitle">
+      <svg viewBox="0 0 20 20" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M3 5.5A1.5 1.5 0 014.5 4h6A1.5 1.5 0 0112 5.5v9A1.5 1.5 0 0110.5 16h-6A1.5 1.5 0 013 14.5v-9zM13.4 8.2l3.1-2.1a.6.6 0 01.95.5v6.8a.6.6 0 01-.95.5l-3.1-2.1V8.2z"/></svg>
+      <span>Confessional Booth</span>
+    </div>
+    <div class="barTools">
+      <button id="mirrorBtn" class="tool on" title="Mirror the preview (the recording is never mirrored) — K">
+        <svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10 2.5v15M6.5 6L3 10l3.5 4M13.5 6L17 10l-3.5 4"/></svg>
+      </button>
+      <button id="guideBtn" class="tool" title="Framing guides: off → thirds → 9:16 safe → both — G">
+        <svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2.5" y="3.5" width="15" height="13" rx="1.2"/><path d="M7.5 3.5v13M12.5 3.5v13M2.5 7.8h15M2.5 12.2h15"/></svg>
+      </button>
+      <button id="promptBtn" class="tool" title="Teleprompter: the line you want to hit — P">
+        <svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 5h12M4 9h12M4 13h7"/></svg>
+      </button>
+      <button id="folderBtn" class="tool" title="Show the takes folder">
+        <svg viewBox="0 0 20 20" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M2.5 5.6A1.6 1.6 0 014.1 4h3.1l1.4 1.6h7.3A1.6 1.6 0 0117.5 7.2v7.2a1.6 1.6 0 01-1.6 1.6H4.1a1.6 1.6 0 01-1.6-1.6V5.6z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Program area: the camera, full-bleed. Everything else floats over it. -->
+  <main class="stageWrap">
+    <div class="stage" id="stage">
+      <!-- The raw camera and the composited canvas occupy the same box; .bgOn swaps which one
+           you see. The video keeps decoding either way — it is the compositor's texture source. -->
+      <div class="camLayer" id="camLayer">
+        <video id="preview" autoplay muted playsinline></video>
+      </div>
+
+      <div class="guides hidden" id="guides" aria-hidden="true">
+        <div class="thirds"></div>
+        <div class="vmask"><div class="vbox"></div></div>
+      </div>
+
+      <div class="recPill hidden" id="recPill"><span class="recDot"></span><span id="recTime">0:00</span></div>
+      <div class="takeTag" id="takeTag">Take 01</div>
+
+      <div class="prompter hidden" id="prompter"><div id="prompterText"></div></div>
+
+      <div class="countdown hidden" id="countdown"><span id="countNum">3</span></div>
+
+      <div class="camError hidden" id="camError">
+        <h2 id="camErrTitle">No camera</h2>
+        <p id="camErrBody"></p>
+        <button id="retryBtn" class="btn">Try again</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- Deck: device pickers on the left, the one button in the middle, the last take on the right. -->
+  <footer class="deck">
+    <div class="deckL">
+      <label class="pick" title="Camera — C cycles">
+        <svg viewBox="0 0 20 20" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M3 6.2A1.4 1.4 0 014.4 4.8h5.4A1.4 1.4 0 0111.2 6.2v7.6a1.4 1.4 0 01-1.4 1.4H4.4A1.4 1.4 0 013 13.8V6.2zM12.4 8.4l3.3-2.2a.5.5 0 01.8.4v6.8a.5.5 0 01-.8.4l-3.3-2.2V8.4z"/></svg>
+        <select id="camSel" aria-label="Camera"></select>
+      </label>
+      <label class="pick" title="Background — B cycles">
+        <svg viewBox="0 0 20 20" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M2.6 5.4A1.4 1.4 0 014 4h12a1.4 1.4 0 011.4 1.4v9.2A1.4 1.4 0 0116 16H4a1.4 1.4 0 01-1.4-1.4V5.4zm1.6 8.9h11.6v-1.1l-3.1-3.4-2.3 2.5-1.8-1.7-4.4 3.7zM6.6 9a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/></svg>
+        <select id="bgSel" aria-label="Background">
+          <option value="off">My room (no key)</option>
+          <option value="green">Green screen</option>
+          <option value="blue">Blue screen</option>
+          <option value="blur">Blur behind me</option>
+          <option value="image">Image…</option>
+        </select>
+        <button id="bgTune" class="tune" title="Background settings — how the key is pulled">
+          <svg viewBox="0 0 20 20" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6h12M4 10h12M4 14h12"/><circle cx="13" cy="6" r="2" fill="currentColor" stroke="none"/><circle cx="7" cy="10" r="2" fill="currentColor" stroke="none"/><circle cx="11" cy="14" r="2" fill="currentColor" stroke="none"/></svg>
+        </button>
+      </label>
+      <input id="bgFile" type="file" accept="image/*" class="hidden" />
+      <label class="pick" title="Microphone — M cycles">
+        <svg viewBox="0 0 20 20" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M10 3a2.2 2.2 0 012.2 2.2v4.4a2.2 2.2 0 11-4.4 0V5.2A2.2 2.2 0 0110 3zM5.3 9.3a.7.7 0 011.4 0 3.3 3.3 0 006.6 0 .7.7 0 111.4 0 4.7 4.7 0 01-4 4.64V16h1.8a.7.7 0 110 1.4H8.5a.7.7 0 110-1.4h1.8v-2.06a4.7 4.7 0 01-4-4.64z"/></svg>
+        <select id="micSel" aria-label="Microphone"></select>
+        <span class="meter" id="meter" title="Input level"><i id="meterFill"></i></span>
+      </label>
+    </div>
+
+    <div class="deckC">
+      <button id="recBtn" class="recBtn" aria-label="Start recording" title="Record / stop — Space">
+        <span class="recInner"></span>
+      </button>
+      <div class="recHint" id="recHint">Space to roll</div>
+    </div>
+
+    <div class="deckR">
+      <div class="lastTake hidden" id="lastTake">
+        <div class="ltHead"><span class="ltName" id="ltName"></span><span class="ltMeta" id="ltMeta"></span></div>
+        <div class="ltBtns">
+          <button id="ltStudio" class="btn primary">Send to PepStudio</button>
+          <button id="ltReveal" class="btn">Show file</button>
+          <button id="ltPlay" class="btn">Review</button>
+        </div>
+      </div>
+      <div class="idleNote" id="idleNote">Takes save to your PepStudio library as MP4.</div>
+    </div>
+  </footer>
+
+  <div class="toast hidden" id="toast"></div>
+
+  <!-- Teleprompter editor: a line to hit, nothing more. -->
+  <div class="sheet hidden" id="promptSheet">
+    <div class="sheetBox">
+      <h3>Segment prompt</h3>
+      <p class="sheetHint">Shown large over the bottom of frame while you roll. Keep it to the beat you want to hit.</p>
+      <textarea id="promptInput" rows="3" placeholder="&ldquo;I cannot believe he just did that. Nobody saw it coming.&rdquo;"></textarea>
+      <div class="sheetRow">
+        <label class="slugRow">Name<input id="slugInput" type="text" spellcheck="false" placeholder="confessional" /></label>
+        <button id="promptDone" class="btn primary">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- How the key is pulled. Defaults work for a lit green screen; the sliders are here for the
+       room that isn't one. -->
+  <div class="sheet panel hidden" id="bgSheet">
+    <div class="sheetBox">
+      <h3>Background</h3>
+      <p class="sheetHint">Pick how PepStudio decides what is behind you. Everything runs on this machine, live, at full frame rate.</p>
+
+      <div class="seg" id="matteRow">
+        <button class="segBtn on" data-matte="chroma">I have a green / blue screen</button>
+        <button class="segBtn" data-matte="room">Learn my empty room</button>
+      </div>
+
+      <div class="matteBody" id="matteChroma">
+        <p class="sheetHint">Click anywhere on the backdrop in the preview to sample its real colour — a lit screen is never the green it claims to be.
+          <span class="swatch" id="keySwatch"></span><code id="keyHex">#00b140</code></p>
+      </div>
+      <div class="matteBody hidden" id="matteRoom">
+        <p class="sheetHint">No backdrop needed. Step out of frame, capture the empty room, step back in. The camera and the lights have to hold still — move either and capture again.</p>
+        <div class="sheetRow"><button id="bgCapture" class="btn">Capture empty room</button><span id="refState" class="muted">not captured yet</span></div>
+      </div>
+
+      <div class="sheetRow bgPickRow"><button id="bgImageBtn" class="btn">Choose an image…</button><span class="muted" id="bgImageName"></span></div>
+
+      <label class="sld">Tolerance<span id="tolVal"></span><input id="tolRange" type="range" min="10" max="300" value="85" /></label>
+      <label class="sld">Edge softness<span id="softVal"></span><input id="softRange" type="range" min="5" max="250" value="75" /></label>
+      <label class="sld" id="spillRow">Spill suppression<span id="spillVal"></span><input id="spillRange" type="range" min="0" max="100" value="60" /></label>
+
+      <div class="sheetRow"><button id="bgReset" class="btn">Reset</button><button id="bgDone" class="btn primary">Done</button></div>
+    </div>
+  </div>
+
+  <!-- Review player for the take just shot. -->
+  <div class="sheet hidden" id="reviewSheet">
+    <div class="sheetBox wide">
+      <h3 id="reviewName">Review</h3>
+      <video id="reviewVid" controls playsinline></video>
+      <div class="sheetRow"><span></span><button id="reviewDone" class="btn primary">Close</button></div>
+    </div>
+  </div>
+</div>
+<script type="module" src="booth.js"></script>
+</body>
+</html>

@@ -1832,3 +1832,9 @@ header{ margin:0; flex:0 0 auto; padding:8px 14px; border-bottom:1px solid var(-
 /* Proxy toggle in the media tile. */
 .proxyBtn{ margin-top:6px; width:100%; }
 .proxyBtn.on{ border-color:var(--px-accent,#2d76ff) !important; color:#fff !important; background:var(--px-accent,#2d76ff) !important; }
+
+/* ===== Confessional Booth entry point (Media Bin) =====
+   The booth itself is styled by public/booth.css — this is only the button that opens it. */
+.boothBtn{ display:inline-flex; align-items:center; gap:7px; }
+.boothBtn svg{ color:#ef4444; flex:none; }
+.boothBtn:hover{ border-color:#ef4444 !important; }

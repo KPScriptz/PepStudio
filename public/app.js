@@ -251,6 +251,38 @@ $('#btn-import-file')?.addEventListener('click', async () => {
   }
 });
 
+// ---- Confessional Booth ----
+// Opens the one-button webcam recorder (public/booth.html). In the desktop shell it gets its own
+// native window (and triggers the macOS camera/mic consent prompt); in a plain browser it is just
+// another tab on the same local server.
+$('#boothBtn')?.addEventListener('click', async () => {
+  if (window.electron && typeof window.electron.openBooth === 'function') {
+    try { if (await window.electron.openBooth()) return; } catch (e) { toast(`Booth failed to open: ${e.message}`, true); }
+  }
+  const w = window.open('/booth.html', 'pepBooth', 'width=1040,height=760');
+  if (!w) toast('The booth window was blocked — allow pop-ups for localhost, or open /booth.html directly.', true);
+});
+
+// A booth running as a separate BROWSER tab cannot reach into this page, so it leaves the finished
+// take's path in localStorage and we pick it up the moment this window is looked at again. (The
+// Electron booth doesn't use this path — it hands the file over through the main process.)
+const BOOTH_PENDING = 'pep_booth_pending';
+function drainBoothTake() {
+  let p = null;
+  try {
+    const raw = localStorage.getItem(BOOTH_PENDING);
+    if (!raw) return;
+    localStorage.removeItem(BOOTH_PENDING);
+    const j = JSON.parse(raw);
+    // Ignore a stale hand-off from a previous session rather than yanking the user into an
+    // import they asked for an hour ago.
+    if (j && j.path && Date.now() - (j.ts || 0) < 10 * 60 * 1000) p = j.path;
+  } catch { return; }
+  if (p) { toast('Importing the take you just shot…'); window.pepResolveNativeFilePath(p); }
+}
+window.addEventListener('focus', drainBoothTake);
+window.addEventListener('storage', (e) => { if (e.key === BOOTH_PENDING && e.newValue) drainBoothTake(); });
+
 // ---- Drag & drop a local video onto the import card ----
 // Single entry point for a resolved absolute path. Electron exposes file.path on the drop;
 // the native WKWebView host can call this directly via a Swift drag bridge. Plain browsers
