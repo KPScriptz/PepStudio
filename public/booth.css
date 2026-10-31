@@ -242,3 +242,7 @@ body {
 }
 .bgPickRow { margin-top: 0; margin-bottom: 11px; }
 .bgPickRow .muted { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ffmpeg-missing notice: it replaces the idle line, so it cannot be missed before a first take. */
+.idleNote.warn { color: #fca5a5; max-width: 340px; line-height: 1.5; }
+.idleNote.warn code { font: 11px var(--font-mono); color: var(--text); background: var(--input); padding: 1px 5px; border-radius: 4px; }

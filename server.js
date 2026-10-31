@@ -36,7 +36,7 @@ import { coverCandidates } from './lib/thumbnails.js';
 import { buildViralThumb } from './lib/thumbstudio.js';
 import { DRAWTEXT_FONT } from './lib/exporter.js';
 import { consumeFeedback } from './lib/feedbackConsumer.js';
-import { sanitizeSlug, dateStamp, takeName, nextTake, extForMime, normalizeTake, listTakes } from './lib/booth.js';
+import { sanitizeSlug, dateStamp, takeName, nextTake, extForMime, normalizeTake, listTakes, conversionReady } from './lib/booth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Writable dirs — overridable so the Electron app can point them at userData
@@ -1714,7 +1714,10 @@ app.post('/api/booth/save', async (req, res) => {
 });
 
 app.get('/api/booth/takes', async (req, res) => {
-  res.json({ dir: RECORDINGS, takes: await listTakes(RECORDINGS) });
+  // canConvert rides along here because the booth already calls this on load — one round trip
+  // instead of two, and it is the only thing the recorder needs to warn about up front.
+  const conv = await conversionReady();
+  res.json({ dir: RECORDINGS, takes: await listTakes(RECORDINGS), canConvert: conv.ok, ffmpegHint: conv.hint });
 });
 
 // Play back a take in the booth's review pane. `name` is reduced to a basename and re-joined to

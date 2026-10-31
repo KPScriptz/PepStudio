@@ -42,7 +42,10 @@ A second, deliberately tiny app inside PepStudio for reality-show style pieces t
 a webcam monitor, a camera picker, a mic picker, and one big record button.
 
 - **Open it** from the Media Bin (*Record a segment*), or launch straight into it with
-  `npm run booth` — no editor window, just the recorder.
+  `npm run booth` — no editor window, just the recorder. **On Windows run `.\booth.cmd`
+  instead**: PowerShell blocks npm's own `npm.ps1` shim by default, and a `.cmd` sidesteps that
+  policy without changing anything on your machine. (`.\pepstudio.cmd` opens the full app the
+  same way.)
 - **Quick device switching.** Camera and mic are two dropdowns (`C` and `M` cycle them), remembered
   between sessions, with a live input meter so you never discover a dead mic after the take.
 - **3-2-1 countdown**, a crimson tally around the monitor, a running timer, and an optional
@@ -137,6 +140,7 @@ lib/captions.js    whisper.cpp transcription -> .ass (animated) + .srt
 public/            the editor UI (vanilla JS, no build step)
 public/booth.*     Confessional Booth: webcam recorder + WebGL background compositor
 lib/booth.js       take naming + normalization to faststart CFR MP4
+booth.cmd          Windows launcher for the booth (pepstudio.cmd for the full app)
 electron/          desktop shell — embeds the server, native window, first-run setup
 scripts/           legacy launcher packaging
 renders/<id>/      exported mp4s, captions, thumbnails

@@ -12,12 +12,15 @@ const $ = (s) => document.querySelector(s);
 const PREFS = 'pep_booth_prefs_v1';
 const PENDING = 'pep_booth_pending';   // browser fallback handoff to the editor tab
 
-// MediaRecorder containers in the order we want them. MP4/H.264 lands first when Chromium offers
-// it (nothing to transcode server-side); otherwise VP9 then VP8 WebM. The server normalizes
-// whichever we pick, so this is a speed preference, not a correctness one.
+// MediaRecorder containers in the order we want them. Explicit H.264+AAC MP4 first, because
+// that one needs no transcoding at all; otherwise WebM.
+//
+// Bare 'video/mp4' is DELIBERATELY ABSENT, and re-adding it is a trap: Chromium accepts it and
+// then hands back VP9/Opus inside an MP4 container. That file claims .mp4, so an editor opens it
+// and then refuses the video stream — worse than an honestly-labelled .webm, and it only bites
+// when ffmpeg is missing and the raw take is what the user keeps. Measured, not assumed.
 const MIMES = [
   'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-  'video/mp4',
   'video/webm;codecs=vp9,opus',
   'video/webm;codecs=vp8,opus',
   'video/webm',
@@ -609,6 +612,13 @@ async function refreshNextTake() {
     let max = 0;
     for (const t of r.takes || []) { const m = re.exec(t.name); if (m) max = Math.max(max, parseInt(m[1], 10) || 0); }
     state.nextTake = max + 1;
+    // Say it BEFORE the first take, not in a toast after it: with no ffmpeg the recording is
+    // kept but stays a raw WebM — it scrubs badly and drifts once it is on the timeline.
+    if (r.canConvert === false) {
+      const n = $('#idleNote');
+      n.classList.add('warn');
+      n.innerHTML = `No ffmpeg found — takes save in the browser's own format instead of an editable MP4, so they will scrub badly on the timeline.<br>Install it with <code>${escapeHtml(r.ffmpegHint || 'ffmpeg')}</code>, then reopen the booth.`;
+    }
   } catch { state.nextTake = 1; }
   paintTakeTag();
 }
