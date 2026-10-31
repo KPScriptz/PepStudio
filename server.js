@@ -36,6 +36,7 @@ import { coverCandidates } from './lib/thumbnails.js';
 import { buildViralThumb } from './lib/thumbstudio.js';
 import { DRAWTEXT_FONT } from './lib/exporter.js';
 import { consumeFeedback } from './lib/feedbackConsumer.js';
+import { sanitizeSlug, dateStamp, takeName, nextTake, extForMime, normalizeTake, listTakes } from './lib/booth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Writable dirs — overridable so the Electron app can point them at userData
@@ -43,9 +44,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA = process.env.CLIPFORGE_DATA || path.join(__dirname, 'data');
 const RENDERS = process.env.CLIPFORGE_RENDERS || path.join(__dirname, 'renders');
 const DOWNLOADS = process.env.CLIPFORGE_DOWNLOADS || path.join(__dirname, 'downloads');
+// Confessional Booth takes. Deliberately NOT inside RENDERS: these are source footage the user
+// shot, not program output, so clearing renders must never take their takes with it.
+const RECORDINGS = process.env.CLIPFORGE_RECORDINGS || path.join(__dirname, 'recordings');
 await fsp.mkdir(DATA, { recursive: true });
 await fsp.mkdir(RENDERS, { recursive: true });
 await fsp.mkdir(DOWNLOADS, { recursive: true });
+await fsp.mkdir(RECORDINGS, { recursive: true });
 
 // Crash sentinel: created at boot, removed only on a clean SIGTERM/SIGINT shutdown. Finding it
 // at startup means the last run died mid-session (crash / force-quit / power loss) — /api/session
@@ -124,7 +129,7 @@ app.use('/renders', express.static(RENDERS));
 // and failing mid-encode with a cryptic ffmpeg error. Scoped to /api/export/* so it guards every
 // render route in one place. PEP_MIN_FREE_GB overrides (default 2GB); statfs failure never blocks.
 const MIN_FREE_GB = Math.max(0, Number(process.env.PEP_MIN_FREE_GB) || 2);
-app.use('/api/export', async (req, res, next) => {
+app.use(['/api/export', '/api/booth/save'], async (req, res, next) => {
   try {
     const st = await fsp.statfs(RENDERS);
     const freeGB = (st.bsize * st.bavail) / 1e9;
@@ -139,7 +144,7 @@ app.use('/api/export', async (req, res, next) => {
 // quitting mid-export. 'close' fires on both normal finish and client abort, so a dropped
 // connection can't leak the counter; the flag guards the finish+close double-fire.
 let busyOps = 0;
-app.use(['/api/export', '/api/analyze', '/api/captions', '/api/highlights', '/api/pacing/sequence'], (req, res, next) => {
+app.use(['/api/export', '/api/analyze', '/api/captions', '/api/highlights', '/api/pacing/sequence', '/api/booth/save'], (req, res, next) => {
   busyOps++;
   let counted = true;
   const done = () => { if (counted) { counted = false; busyOps--; } };
@@ -1624,6 +1629,101 @@ app.post('/api/reveal', async (req, res) => {
     execFile(r.cmd, r.args, () => {});
   }
   res.json({ ok: true });
+});
+
+// ---- Confessional Booth ----------------------------------------------------------------------
+// One-button reality-show recorder (public/booth.html). The browser owns the camera; the server
+// owns the library. A take arrives as a RAW body (no body parser involved — express.json only
+// touches application/json), is streamed straight to a temp file so a 20-minute take never has to
+// fit in memory, then normalized to a faststart CFR MP4 that the rest of PepStudio can analyze,
+// caption and cut like any other source.
+
+// Hard ceiling on one take. At ~8 Mbps (1080p30 VP9) 4GB is well over an hour, so this bounds a
+// runaway/hostile upload without getting in a real confessional's way.
+const BOOTH_MAX_BYTES = Math.max(16, Number(process.env.PEP_BOOTH_MAX_MB) || 4096) * 1024 * 1024;
+
+// Stream a request body to `dest`, enforcing a byte cap. Resolves with the bytes written.
+// A client that disconnects mid-take, or blows the cap, leaves no half-file behind: every exit
+// path deletes the partial. `pipe` and our own 'data' listener coexist fine (both get the chunk).
+function receiveBody(req, dest, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const out = fs.createWriteStream(dest);
+    let got = 0;
+    let failed = null;
+    const fail = (e) => {
+      if (failed) return;
+      failed = e;
+      try { req.unpipe(out); req.destroy(); } catch {}
+      out.destroy();
+      reject(e);
+    };
+    req.on('data', (c) => {
+      got += c.length;
+      if (got > maxBytes) fail(new Error(`Take exceeds the ${Math.round(maxBytes / 1e6)}MB limit (PEP_BOOTH_MAX_MB)`));
+    });
+    req.on('aborted', () => fail(new Error('upload aborted')));
+    req.on('error', fail);
+    out.on('error', fail);
+    out.on('close', () => { if (!failed) resolve(got); });
+    req.pipe(out);
+  });
+}
+
+app.post('/api/booth/save', async (req, res) => {
+  const slug = sanitizeSlug(req.query.slug);
+  const date = dateStamp();
+  const srcExt = extForMime(req.query.mime);
+  const tmp = path.join(RECORDINGS, `.incoming-${crypto.randomBytes(6).toString('hex')}.${srcExt}`);
+  try {
+    const bytes = await receiveBody(req, tmp, BOOTH_MAX_BYTES);
+    if (!bytes) throw new Error('empty recording — nothing was captured');
+
+    // Take number comes from what is ON DISK, not from the page, so two booth windows or a
+    // relaunched app can never clobber each other's takes.
+    const take = await nextTake(RECORDINGS, slug, date);
+    const out = path.join(RECORDINGS, takeName({ slug, date, take }));
+
+    let transcoded = true;
+    let warning = null;
+    try {
+      await normalizeTake(tmp, out);
+      await fsp.unlink(tmp).catch(() => {});
+    } catch (e) {
+      // ffmpeg missing or unhappy. A recorded take is irreplaceable — the performance is over —
+      // so keep the raw browser file rather than discarding it, and say plainly that it wasn't
+      // converted. It is still importable; it just seeks badly until it is transcoded.
+      transcoded = false;
+      warning = `Saved the raw recording — conversion to MP4 failed: ${String(e.message || e)}`;
+      const raw = path.join(RECORDINGS, takeName({ slug, date, take, ext: srcExt }));
+      await fsp.rename(tmp, raw);
+      return res.json({ ok: true, transcoded, warning, name: path.basename(raw), path: raw, dir: RECORDINGS, bytes, take });
+    }
+
+    let duration = 0;
+    try { duration = (await probe(out)).duration || 0; } catch { /* informational only */ }
+    const st = await fsp.stat(out).catch(() => null);
+    res.json({
+      ok: true, transcoded, warning,
+      name: path.basename(out), path: out, dir: RECORDINGS, take,
+      bytes: st ? st.size : bytes, duration,
+    });
+  } catch (e) {
+    await fsp.unlink(tmp).catch(() => {});
+    if (!res.headersSent) res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
+app.get('/api/booth/takes', async (req, res) => {
+  res.json({ dir: RECORDINGS, takes: await listTakes(RECORDINGS) });
+});
+
+// Play back a take in the booth's review pane. `name` is reduced to a basename and re-joined to
+// RECORDINGS, so '../' or an absolute path can only ever resolve back inside the library.
+app.get('/api/booth/take', (req, res) => {
+  const name = path.basename(String(req.query.name || ''));
+  const file = path.join(RECORDINGS, name);
+  if (!name || !fs.existsSync(file)) return res.status(404).end('not found');
+  res.sendFile(file);
 });
 
 // Start listening. Returns the http.Server once it's up (used by the desktop shell).

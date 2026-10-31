@@ -36,6 +36,32 @@ before cutting). Adjacent ghosts are split by reason, so a loading screen and a 
 play stay independently keepable. Hit **Banish all red** (or press `B`) to export the cut
 from everything still green. Keys: `G` toggle keep/ghost, `V` verify (play 2 s), `B` banish.
 
+## Confessional Booth — hit record, talk
+
+A second, deliberately tiny app inside PepStudio for reality-show style pieces to camera:
+a webcam monitor, a camera picker, a mic picker, and one big record button.
+
+- **Open it** from the Media Bin (*Record a segment*), or launch straight into it with
+  `npm run booth` — no editor window, just the recorder.
+- **Quick device switching.** Camera and mic are two dropdowns (`C` and `M` cycle them), remembered
+  between sessions, with a live input meter so you never discover a dead mic after the take.
+- **3-2-1 countdown**, a crimson tally around the monitor, a running timer, and an optional
+  teleprompter line for the beat you want to hit.
+- **Green screen, built in.** Put flat broadcast green behind you so you can key yourself over
+  gameplay later — or blue, a still image, or a blur of your own room. Two ways to pull the matte:
+  you have a green/blue screen (click the preview to sample its real colour), or you don't — step
+  out of frame, capture your empty room once, step back in. It runs on the GPU at full frame rate
+  and is **baked into the recording**, not just the preview.
+- **Takes land in your library** as faststart, constant-frame-rate H.264 MP4 — named
+  `confessional-2026-10-31-take03.mp4`, numbered from what is actually on disk so a retake never
+  overwrites a keeper. *Send to PepStudio* drops one straight into the editor.
+
+Shortcuts: `Space` roll/stop · `C` camera · `M` mic · `B` background · `G` guides (thirds, 9:16
+safe) · `K` mirror the preview · `P` prompter.
+
+Nothing is uploaded. The camera never leaves the machine, and the only network hop is to your own
+local server.
+
 ## Install (desktop app)
 
 ClipForge is a **native macOS app** (Electron) — its own window and dock icon, no
@@ -109,7 +135,10 @@ lib/analyze.js     loudness, silence, scene cuts, freeze detection, Phantasm seg
 lib/exporter.js    long cut / vertical shorts / thumbnail rendering
 lib/captions.js    whisper.cpp transcription -> .ass (animated) + .srt
 public/            the editor UI (vanilla JS, no build step)
+public/booth.*     Confessional Booth: webcam recorder + WebGL background compositor
+lib/booth.js       take naming + normalization to faststart CFR MP4
 electron/          desktop shell — embeds the server, native window, first-run setup
 scripts/           legacy launcher packaging
 renders/<id>/      exported mp4s, captions, thumbnails
+recordings/        Confessional Booth takes (CLIPFORGE_RECORDINGS)
 ```

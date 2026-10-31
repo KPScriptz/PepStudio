@@ -16,4 +16,10 @@ contextBridge.exposeInMainWorld('electron', {
   // 0..1 to show determinate progress on the Dock/taskbar, -1 to clear.
   setProgress: (v) => ipcRenderer.invoke('sys:progress', v),
   notify: (title, body) => ipcRenderer.invoke('sys:notify', { title, body }),
+
+  // Confessional Booth. openBooth() raises the recorder window (asking macOS for camera/mic
+  // access first); sendToStudio() hands a finished take to the editor window, opening one if the
+  // app was launched booth-only.
+  openBooth: () => ipcRenderer.invoke('booth:open'),
+  sendToStudio: (filePath) => ipcRenderer.invoke('booth:send', filePath),
 });
