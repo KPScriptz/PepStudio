@@ -98,6 +98,20 @@ class ThumbStyle:
     text_anchor: str = "auto"        # auto | top | bottom -- auto avoids the face
     always_accent: bool = True       # colour one word even with no power word
 
+    # Split composition: subject cut out on one side, action frame on the
+    # other. This is the standard playthrough thumbnail. Falls back to the
+    # side layout when no face is found to cut out.
+    cutout: bool = False             # enable the segmented-subject layout
+    cutout_iterations: int = 5       # GrabCut refinement passes
+    cutout_scale: float = 0.98       # subject height as a fraction of canvas
+    cutout_x: float = 0.27           # subject centre, fraction of width
+    cutout_max_w: float = 0.52       # subject width cap, fraction of width
+    cutout_stroke: int = 9           # white outline around the subject, px
+    panel: float = 0.5               # darkening behind the subject
+    text_mode: str = "big"           # big | badge (small corner label)
+    badge_ratio: float = 0.058       # badge cap height, fraction of height
+    border: int = 0                  # outer frame thickness in px
+
     # Accent bar behind the text. The single biggest legibility win: text
     # over a solid block reads at any size, text over a photo does not.
     box: float = 0.80                # opacity, 0 disables
@@ -152,7 +166,20 @@ PRESETS: dict[str, Preset] = {
             box=0.0, layout_wide="side",
         ),
         style=replace(BRAND_STYLE, size=116, margin_v=330, words_per_frame=2),
-        description="Punchier, lower captions sized for gameplay footage.",
+        description="Huge text, hard black outline, heavy grade.",
+    ),
+    "playthrough": Preset(
+        name="playthrough",
+        forced_hashtags=("#gaming", "#letsplay"),
+        # The playthrough look: creator cut out on the left, action on the
+        # right, a small corner label rather than text across the middle.
+        thumb=replace(
+            ThumbStyle(), saturation=1.48, s_curve=0.42, vignette=0.38,
+            outline_color=ASS_BLACK, outline=10.0, shadow=6.0, box=0.0,
+            cutout=True, text_mode="badge", border=7,
+        ),
+        style=replace(BRAND_STYLE, size=112, margin_v=340, words_per_frame=2),
+        description="Creator cut out beside the action, with a corner label.",
     ),
     "plain": Preset(
         name="plain",

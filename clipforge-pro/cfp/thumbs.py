@@ -428,6 +428,168 @@ def spotlight(img, centre, style: ThumbStyle):
     return np.clip(mix * darken[:, :, None], 0, 255).astype(np.uint8)
 
 
+def cutout(frame, face, style: ThumbStyle):
+    """Separate the subject from the background with GrabCut.
+
+    No segmentation model, so no extra dependency and nothing to download.
+    GrabCut seeded only with a bounding rectangle cuts into the face and
+    loses limbs (measured: 17% coverage on a full-figure shot). Seeding a
+    *mask* instead -- face and torso as definite foreground, a generous body
+    column as probable foreground, the frame edges as definite background --
+    recovers the whole figure.
+
+    Returns a uint8 alpha, or None when there is nothing usable to cut.
+    """
+    if face is None:
+        return None
+    import cv2
+
+    h, w = frame.shape[:2]
+    fx, fy, fw, fh = (float(v) for v in face)
+    if fw < 16 or fh < 16:
+        return None
+
+    # Work on a crop around the subject rather than the whole frame. A
+    # facecam inset is a small part of a gameplay frame, and segmenting the
+    # whole thing both wastes time and gives GrabCut acres of irrelevant
+    # background to model.
+    rx0 = int(max(0, fx - fw * 3.4))
+    rx1 = int(min(w, fx + fw * 4.4))
+    ry0 = int(max(0, fy - fh * 1.1))
+    ry1 = int(min(h, fy + fh * 7.5))
+    if rx1 - rx0 < 32 or ry1 - ry0 < 32:
+        return None
+    region = frame[ry0:ry1, rx0:rx1]
+    rh, rw = region.shape[:2]
+    # Coordinates relative to the crop.
+    cfx, cfy = fx - rx0, fy - ry0
+
+    mask = np.full((rh, rw), cv2.GC_PR_BGD, np.uint8)
+
+    def box(x0, y0, x1, y1, value):
+        x0 = int(max(0, min(rw, x0))); x1 = int(max(0, min(rw, x1)))
+        y0 = int(max(0, min(rh, y0))); y1 = int(max(0, min(rh, y1)))
+        if x1 > x0 and y1 > y0:
+            mask[y0:y1, x0:x1] = value
+
+    box(cfx - fw * 2.6, cfy - fh * 0.9, cfx + fw * 3.6, rh, cv2.GC_PR_FGD)
+    box(cfx, cfy, cfx + fw, cfy + fh, cv2.GC_FGD)
+    box(cfx - fw * 0.5, cfy + fh * 1.2, cfx + fw * 1.5, cfy + fh * 3.5, cv2.GC_FGD)
+    edge = max(2, int(rw * 0.05))
+    box(0, 0, edge, rh, cv2.GC_BGD)
+    box(rw - edge, 0, rw, rh, cv2.GC_BGD)
+    box(0, 0, rw, max(2, int(rh * 0.03)), cv2.GC_BGD)
+
+    try:
+        bgd = np.zeros((1, 65), np.float64)
+        fgd = np.zeros((1, 65), np.float64)
+        cv2.grabCut(region, mask, None, bgd, fgd,
+                    max(1, style.cutout_iterations), cv2.GC_INIT_WITH_MASK)
+    except Exception as exc:  # noqa: BLE001 - fall back to no cutout
+        log.debug("grabcut failed: %s", exc)
+        return None
+
+    local = np.where(
+        (mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD), 255, 0
+    ).astype(np.uint8)
+    local = cv2.morphologyEx(local, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+    alpha = np.zeros((h, w), np.uint8)
+    alpha[ry0:ry1, rx0:rx1] = local
+
+    # A cutout that grabbed almost nothing, or almost everything of its
+    # region, is not a cutout -- better to fall back than ship a mangled
+    # subject. Coverage is measured against the REGION, not the frame, or a
+    # facecam inset always looks like a failure.
+    coverage = float(local.mean()) / 255.0
+    if not (0.12 <= coverage <= 0.88):
+        log.info("cutout rejected: %.0f%% coverage", coverage * 100)
+        return None
+
+    # Rectangularity gate. GrabCut sometimes returns the seed region almost
+    # unchanged -- every pixel of the bounding box marked foreground. That is
+    # not a cut-out subject, it is a pasted rectangle, and compositing it with
+    # a stroke makes it look like a mistake rather than a design.
+    ys, xs = np.where(local > 127)
+    if ys.size == 0:
+        return None
+    bbox = (ys.max() - ys.min() + 1) * (xs.max() - xs.min() + 1)
+    fill = float(ys.size) / max(1.0, float(bbox))
+    if fill > 0.90:
+        log.info("cutout rejected: %.0f%% rectangular (no subject separated)", fill * 100)
+        return None
+    log.info("cutout: %.0f%% of region, %.0f%% bbox fill", coverage * 100, fill * 100)
+    return cv2.GaussianBlur(alpha, (0, 0), 2.0)
+
+
+def place_cutout(canvas, frame, alpha, style: ThumbStyle):
+    """Scale the cut-out subject and composite it with a stroke."""
+    import cv2
+
+    ys, xs = np.where(alpha > 40)
+    if ys.size == 0:
+        return canvas
+    y0, y1, x0, x1 = int(ys.min()), int(ys.max()), int(xs.min()), int(xs.max())
+    sub = frame[y0:y1 + 1, x0:x1 + 1]
+    sub_a = alpha[y0:y1 + 1, x0:x1 + 1]
+
+    ch, cw = canvas.shape[:2]
+    # Fit by BOTH axes. Height alone lets a wide, full-figure subject sprawl
+    # across the frame and swallow the action half.
+    scale = min(
+        (ch * style.cutout_scale) / max(1, sub.shape[0]),
+        (cw * style.cutout_max_w) / max(1, sub.shape[1]),
+    )
+    target_h = max(8, int(sub.shape[0] * scale))
+    target_w = max(8, int(sub.shape[1] * scale))
+    sub = cv2.resize(sub, (target_w, target_h), interpolation=cv2.INTER_LANCZOS4)
+    sub_a = cv2.resize(sub_a, (target_w, target_h), interpolation=cv2.INTER_LINEAR)
+
+    if style.cutout_stroke > 0:
+        k = max(3, int(style.cutout_stroke * 2) | 1)
+        grown = cv2.dilate(sub_a, np.ones((k, k), np.uint8))
+        ring = cv2.subtract(grown, sub_a)
+        white = np.full_like(sub, 255)
+        r = (ring.astype(np.float32) / 255.0)[:, :, None]
+        sub = (sub * (1 - r) + white * r).astype(np.uint8)
+        sub_a = np.maximum(sub_a, ring)
+
+    left = int(cw * style.cutout_x - target_w / 2)
+    top = ch - target_h
+    cx0, cy0 = max(0, left), max(0, top)
+    cx1, cy1 = min(cw, left + target_w), min(ch, top + target_h)
+    if cx1 <= cx0 or cy1 <= cy0:
+        return canvas
+    sx0, sy0 = cx0 - left, cy0 - top
+    patch = sub[sy0:sy0 + (cy1 - cy0), sx0:sx0 + (cx1 - cx0)]
+    pa = (sub_a[sy0:sy0 + (cy1 - cy0), sx0:sx0 + (cx1 - cx0)] / 255.0)[:, :, None]
+    region = canvas[cy0:cy1, cx0:cx1].astype(np.float32)
+    canvas[cy0:cy1, cx0:cx1] = (patch * pa + region * (1 - pa)).astype(np.uint8)
+    return canvas
+
+
+def darken_panel(img, style: ThumbStyle):
+    """Shade the side the subject stands on so the cutout separates."""
+    if style.panel <= 0:
+        return img
+    h, w = img.shape[:2]
+    band = max(1, int(w * min(0.95, style.cutout_x * 2.0)))
+    ramp = np.ones(w, dtype=np.float32)
+    fade = np.linspace(1.0 - style.panel, 1.0, band) ** 0.85
+    ramp[:band] = fade
+    return np.clip(img.astype(np.float32) * ramp[None, :, None], 0, 255).astype(np.uint8)
+
+
+def draw_border(img, style: ThumbStyle):
+    if style.border <= 0:
+        return img
+    import cv2
+
+    h, w = img.shape[:2]
+    out = img.copy()
+    cv2.rectangle(out, (0, 0), (w - 1, h - 1), (255, 255, 255), style.border)
+    return out
+
+
 def draw_text_box(img, rect: tuple[int, int, int, int], style: ThumbStyle):
     """A solid block behind the text.
 
@@ -699,7 +861,72 @@ def make_thumbnails(
 
     out: list[Thumbnail] = []
 
+    # Best frame that actually contains a face, for the cut-out subject.
+    face_pool = [c for c in candidates if c.face is not None]
+    subject_cand = (
+        max(face_pool, key=lambda c: c.components.get("face", 0.0))
+        if face_pool else None
+    )
+
+    def render_split(action: Candidate, label: str, draw_text: bool) -> bool:
+        """Creator cut out beside the action. False if no usable cutout."""
+        if subject_cand is None:
+            return False
+        alpha = cutout(subject_cand.frame, subject_cand.face, style)
+        if alpha is None:
+            return False
+
+        comp = compose(action.frame, action.face, "16:9")
+        img = grade(comp.image, style)
+        img = sharpen_subject(img, style.sharpen)
+        img = darken_panel(img, style)
+        img = place_cutout(img, subject_cand.frame, alpha, style)
+
+        height, width = img.shape[:2]
+        path = os.path.join(out_dir, f"{basename}_{label}.jpg")
+        badge = wrap_thumbnail_text(text, max_chars=18)[:1] if text else []
+
+        if draw_text and badge:
+            size = max(16, int(height * style.badge_ratio))
+            tw, th = measure_text(badge, style, width, height, size, workdir)
+            pad = text_margin(width)
+            img = draw_text_box(
+                img, (pad - 14, height - pad - th - 14,
+                      pad + tw + 14, height - pad + 14), style,
+            )
+        img = draw_border(img, style)
+
+        still = os.path.join(workdir, f"{basename}_{label}.png")
+        cv2.imwrite(still, img)
+        if draw_text and badge:
+            ass_path = os.path.join(workdir, f"{basename}_{label}.ass")
+            captions.write_ass(ass_path, build_thumb_ass(
+                badge, style, width, height, size=size,
+                alignment=1, margin_l=text_margin(width),
+                margin_r=text_margin(width), margin_v=text_margin(width),
+            ))
+            burn_text(still, ass_path, path)
+        else:
+            tmp = path + ".part.jpg"
+            cv2.imwrite(tmp, img, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
+            os.replace(tmp, path)
+
+        out.append(Thumbnail(
+            path=path, frame_time=action.time,
+            score=int(round(action.score * 100)), aspect="16:9",
+            has_text=bool(draw_text and badge), label=label,
+            components=action.components,
+        ))
+        return True
+
     def render(cand: Candidate, aspect: str, label: str, draw_text: bool) -> None:
+        if style.cutout and aspect == "16:9":
+            try:
+                if render_split(cand, label, draw_text):
+                    return
+            except Exception as exc:  # noqa: BLE001 - fall back to a normal layout
+                log.warning("split layout failed (%s); using the side layout", exc)
+
         layout = style.layout_wide if aspect == "16:9" else "banner"
         bias = style.subject_bias if layout == "side" else 0.0
 
@@ -777,8 +1004,11 @@ def make_thumbnails(
                         margin_r=margin_r, margin_v=mv,
                     ),
                 )
+                img = draw_border(img, style)
+                cv2.imwrite(still, img)
                 burn_text(still, ass_path, path)
             else:
+                img = draw_border(img, style)
                 tmp = path + ".part.jpg"
                 cv2.imwrite(tmp, img, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
                 os.replace(tmp, path)

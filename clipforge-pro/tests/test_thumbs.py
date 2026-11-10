@@ -22,7 +22,10 @@ from cfp.thumbs import (
 
 @pytest.fixture
 def style():
-    return ThumbStyle()
+    import dataclasses
+
+    # Cutout enabled so the segmentation gates are exercised.
+    return dataclasses.replace(ThumbStyle(), cutout=True)
 
 
 def _noise(h=360, w=640, seed=0):
@@ -372,3 +375,39 @@ def test_the_picker_only_keeps_frames_from_good_segments(quality_path, quality_t
             f"{shot.label} came from a low-quality segment at {shot.frame_time:.1f}s"
         )
         assert os.path.exists(shot.path)
+
+
+def test_a_rectangular_mask_is_not_accepted_as_a_cutout(style, monkeypatch):
+    """Regression: GrabCut can return its seed region almost unchanged. A
+    filled rectangle composited with a stroke looks like a pasted photo, not
+    a cut-out subject, so it must be rejected and fall back."""
+    import cfp.thumbs as mod
+
+    frame = _noise(400, 400, seed=2)
+
+    def fake_grabcut(img, mask, rect, bgd, fgd, iters, mode):
+        mask[:] = cv2.GC_PR_FGD          # everything is foreground
+
+    monkeypatch.setattr(cv2, "grabCut", fake_grabcut)
+    assert mod.cutout(frame, (150.0, 100.0, 60.0, 70.0), style) is None
+
+
+def test_a_genuine_subject_shape_is_accepted(style, monkeypatch):
+    import cfp.thumbs as mod
+
+    frame = _noise(400, 400, seed=3)
+
+    def fake_grabcut(img, mask, rect, bgd, fgd, iters, mode):
+        mask[:] = cv2.GC_BGD
+        h, w = mask.shape[:2]
+        cv2.circle(mask, (w // 2, h // 2), int(min(h, w) * 0.34), cv2.GC_FGD, -1)
+
+    monkeypatch.setattr(cv2, "grabCut", fake_grabcut)
+    alpha = mod.cutout(frame, (150.0, 100.0, 60.0, 70.0), style)
+    assert alpha is not None and alpha.max() > 200
+
+
+def test_a_tiny_face_is_not_cut_out(style):
+    from cfp.thumbs import cutout
+
+    assert cutout(_noise(400, 400), (10.0, 10.0, 8.0, 8.0), style) is None

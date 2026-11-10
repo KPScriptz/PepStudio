@@ -225,6 +225,7 @@ other
 |---|---|---|---|
 | `brand` *(default)* | Yellow highlight, navy outline | Brand look | — |
 | `gaming` | Larger, lower, 2 words a frame | Huge text, hard black outline, no panel, heavy grade | `#gaming #gamingclips` |
+| `playthrough` | Lower, 2 words a frame | Creator beside the action, corner label, white border | `#gaming #letsplay` |
 | `pepercollectibles` | Brand look | Brand look | `#pepercollectibles` |
 | `plain` | White on black, mixed case | No grade, black outline | — |
 
@@ -261,7 +262,7 @@ pytest -m "not slow"
 pytest
 ```
 
-218 tests. The fast suite runs in ~25 s and skips cleanly if the footage is absent;
+221 tests. The fast suite runs in ~25 s and skips cleanly if the footage is absent;
 `-m slow` adds the real end-to-end renders. `quality.mp4` is generated with segments
 of deliberately different image quality (dark, motion-blurred, vivid, sharp, washed
 out) so the frame picker can be tested against footage whose answer is known.
@@ -300,6 +301,15 @@ out) so the frame picker can be tested against footage whose answer is known.
 - **Noun phrases are found from determiners and prepositions**, not from the longest
   run of non-stopwords. The latter returns "flew straight" and builds "Never Do This
   With Flew Straight".
+- **Subject cut-outs use GrabCut, and it is not always good enough.** Seeded with
+  a bounding rectangle it cuts into the face and drops limbs (17% coverage on a
+  full-figure shot); seeded with a *mask* — face and torso definite foreground,
+  frame edges definite background — it recovers the whole figure. But on a tight
+  facecam crop it returns its seed region nearly unchanged, which is a pasted
+  rectangle rather than a separated subject. Two gates catch that (coverage, and
+  bounding-box fill) and fall back to a layout that does not need segmentation.
+  Proper quality here needs a real segmentation model; that is a deliberate
+  dependency decision, not an oversight.
 - **Clips never overlap** and are always clamped to `[min-dur, max-dur]` and to the source,
   no matter what the model suggests.
 - **One bad clip doesn't sink the batch** — failures are isolated, reported in `clips.json`
