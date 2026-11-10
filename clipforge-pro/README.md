@@ -261,7 +261,7 @@ pytest -m "not slow"
 pytest
 ```
 
-212 tests. The fast suite runs in ~25 s and skips cleanly if the footage is absent;
+218 tests. The fast suite runs in ~25 s and skips cleanly if the footage is absent;
 `-m slow` adds the real end-to-end renders. `quality.mp4` is generated with segments
 of deliberately different image quality (dark, motion-blurred, vivid, sharp, washed
 out) so the frame picker can be tested against footage whose answer is known.
