@@ -110,7 +110,11 @@ Grabbing a frame at a fixed timestamp is a coin flip — you land on a blink, a
 motion blur, or a cut to black. ClipForge samples across the clip and scores every
 candidate on **sharpness** (variance of the Laplacian, which is what catches motion
 blur), **exposure** (crushed blacks, blown highlights, flat grey), **contrast**,
-**colourfulness** (Hasler–Süsstrunk), and **face size and placement**. The best few
+**colourfulness** (Hasler–Süsstrunk), **detail** (entropy of the luma histogram),
+and **face size and placement**. Detail matters more than it sounds: on reference
+footage a flat, perfectly exposed horizon outscored a busy street scene purely on
+exposure while carrying a third less information. Image *quality* is not the same
+thing as visual *interest*, and a thumbnail wants both. The best few
 frames become thumbnails, spaced apart in time so the options actually differ —
 but **quality outranks spacing**: when a clip's good frames sit in one stretch, the
 gap gives way rather than reaching into a blurry segment for the third variant.

@@ -57,6 +57,24 @@ def test_flat_frames_have_no_contrast():
     assert contrast(_gray(_noise())) > 0.5
 
 
+def test_detail_separates_a_busy_frame_from_an_empty_one():
+    """Regression: a flat, perfectly exposed horizon outscored a detailed
+    street scene purely on exposure. Quality is not the same as interest."""
+    from cfp.thumbs import detail
+
+    flat = np.zeros((300, 500, 3), np.uint8)
+    flat[:150] = 200                                  # two solid bands
+    busy = _noise(300, 500, seed=9)
+    assert detail(_gray(busy)) > detail(_gray(flat))
+
+
+def test_an_empty_frame_loses_to_a_busy_one_of_similar_exposure():
+    flat = np.full((300, 500, 3), 130, np.uint8)
+    flat[:120] = 150
+    busy = cv2.GaussianBlur(_noise(300, 500, seed=4), (3, 3), 0)
+    assert score_frame(busy, None, gaming=True)[0] > score_frame(flat, None, gaming=True)[0]
+
+
 def test_vivid_frames_beat_grey_ones():
     grey = np.full((200, 200, 3), 128, np.uint8)
     vivid = np.zeros((200, 200, 3), np.uint8)
@@ -88,7 +106,9 @@ def test_an_enormous_face_is_not_ideal_either():
 def test_score_is_bounded_and_reports_components():
     score, parts = score_frame(_noise(), None, gaming=True)
     assert 0.0 <= score <= 1.0
-    assert set(parts) == {"sharpness", "exposure", "contrast", "colorfulness", "face"}
+    assert set(parts) == {
+        "sharpness", "exposure", "contrast", "colorfulness", "detail", "face",
+    }
 
 
 def test_a_faceless_frame_is_not_permanently_capped():
