@@ -87,6 +87,29 @@ background:var(--well);border:1px solid var(--line);white-space:nowrap}
 .hook{font-size:12px;color:var(--accent);letter-spacing:.3px;font-weight:600}
 .why{font-size:12.5px;color:var(--dim);border-left:2px solid var(--line);
 padding-left:9px;margin:0}
+.shots{display:flex;gap:5px;padding:9px 14px 0;overflow-x:auto}
+.shot{flex:0 0 auto;border:2px solid transparent;border-radius:6px;padding:0;
+background:none;cursor:pointer;line-height:0;position:relative}
+.shot img{width:52px;height:92px;object-fit:cover;border-radius:4px;display:block}
+.shot.wide img{width:92px;height:52px}
+.shot.on{border-color:var(--accent)}
+.shot b{position:absolute;bottom:2px;right:3px;font-size:9px;font-weight:700;
+color:#fff;text-shadow:0 1px 2px #000;line-height:1}
+details{border-top:1px solid var(--line);margin-top:4px}
+details summary{cursor:pointer;font-size:12px;color:var(--dim);padding:8px 0 4px;
+list-style:none}
+details summary::-webkit-details-marker{display:none}
+details summary:before{content:"▸ ";font-size:10px}
+details[open] summary:before{content:"▾ "}
+.alt{display:flex;align-items:center;gap:7px;padding:3px 0;font-size:12.5px}
+.alt .n{font-size:10.5px;color:var(--dim);min-width:22px;text-align:right;
+font-variant-numeric:tabular-nums}
+.alt .x{flex:1}
+.alt .fw{font-size:10px;color:var(--dim);opacity:.75}
+.plat{display:flex;align-items:baseline;gap:7px;padding:3px 0;font-size:12px}
+.plat .p{color:var(--dim);min-width:96px;font-size:11px}
+.plat .c{color:var(--dim);font-size:10.5px;font-variant-numeric:tabular-nums}
+.plat .c.over{color:var(--hot)}
 .tags{display:flex;flex-wrap:wrap;gap:5px}
 .tag{font-size:11.5px;background:var(--well);border:1px solid var(--line);
 padding:2px 7px;border-radius:5px;color:var(--dim)}
@@ -106,6 +129,17 @@ PAGE_JS = """
 document.addEventListener('DOMContentLoaded', function(){
   document.querySelectorAll('button.cp').forEach(function(b){
     b.addEventListener('click', function(){ copy(b, b.dataset.copy || ''); });
+  });
+  // Thumbnail picker: clicking a shot swaps the video's poster.
+  document.querySelectorAll('.shots').forEach(function(strip){
+    var vid = strip.parentElement.querySelector('video');
+    strip.querySelectorAll('.shot').forEach(function(shot){
+      shot.addEventListener('click', function(){
+        strip.querySelectorAll('.shot').forEach(function(s){ s.classList.remove('on'); });
+        shot.classList.add('on');
+        if (vid) { vid.setAttribute('poster', shot.dataset.src); vid.load(); }
+      });
+    });
   });
 });
 function copy(btn, text){
@@ -157,9 +191,62 @@ def render_index_html(
             if clip.thumbnail else ""
         )
         tag_html = "".join(f'<span class="tag">{esc(t)}</span>' for t in pick.hashtags)
+        shots_html = ""
+        if clip.thumbnails:
+            buttons = []
+            for i, shot in enumerate(clip.thumbnails):
+                name = esc(os.path.basename(shot.path))
+                cls = "shot wide" if shot.aspect == "16:9" else "shot"
+                if i == 0:
+                    cls += " on"
+                buttons.append(
+                    f'<button class="{cls}" data-src="{name}" '
+                    f'title="{esc(shot.label)} &middot; frame at {shot.frame_time:.1f}s '
+                    f'&middot; score {shot.score}">'
+                    f'<img src="{name}" alt="{esc(shot.label)}" loading="lazy">'
+                    f"<b>{shot.score}</b></button>"
+                )
+            shots_html = f'<div class="shots">{"".join(buttons)}</div>'
+
+        alts_html = ""
+        if len(pick.title_variants) > 1:
+            rows = "".join(
+                f'<div class="alt"><span class="n">{v.score}</span>'
+                f'<span class="x">{esc(v.text)}'
+                f'<span class="fw"> &middot; {esc(v.framework)}</span></span>'
+                f'<button class="cp" data-copy="{esc(v.text, quote=True)}">Copy</button>'
+                "</div>"
+                for v in pick.title_variants
+            )
+            alts_html = (
+                f"<details><summary>{len(pick.title_variants)} title options "
+                "(ranked by click-through proxy)</summary>" + rows + "</details>"
+            )
+
+        plat_html = ""
+        if pick.platforms:
+            rows = []
+            for name, data in pick.platforms.items():
+                over = "" if data.get("within_limit", True) else " over"
+                rows.append(
+                    f'<div class="plat"><span class="p">'
+                    f'{esc(name.replace("_", " "))}</span>'
+                    f'<span class="x">{esc(str(data.get("text", "")))}</span>'
+                    f'<span class="c{over}">{data.get("length", 0)}/'
+                    f'{data.get("limit", 0)}</span>'
+                    f'<button class="cp" '
+                    f'data-copy="{esc(str(data.get("text", "")), quote=True)}">Copy</button>'
+                    "</div>"
+                )
+            plat_html = (
+                "<details><summary>Ready-to-paste captions per platform</summary>"
+                + "".join(rows) + "</details>"
+            )
+
         cards.append(
             f"""      <article class="card">
         <video src="{esc(os.path.basename(clip.path))}"{poster} controls preload="metadata"></video>
+{shots_html}
         <div class="body">
           <div class="row">
             <span class="score {_tier(pick.score)}">{pick.score}/100</span>
@@ -168,6 +255,7 @@ def render_index_html(
           </div>
           <div class="t">{esc(pick.title)}</div>
           {f'<div class="hook">HOOK: {esc(pick.hook)}</div>' if pick.hook else ''}
+          {f'<div class="hook">THUMB: {esc(pick.thumbnail_text)}</div>' if pick.thumbnail_text else ''}
           <p class="why">{esc(pick.reason)}</p>
           <div class="tags">{tag_html}</div>
           <div class="acts">
@@ -175,6 +263,8 @@ def render_index_html(
             <button class="cp" data-copy="{esc(tags, quote=True)}">Copy tags</button>
             <button class="cp" data-copy="{esc(caption_copy, quote=True)}">Copy caption</button>
           </div>
+          {alts_html}
+          {plat_html}
         </div>
       </article>"""
         )

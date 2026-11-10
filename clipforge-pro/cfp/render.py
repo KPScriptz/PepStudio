@@ -24,7 +24,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
-from . import captions, proc, reframe
+from . import captions, proc, reframe, thumbs
 from .config import TARGET_H, TARGET_W, Preset, Settings
 from .encoder import Encoder
 from .models import ClipPick, RenderedClip, Transcript
@@ -129,16 +129,44 @@ def render_clip(
     if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
         raise proc.ProcError(argv, 1, "ffmpeg produced no output file")
 
+    # Thumbnails are built from the SOURCE, so they carry no burned-in
+    # captions and can be composed independently of the clip's crop path.
+    shots: list = []
     thumb = ""
-    try:
-        thumb = grab_thumbnail(out_path, out_path.rsplit(".", 1)[0] + ".jpg")
-    except Exception as exc:  # noqa: BLE001 - a thumbnail is not worth failing over
-        log.debug("thumbnail failed for clip %d: %s", pick.index, exc)
+    if settings.thumbs > 0:
+        try:
+            detector = None
+            if not gaming:
+                detector = reframe._Detector(width, height, settings.cache_dir)
+                if detector.impl is None:
+                    detector = None
+            shots = thumbs.make_thumbnails(
+                source,
+                start=pick.start, end=pick.end,
+                out_dir=os.path.dirname(out_path),
+                basename=os.path.splitext(os.path.basename(out_path))[0],
+                text=pick.thumbnail_text if settings.thumb_text else "",
+                style=preset.thumb, workdir=workdir,
+                count=settings.thumbs, wide=settings.thumb_wide,
+                clean=settings.thumb_clean, with_text=settings.thumb_text,
+                detector=detector, gaming=gaming,
+            )
+        except Exception as exc:  # noqa: BLE001 - never fail a clip over a thumbnail
+            log.warning("thumbnail generation failed for clip %d: %s", pick.index, exc)
+
+    if shots:
+        thumb = shots[0].path
+    else:
+        try:
+            thumb = grab_thumbnail(out_path, out_path.rsplit(".", 1)[0] + ".jpg")
+        except Exception as exc:  # noqa: BLE001
+            log.debug("poster frame failed for clip %d: %s", pick.index, exc)
 
     return RenderedClip(
         pick=pick,
         path=out_path,
         thumbnail=thumb,
+        thumbnails=shots,
         width=TARGET_W,
         height=TARGET_H,
         bytes=os.path.getsize(out_path),

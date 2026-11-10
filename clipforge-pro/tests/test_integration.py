@@ -105,6 +105,53 @@ def test_speech_footage_transcribes_and_follows_the_face(talking_path, tmp_path)
 
 
 @needs_fixtures
+@pytest.mark.slow
+def test_thumbnails_and_titles_are_produced_for_every_clip(gameplay_path, tmp_path):
+    result = run(Settings(
+        source=gameplay_path, out_dir=str(tmp_path), clips=2,
+        min_dur=15.0, max_dur=20.0, use_api=False, gaming=True,
+        cache_dir=str(tmp_path / "cache"), model="tiny.en",
+        thumbs=2, preset="gaming",
+    ))
+    assert result.clips
+
+    for clip in result.clips:
+        pick = clip.pick
+        assert pick.title_variants, "every clip needs title options"
+        assert pick.title == pick.title_variants[0].text
+        assert pick.thumbnail_text
+        assert pick.platforms
+        for data in pick.platforms.values():
+            assert data["within_limit"]
+
+        # 2 variants + clean + wide
+        assert len(clip.thumbnails) == 4
+        labels = {t.label for t in clip.thumbnails}
+        assert {"thumb_1", "thumb_2", "thumb_clean", "thumb_wide"} == labels
+
+        for shot in clip.thumbnails:
+            assert os.path.exists(shot.path) and os.path.getsize(shot.path) > 2000
+            info = _probe(shot.path)
+            expected = (1280, 720) if shot.aspect == "16:9" else (1080, 1920)
+            assert (info["width"], info["height"]) == expected
+            assert pick.start <= shot.frame_time <= pick.end
+
+    # The review page must reference the generated thumbnails.
+    with open(os.path.join(str(tmp_path), "index.html"), encoding="utf-8") as fh:
+        page = fh.read()
+    first = result.clips[0].thumbnails[0]
+    assert os.path.basename(first.path) in page
+    assert "title options" in page
+
+    with open(os.path.join(str(tmp_path), "clips.json"), encoding="utf-8") as fh:
+        data = json.load(fh)
+    entry = data["clips"][0]
+    assert entry["thumbnails"] and entry["title_variants"]
+    for shot in entry["thumbnails"]:
+        assert os.path.exists(os.path.join(str(tmp_path), shot["file"]))
+
+
+@needs_fixtures
 def test_a_missing_source_fails_cleanly(tmp_path):
     from cfp.ingest import IngestError
 

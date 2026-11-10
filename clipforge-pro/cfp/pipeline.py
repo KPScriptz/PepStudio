@@ -105,6 +105,10 @@ def run(settings: Settings) -> Result:
     picked_by = picks[0].picked_by if picks else "heuristic"
     log.info("selected %d clip(s) via %s", len(picks), picked_by)
 
+    select.enrich(
+        picks, gaming=gaming, preset=preset, promote_best=settings.promote_best_title
+    )
+
     result = Result(
         source=src.path,
         picks=picks,

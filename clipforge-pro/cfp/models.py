@@ -86,6 +86,50 @@ class Peak:
         return {"time": round(self.time, 3), "score": round(self.score, 3), "kind": self.kind}
 
 
+@dataclass(frozen=True)
+class TitleVariant:
+    """One candidate title, with the framework it came from."""
+
+    text: str
+    framework: str = ""
+    score: int = 0
+    reason: str = ""
+
+    def to_json(self) -> dict:
+        return {
+            "text": self.text,
+            "framework": self.framework,
+            "score": self.score,
+            "reason": self.reason,
+        }
+
+
+@dataclass
+class Thumbnail:
+    """One rendered thumbnail option."""
+
+    path: str
+    frame_time: float = 0.0      # absolute source time the frame came from
+    score: int = 0
+    aspect: str = "9:16"
+    has_text: bool = False
+    label: str = ""
+    components: dict = field(default_factory=dict)
+
+    def to_json(self) -> dict:
+        import os
+
+        return {
+            "file": os.path.basename(self.path),
+            "frame_time": round(self.frame_time, 3),
+            "score": self.score,
+            "aspect": self.aspect,
+            "has_text": self.has_text,
+            "label": self.label,
+            "components": {k: round(v, 3) for k, v in self.components.items()},
+        }
+
+
 @dataclass
 class ClipPick:
     """One selected clip, before rendering."""
@@ -100,6 +144,9 @@ class ClipPick:
     picked_by: str = "heuristic"         # claude | heuristic
     transcript: str = ""
     index: int = 0
+    title_variants: list[TitleVariant] = field(default_factory=list)
+    thumbnail_text: str = ""
+    platforms: dict = field(default_factory=dict)
 
     @property
     def duration(self) -> float:
@@ -113,6 +160,7 @@ class ClipPick:
         d["start"] = round(self.start, 3)
         d["end"] = round(self.end, 3)
         d["duration"] = round(self.duration, 3)
+        d["title_variants"] = [v.to_json() for v in self.title_variants]
         return d
 
 
@@ -127,6 +175,7 @@ class RenderedClip:
     height: int = 0
     bytes: int = 0
     render_seconds: float = 0.0
+    thumbnails: list[Thumbnail] = field(default_factory=list)
 
     def to_json(self) -> dict:
         import os
@@ -135,6 +184,7 @@ class RenderedClip:
         d.update(
             file=os.path.basename(self.path),
             thumbnail=os.path.basename(self.thumbnail) if self.thumbnail else "",
+            thumbnails=[t.to_json() for t in self.thumbnails],
             width=self.width,
             height=self.height,
             bytes=self.bytes,

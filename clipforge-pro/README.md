@@ -22,6 +22,9 @@ cfp stream.mp4 --clips 8 --prompt "funniest moments"
 | Your footage | Uploaded to a server | Never leaves the machine |
 | What to look for | Fixed heuristics | `--prompt "the parts where he rage quits"` |
 | Why a clip was picked | Opaque score | A written reason per clip |
+| Thumbnails | One auto-grab | Best frame chosen by image quality + face, several options |
+| Titles | One per clip | Several, from named frameworks, ranked by a CTR proxy |
+| Captions per platform | Manual | Pre-trimmed for Shorts / TikTok / Reels / X |
 | Gameplay with no talking | Poorly handled | First-class: ranks on audio/visual chaos |
 | Works offline | No | Yes (after first model download) |
 
@@ -66,10 +69,15 @@ Output folder:
 
 ```
 out/
-├── index.html                     review page: previews, scores, copy buttons
-├── clips.json                     every clip with timings, scores, reasons, tags
-├── clip_01_he-flew-into-the-....mp4
-├── clip_01_he-flew-into-the-....jpg
+├── index.html                       review page: previews, thumbnail picker,
+│                                    title options, per-platform captions
+├── clips.json                       timings, scores, reasons, tags, titles, thumbs
+├── clip_01_the-most-insane-....mp4
+├── clip_01_the-most-insane-..._thumb_1.jpg      best frame, 9:16, text
+├── clip_01_the-most-insane-..._thumb_2.jpg      runner-up frame
+├── clip_01_the-most-insane-..._thumb_3.jpg
+├── clip_01_the-most-insane-..._thumb_clean.jpg  no text
+├── clip_01_the-most-insane-..._thumb_wide.jpg   16:9
 └── ...
 ```
 
@@ -91,7 +99,47 @@ out/
    important is cropped away.
 6. **Captions** — ASS subtitles, 1–3 words at a time, the active word highlighted with a pop.
    Optional hook text over the first 3 seconds.
-7. **Export** — one MP4 per clip, rendered in parallel, plus `clips.json` and `index.html`.
+7. **Thumbnails** — sample frames across the clip, score each one, keep the best few.
+8. **Titles** — several candidates per clip, ranked; captions packaged per platform.
+9. **Export** — one MP4 per clip, rendered in parallel, plus thumbnails,
+   `clips.json` and `index.html`.
+
+### Thumbnails
+
+Grabbing a frame at a fixed timestamp is a coin flip — you land on a blink, a
+motion blur, or a cut to black. ClipForge samples across the clip and scores every
+candidate on **sharpness** (variance of the Laplacian, which is what catches motion
+blur), **exposure** (crushed blacks, blown highlights, flat grey), **contrast**,
+**colourfulness** (Hasler–Süsstrunk), and **face size and placement**. The best few
+frames become thumbnails, spaced apart in time so the options actually differ.
+
+Frames are taken from the **source**, not the rendered clip, so a thumbnail never
+has burned-in captions in it and can be composed independently of the clip's crop.
+
+Each one is cropped around the subject (face in the upper third, which reads as
+composed rather than cropped), given a modest saturation/contrast lift and a
+vignette, darkened with a bottom gradient so text stays legible, and captioned with
+2–4 words — **auto-sized to run nearly edge to edge**, measured with libass rather
+than estimated. High-arousal words get the brand accent colour.
+
+You get `--thumbs N` variants plus a text-free one and a 16:9 one. The review page
+lets you click between them.
+
+### Titles
+
+Every clip gets several titles, each built from a named framework — a direct quote,
+a curiosity gap, stakes, a contradiction, a superlative, a warning — and filled with
+words the speaker actually said, so the title describes the clip rather than baiting.
+
+They are ranked by a transparent click-through proxy: length band, emotional
+arousal, curiosity markers, specificity, front-loading, minus penalties for vague
+nouns ("thing", "stuff"), generic category words, shouting, punctuation pile-ups and
+repetition. **It is a heuristic for ranking candidates against each other, not a
+predicted CTR** — every component is in `clips.json` so you can disagree with it.
+
+The highest scorer becomes the title; `--keep-title` leaves your original in place.
+All options stay in `clips.json` and on the review page with copy buttons, alongside
+captions pre-trimmed for YouTube Shorts, TikTok, Instagram Reels and X.
 
 ### Gaming mode
 
@@ -142,6 +190,15 @@ render
   -j, --jobs N            parallel clip renders (default: auto)
   --crf N                 quality, lower is better (default 20)
 
+thumbnails & titles
+  --thumbs N              thumbnail variants per clip, 0 disables (default 3)
+  --no-thumb-text         don't burn text onto thumbnails
+  --no-thumb-wide         skip the extra 16:9 thumbnail
+  --no-thumb-clean        skip the extra text-free thumbnail
+  --title-variants N      how many title options to generate (default 5)
+  --keep-title            keep the selected title instead of promoting the
+                          highest-scoring variant
+
 other
   --dry-run               pick clips and print them, render nothing
   --min-free-gib N        refuse to render below this much free disk
@@ -150,12 +207,12 @@ other
 
 ### Presets
 
-| Preset | Captions | Forced hashtags |
-|---|---|---|
-| `brand` *(default)* | Yellow highlight, navy outline | — |
-| `gaming` | Larger, lower, 2 words a frame | `#gaming #gamingclips` |
-| `pepercollectibles` | Brand look | `#pepercollectibles` |
-| `plain` | White on black, mixed case | — |
+| Preset | Captions | Thumbnails | Forced hashtags |
+|---|---|---|---|
+| `brand` *(default)* | Yellow highlight, navy outline | Brand look | — |
+| `gaming` | Larger, lower, 2 words a frame | Bigger text, punchier colour | `#gaming #gamingclips` |
+| `pepercollectibles` | Brand look | Brand look | `#pepercollectibles` |
+| `plain` | White on black, mixed case | No grade, black outline | — |
 
 Presets live in `cfp/config.py` — add your own by copying an entry in `PRESETS`.
 
@@ -190,8 +247,8 @@ pytest -m "not slow"
 pytest
 ```
 
-142 tests. The fast suite runs in ~15 s and skips cleanly if the footage is absent; `-m slow`
-adds two real end-to-end renders.
+207 tests. The fast suite runs in ~25 s and skips cleanly if the footage is absent;
+`-m slow` adds the real end-to-end renders.
 
 ---
 
@@ -215,6 +272,18 @@ adds two real end-to-end renders.
   raises `TypeError` on a current install. We decode with ffmpeg instead.
 - **OpenCV 5 removed `CascadeClassifier`** and ships no cascade data, so the Haar fallback
   doesn't exist there. Hence the `<5` pin. The code degrades to a blurred fit on 5.x.
+- **Thumbnail text is measured, not estimated.** libass is the only thing that knows
+  how wide a string will render, and measuring it on a canvas the same width as the
+  target is useless: text that overflows gets clipped by the frame, so its bounding
+  box reads as *exactly* the frame width — identical to text that fits perfectly.
+  Measurement happens on a 3× wider canvas. Before that fix the default size
+  produced 1451px of text in a 982px space.
+- **A title's specificity is not measured from capitalisation.** Titles are Title
+  Cased, so counting capitalised words as proper nouns scores every candidate the
+  same and tells you nothing.
+- **Noun phrases are found from determiners and prepositions**, not from the longest
+  run of non-stopwords. The latter returns "flew straight" and builds "Never Do This
+  With Flew Straight".
 - **Clips never overlap** and are always clamped to `[min-dur, max-dur]` and to the source,
   no matter what the model suggests.
 - **One bad clip doesn't sink the batch** — failures are isolated, reported in `clips.json`

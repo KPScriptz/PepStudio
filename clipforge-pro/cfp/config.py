@@ -70,12 +70,43 @@ class CaptionStyle:
 
 
 @dataclass(frozen=True)
+class ThumbStyle:
+    """Look of a generated thumbnail.
+
+    A thumbnail is judged at roughly 180px wide in a feed, so the text is
+    sized as a fraction of image height rather than in points, and the
+    outline is heavy enough to survive that downscale.
+    """
+
+    font: str = "DejaVu Sans"
+    size_ratio: float = 0.105        # cap height as a fraction of image height
+    color: str = ASS_WHITE
+    accent: str = ASS_YELLOW         # high-arousal words get this
+    outline_color: str = ASS_NAVY
+    outline: float = 7.0
+    shadow: float = 4.0
+    bold: bool = True
+    uppercase: bool = True
+    margin_v: int = 120              # from the bottom edge
+    max_chars_per_line: int = 13
+
+    # Image treatment. Modest on purpose: oversaturated thumbnails read as
+    # spam and the platforms re-compress them anyway.
+    scrim: float = 0.62              # peak opacity of the bottom gradient
+    scrim_height: float = 0.46       # fraction of image height it covers
+    saturation: float = 1.16
+    contrast: float = 1.10
+    vignette: float = 0.16
+
+
+@dataclass(frozen=True)
 class Preset:
     """A brand preset: forced hashtags plus caption look."""
 
     name: str
     forced_hashtags: tuple[str, ...] = ()
     style: CaptionStyle = field(default_factory=CaptionStyle)
+    thumb: ThumbStyle = field(default_factory=ThumbStyle)
     description: str = ""
 
 
@@ -96,11 +127,16 @@ PRESETS: dict[str, Preset] = {
     "gaming": Preset(
         name="gaming",
         forced_hashtags=("#gaming", "#gamingclips"),
+        thumb=replace(ThumbStyle(), size_ratio=0.118, saturation=1.22),
         style=replace(BRAND_STYLE, size=116, margin_v=330, words_per_frame=2),
         description="Punchier, lower captions sized for gameplay footage.",
     ),
     "plain": Preset(
         name="plain",
+        thumb=replace(
+            ThumbStyle(), accent=ASS_WHITE, outline_color=ASS_BLACK,
+            saturation=1.0, contrast=1.0, vignette=0.0,
+        ),
         style=replace(
             BRAND_STYLE,
             highlight_color=ASS_WHITE,
@@ -158,6 +194,16 @@ class Settings:
     audio_bitrate: str = "160k"
     loudnorm: bool = True
     sharpen: bool = True
+
+    # thumbnails
+    thumbs: int = 3                 # text variants per clip, 0 disables
+    thumb_wide: bool = True         # also emit a 16:9 version of the best
+    thumb_clean: bool = True        # also emit the best frame with no text
+    thumb_text: bool = True
+
+    # titles
+    title_variants: int = 5
+    promote_best_title: bool = True
 
     # plumbing
     cache_dir: str = field(default_factory=_cache_root)

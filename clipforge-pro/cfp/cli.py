@@ -75,6 +75,22 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--no-sharpen", dest="sharpen", action="store_false", default=True,
                    help="skip the pre-caption sharpening pass")
 
+    g = ap.add_argument_group("thumbnails & titles")
+    g.add_argument("--thumbs", type=int, default=3, metavar="N",
+                   help="thumbnail variants per clip, 0 disables (default 3)")
+    g.add_argument("--no-thumb-text", dest="thumb_text", action="store_false",
+                   default=True, help="don't burn text onto thumbnails")
+    g.add_argument("--no-thumb-wide", dest="thumb_wide", action="store_false",
+                   default=True, help="skip the extra 16:9 thumbnail")
+    g.add_argument("--no-thumb-clean", dest="thumb_clean", action="store_false",
+                   default=True, help="skip the extra text-free thumbnail")
+    g.add_argument("--title-variants", type=int, default=5, metavar="N",
+                   help="how many title options to generate (default 5)")
+    g.add_argument("--keep-title", dest="promote_best_title", action="store_false",
+                   default=True,
+                   help="keep the originally selected title instead of promoting "
+                        "the highest-scoring variant")
+
     g = ap.add_argument_group("other")
     g.add_argument("--dry-run", action="store_true",
                    help="pick clips and print them without rendering")
@@ -125,6 +141,12 @@ def settings_from_args(args: argparse.Namespace) -> Settings:
         crf=max(0, min(51, args.crf)),
         loudnorm=args.loudnorm,
         sharpen=args.sharpen,
+        thumbs=max(0, args.thumbs),
+        thumb_text=args.thumb_text,
+        thumb_wide=args.thumb_wide,
+        thumb_clean=args.thumb_clean,
+        title_variants=max(1, args.title_variants),
+        promote_best_title=args.promote_best_title,
         dry_run=args.dry_run,
         keep_temp=args.keep_temp,
         min_free_gib=max(0.0, args.min_free_gib),
@@ -148,6 +170,10 @@ def _print_summary(result) -> None:
             print(f"        why: {pick.reason}")
         if pick.hashtags:
             print(f"        tags: {' '.join(pick.hashtags)}")
+        if pick.thumbnail_text:
+            print(f"        thumb: \"{pick.thumbnail_text}\"")
+        for alt in pick.title_variants[1:4]:
+            print(f"        alt [{alt.score:3d}]: {alt.text}")
 
     if result.failed:
         print(f"\n{len(result.failed)} clip(s) failed:")

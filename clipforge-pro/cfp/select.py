@@ -22,6 +22,7 @@ import os
 import re
 from dataclasses import dataclass
 
+from . import titles as titles_mod
 from .config import Preset
 from .models import ClipPick, Peak, Transcript, Word
 from .signals import COMEDIC_TAIL_MS, Signals
@@ -509,6 +510,11 @@ Rules:
 - hook: 3-6 words of on-screen text for the first 3 seconds.
 - reason: one sentence on why THIS moment will retain a viewer.
 - hashtags: 3-6 relevant tags, each starting with '#'.
+- thumbnail_text: 2-4 words, upper case, for the thumbnail. A shout, not a
+  sentence -- it is read in under a second at phone size.
+- alt_titles: 2-3 genuinely different alternative titles for the same clip,
+  each using a different angle (a quote, a stake, a curiosity gap). Do not
+  restate the main title with synonyms.
 """
 
 
@@ -528,10 +534,13 @@ def _plan_schema() -> dict:
                         "virality_score": {"type": "integer"},
                         "reason": {"type": "string"},
                         "hashtags": {"type": "array", "items": {"type": "string"}},
+                        "thumbnail_text": {"type": "string"},
+                        "alt_titles": {"type": "array", "items": {"type": "string"}},
                     },
                     "required": [
                         "start_seconds", "end_seconds", "title", "hook",
                         "virality_score", "reason", "hashtags",
+                        "thumbnail_text", "alt_titles",
                     ],
                     "additionalProperties": False,
                 },
@@ -755,6 +764,16 @@ def _validate_suggestions(
         pick.reason = str(item.get("reason") or "").strip()[:400] or "Selected by Claude."
         pick.hashtags = clean_tags[:8]
         pick.transcript = text
+        pick.thumbnail_text = str(item.get("thumbnail_text") or "").strip()[:28].upper()
+        alts = item.get("alt_titles") or []
+        pick.title_variants = [
+            __import__("cfp.models", fromlist=["TitleVariant"]).TitleVariant(
+                text=str(a).strip()[:80], framework="claude_alt",
+                score=titles_mod.score_title(str(a))[0],
+                reason="Suggested by the model as a different angle.",
+            )
+            for a in alts if str(a).strip()
+        ][:4]
         pick.picked_by = "claude"
         picks.append(pick)
 
@@ -806,3 +825,11 @@ def select_clips(
         count=count, min_dur=min_dur, max_dur=max_dur, duration=duration,
         gaming=gaming, preset=preset,
     )
+
+
+def enrich(picks, *, gaming: bool, preset=None, promote_best: bool = True) -> list:
+    """Attach title variants, thumbnail text and platform captions."""
+    titles_mod.enrich_picks(
+        picks, gaming=gaming, preset=preset, promote_best=promote_best
+    )
+    return picks
