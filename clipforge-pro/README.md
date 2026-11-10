@@ -118,11 +118,19 @@ gap gives way rather than reaching into a blurry segment for the third variant.
 Frames are taken from the **source**, not the rendered clip, so a thumbnail never
 has burned-in captions in it and can be composed independently of the clip's crop.
 
-Each one is cropped around the subject (face in the upper third, which reads as
-composed rather than cropped), given a modest saturation/contrast lift and a
-vignette, darkened with a bottom gradient so text stays legible, and captioned with
-2–4 words — **auto-sized to run nearly edge to edge**, measured with libass rather
-than estimated. High-arousal words get the brand accent colour.
+Each one is then treated the way a real thumbnail is:
+
+- cropped around the subject, face in the upper third
+- **S-curve grade** — deepened shadows, lifted highlights, pushed saturation,
+  warm highlights and cool shadows. A linear contrast stretch just clips both ends
+- **fake depth of field** — the subject stays sharp and bright while the periphery
+  is blurred and darkened, which is what a cut-out subject over a treated background
+  achieves in a hand-made thumbnail
+- **16:9 uses a side layout** — subject in one half, text stacked in the other,
+  placed on whichever side the subject is *not*. 9:16 uses a band, at the top or
+  bottom depending on where the face sits, so text never lands across it
+- text **auto-sized to run nearly edge to edge**, measured with libass rather than
+  estimated, with one word in the accent colour
 
 You get `--thumbs N` variants plus a text-free one and a 16:9 one. The review page
 lets you click between them.
@@ -212,7 +220,7 @@ other
 | Preset | Captions | Thumbnails | Forced hashtags |
 |---|---|---|---|
 | `brand` *(default)* | Yellow highlight, navy outline | Brand look | — |
-| `gaming` | Larger, lower, 2 words a frame | Bigger text, punchier colour | `#gaming #gamingclips` |
+| `gaming` | Larger, lower, 2 words a frame | Huge text, hard black outline, no panel, heavy grade | `#gaming #gamingclips` |
 | `pepercollectibles` | Brand look | Brand look | `#pepercollectibles` |
 | `plain` | White on black, mixed case | No grade, black outline | — |
 

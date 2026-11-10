@@ -14,8 +14,9 @@ from conftest import needs_quality
 from cfp.config import ThumbStyle
 from cfp.thumbs import (
     ASPECTS, Candidate, apply_scrim, build_thumb_ass, colorfulness, compose,
-    contrast, enhance, exposure, face_quality, fit_font_size, measure_text,
-    pick_diverse, score_frame, sharpness, text_margin,
+    contrast, draw_text_box, enhance, exposure, face_quality, fit_font_size,
+    grade, measure_text, pick_diverse, score_frame, sharpness, spotlight,
+    text_margin,
 )
 
 
@@ -153,24 +154,51 @@ def test_the_highest_scoring_frame_is_always_first():
 
 @pytest.mark.parametrize("aspect", list(ASPECTS))
 def test_composition_hits_the_target_resolution(aspect):
-    out = compose(_noise(720, 1280), None, aspect)
+    out = compose(_noise(720, 1280), None, aspect).image
     assert (out.shape[1], out.shape[0]) == ASPECTS[aspect]
 
 
 def test_composition_crops_toward_the_face():
     frame = np.zeros((720, 1280, 3), np.uint8)
     frame[:, 1000:1200] = 255                      # bright patch on the right
-    with_face = compose(frame, (1050, 300, 120, 120), "9:16")
-    centred = compose(frame, None, "9:16")
+    with_face = compose(frame, (1050, 300, 120, 120), "9:16").image
+    centred = compose(frame, None, "9:16").image
     assert with_face.mean() > centred.mean()
 
 
 def test_composition_stays_inside_the_frame_for_an_edge_face():
-    out = compose(_noise(720, 1280), (0, 0, 80, 80), "9:16")
+    out = compose(_noise(720, 1280), (0, 0, 80, 80), "9:16").image
     assert (out.shape[1], out.shape[0]) == ASPECTS["9:16"]
 
 
 # ------------------------------ treatment ---------------------------------- #
+
+def test_compose_reports_where_the_subject_landed():
+    c = compose(_noise(720, 1280), (900, 300, 160, 160), "16:9")
+    assert 0 <= c.center[0] <= c.image.shape[1]
+    assert 0 <= c.center[1] <= c.image.shape[0]
+
+
+def test_tone_curve_is_monotonic():
+    from cfp.thumbs import tone_curve
+
+    lut = tone_curve(0.34, 1.12)
+    assert np.all(np.diff(lut.astype(int)) >= 0)
+    assert lut[0] == 0 and lut[-1] == 255
+
+
+def test_spotlight_darkens_the_corners_more_than_the_centre(style):
+    img = np.full((400, 400, 3), 180, np.uint8)
+    out = spotlight(img, (200.0, 200.0), style)
+    assert out[200, 200].mean() > out[5, 5].mean()
+
+
+def test_the_text_box_only_covers_its_rect(style):
+    img = np.full((200, 200, 3), 200, np.uint8)
+    out = draw_text_box(img, (50, 50, 150, 150), style)
+    assert out[100, 100].mean() < 120
+    assert out[10, 10].mean() == pytest.approx(200, abs=1)
+
 
 def test_enhancement_stays_in_range_and_lifts_saturation(style):
     img = _noise(200, 200, seed=3)
@@ -182,7 +210,10 @@ def test_enhancement_stays_in_range_and_lifts_saturation(style):
 def test_a_neutral_style_changes_nothing_much(style):
     import dataclasses
 
-    flat = dataclasses.replace(style, saturation=1.0, contrast=1.0, vignette=0.0)
+    flat = dataclasses.replace(
+        style, saturation=1.0, contrast=1.0, vignette=0.0,
+        s_curve=0.0, split_tone=0.0,
+    )
     img = _noise(120, 120, seed=5)
     assert np.array_equal(enhance(img, flat), img)
 

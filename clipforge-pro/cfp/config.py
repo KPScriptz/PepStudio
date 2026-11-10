@@ -79,24 +79,41 @@ class ThumbStyle:
     """
 
     font: str = "DejaVu Sans"
-    size_ratio: float = 0.105        # cap height as a fraction of image height
+    size_ratio: float = 0.105        # starting point; fitted to the frame
     color: str = ASS_WHITE
     accent: str = ASS_YELLOW         # high-arousal words get this
     outline_color: str = ASS_NAVY
-    outline: float = 7.0
-    shadow: float = 4.0
+    outline: float = 11.0            # heavy: survives the feed's downscale
+    shadow: float = 7.0              # hard offset shadow, not a soft blur
     bold: bool = True
     uppercase: bool = True
-    margin_v: int = 120              # from the bottom edge
+    margin_v: int = 104              # from the bottom (or top) edge
     max_chars_per_line: int = 13
 
-    # Image treatment. Modest on purpose: oversaturated thumbnails read as
-    # spam and the platforms re-compress them anyway.
-    scrim: float = 0.62              # peak opacity of the bottom gradient
-    scrim_height: float = 0.46       # fraction of image height it covers
-    saturation: float = 1.16
-    contrast: float = 1.10
-    vignette: float = 0.16
+    # Layout. "side" puts the subject in one half and the text in the other,
+    # which is the standard 16:9 thumbnail composition.
+    layout_wide: str = "side"        # side | banner
+    text_side: str = "left"          # which half the text occupies in "side"
+    subject_bias: float = 0.42       # how far the subject shifts off centre
+    text_anchor: str = "auto"        # auto | top | bottom -- auto avoids the face
+    always_accent: bool = True       # colour one word even with no power word
+
+    # Accent bar behind the text. The single biggest legibility win: text
+    # over a solid block reads at any size, text over a photo does not.
+    box: float = 0.80                # opacity, 0 disables
+    box_color: tuple = (28, 14, 8)   # BGR, deep navy
+    box_pad: float = 0.032           # of image width
+
+    # Image treatment.
+    scrim: float = 0.55              # bottom gradient (banner layout)
+    scrim_height: float = 0.44
+    saturation: float = 1.34
+    contrast: float = 1.12
+    s_curve: float = 0.34            # shadow/highlight punch
+    split_tone: float = 0.10         # warm highlights, cool shadows
+    vignette: float = 0.34
+    spotlight: float = 0.45          # blur + darken away from the subject
+    sharpen: float = 0.55            # subject crispness
 
 
 @dataclass(frozen=True)
@@ -127,7 +144,13 @@ PRESETS: dict[str, Preset] = {
     "gaming": Preset(
         name="gaming",
         forced_hashtags=("#gaming", "#gamingclips"),
-        thumb=replace(ThumbStyle(), size_ratio=0.118, saturation=1.22),
+        # Matches how gaming thumbnails actually look: no panel, just huge
+        # text with a hard black outline, and colour pushed well past print.
+        thumb=replace(
+            ThumbStyle(), size_ratio=0.125, saturation=1.52, s_curve=0.44,
+            vignette=0.42, outline_color=ASS_BLACK, outline=15.0, shadow=9.0,
+            box=0.0, layout_wide="side",
+        ),
         style=replace(BRAND_STYLE, size=116, margin_v=330, words_per_frame=2),
         description="Punchier, lower captions sized for gameplay footage.",
     ),
@@ -135,7 +158,9 @@ PRESETS: dict[str, Preset] = {
         name="plain",
         thumb=replace(
             ThumbStyle(), accent=ASS_WHITE, outline_color=ASS_BLACK,
-            saturation=1.0, contrast=1.0, vignette=0.0,
+            saturation=1.0, contrast=1.0, vignette=0.0, s_curve=0.0,
+            split_tone=0.0, spotlight=0.0, sharpen=0.0, box=0.0,
+            layout_wide="banner",
         ),
         style=replace(
             BRAND_STYLE,
