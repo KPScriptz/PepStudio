@@ -453,3 +453,47 @@ def test_suppressing_a_region_blurs_it_without_touching_the_rest():
     far = float(np.abs(out[180:220, 20:60].astype(int)
                        - img[180:220, 20:60].astype(int)).mean())
     assert near > far * 3
+
+
+def test_the_matte_edge_is_pulled_inside_the_subject():
+    """A feathered alpha sits exactly where the subject's ORIGINAL background
+    still shows, blending it into the new one as a dark fringe."""
+    from cfp.thumbs import _clean_alpha
+
+    solid = np.zeros((200, 200), np.uint8)
+    solid[50:150, 50:150] = 255
+    cleaned = _clean_alpha(solid)
+    # The edge moved inward: former boundary pixels are no longer opaque.
+    assert cleaned[50, 100] < 250
+    assert cleaned[100, 100] == 255          # interior untouched
+    assert cleaned[10, 10] == 0              # exterior untouched
+
+
+def test_the_stroke_is_opaque_not_a_glow(style):
+    """Built from a hard mask: dilating an already-feathered alpha gives a
+    washed-out halo instead of an outline."""
+    import dataclasses
+    from cfp.thumbs import place_cutout
+
+    st = dataclasses.replace(style, cutout_stroke=8, cutout_scale=0.5,
+                             cutout_max_w=0.5, cutout_max_upscale=1.0)
+    frame = np.full((200, 200, 3), (20, 20, 200), np.uint8)
+    alpha = np.zeros((200, 200), np.uint8)
+    cv2.circle(alpha, (100, 100), 60, 255, -1)
+    canvas = np.zeros((400, 700, 3), np.uint8)
+    out = place_cutout(canvas.copy(), frame, alpha, st)
+    assert out.max() > 240, "no near-white stroke pixels were drawn"
+
+
+def test_a_small_subject_is_not_blown_up_without_limit(style):
+    """A facecam inset stretched to fill half a 1280x720 frame turns to mush."""
+    import dataclasses
+    from cfp.thumbs import place_cutout
+
+    st = dataclasses.replace(style, cutout_max_upscale=1.2, cutout_stroke=0)
+    frame = np.full((80, 80, 3), 200, np.uint8)
+    alpha = np.full((80, 80), 255, np.uint8)
+    canvas = np.zeros((720, 1280, 3), np.uint8)
+    out = place_cutout(canvas.copy(), frame, alpha, st)
+    painted = int((out.sum(axis=2) > 0).sum())
+    assert painted <= int((80 * 1.2) ** 2 * 1.15), "subject exceeded the upscale cap"

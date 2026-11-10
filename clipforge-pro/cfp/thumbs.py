@@ -549,7 +549,7 @@ def cutout(frame, face, style: ThumbStyle, cache_dir: str | None = None):
         alpha[ry0:ry1, rx0:rx1] = local
         verdict = _accept_cutout(local, "segmentation")
         if verdict:
-            return cv2.GaussianBlur(alpha, (0, 0), 2.0)
+            return _clean_alpha(alpha)
 
     mask = np.full((rh, rw), cv2.GC_PR_BGD, np.uint8)
 
@@ -589,7 +589,22 @@ def cutout(frame, face, style: ThumbStyle, cache_dir: str | None = None):
     # facecam inset always looks like a failure.
     if not _accept_cutout(local, "grabcut"):
         return None
-    return cv2.GaussianBlur(alpha, (0, 0), 2.0)
+    return _clean_alpha(alpha)
+
+
+def _clean_alpha(alpha):
+    """Harden the matte and pull its edge inward.
+
+    A feathered alpha looks kinder but composites worse: the semi-transparent
+    band sits exactly where the subject's ORIGINAL background still shows
+    through, so that background is blended into the new one as a dark fringe.
+    Eroding first puts the soft band inside the subject, where it belongs.
+    """
+    import cv2
+
+    hard = (alpha > 127).astype(np.uint8) * 255
+    hard = cv2.erode(hard, np.ones((3, 3), np.uint8), iterations=1)
+    return cv2.GaussianBlur(hard, (0, 0), 0.8)
 
 
 def _accept_cutout(local, source: str) -> bool:
@@ -633,9 +648,13 @@ def place_cutout(canvas, frame, alpha, style: ThumbStyle):
     ch, cw = canvas.shape[:2]
     # Fit by BOTH axes. Height alone lets a wide, full-figure subject sprawl
     # across the frame and swallow the action half.
+    # Cap the upscale. A facecam inset is a few hundred pixels; stretching it
+    # to fill half a 1280x720 frame turns a crisp subject into mush, and a
+    # smaller sharp subject beats a huge soft one every time.
     scale = min(
         (ch * style.cutout_scale) / max(1, sub.shape[0]),
         (cw * style.cutout_max_w) / max(1, sub.shape[1]),
+        style.cutout_max_upscale,
     )
     target_h = max(8, int(sub.shape[0] * scale))
     target_w = max(8, int(sub.shape[1] * scale))
@@ -643,11 +662,15 @@ def place_cutout(canvas, frame, alpha, style: ThumbStyle):
     sub_a = cv2.resize(sub_a, (target_w, target_h), interpolation=cv2.INTER_LINEAR)
 
     if style.cutout_stroke > 0:
+        # Build the ring from a HARD mask. Dilating an already-feathered
+        # alpha gives a washed-out glow instead of an outline.
+        hard = (sub_a > 127).astype(np.uint8) * 255
         k = max(3, int(style.cutout_stroke * 2) | 1)
-        grown = cv2.dilate(sub_a, np.ones((k, k), np.uint8))
-        ring = cv2.subtract(grown, sub_a)
-        white = np.full_like(sub, 255)
+        grown = cv2.dilate(hard, np.ones((k, k), np.uint8))
+        ring = cv2.subtract(grown, hard)
+        ring = cv2.GaussianBlur(ring, (0, 0), 0.6)      # anti-alias only
         r = (ring.astype(np.float32) / 255.0)[:, :, None]
+        white = np.full_like(sub, 255)
         sub = (sub * (1 - r) + white * r).astype(np.uint8)
         sub_a = np.maximum(sub_a, ring)
 

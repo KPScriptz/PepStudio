@@ -106,6 +106,7 @@ class ThumbStyle:
     cutout_scale: float = 0.98       # subject height as a fraction of canvas
     cutout_x: float = 0.27           # subject centre, fraction of width
     cutout_max_w: float = 0.52       # subject width cap, fraction of width
+    cutout_max_upscale: float = 1.6  # never blow a small facecam up past this
     cutout_stroke: int = 9           # white outline around the subject, px
     panel: float = 0.5               # darkening behind the subject
     text_mode: str = "big"           # big | badge (small corner label)

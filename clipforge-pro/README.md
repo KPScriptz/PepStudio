@@ -262,7 +262,7 @@ pytest -m "not slow"
 pytest
 ```
 
-225 tests. The fast suite runs in ~25 s and skips cleanly if the footage is absent;
+228 tests. The fast suite runs in ~25 s and skips cleanly if the footage is absent;
 `-m slow` adds the real end-to-end renders. `quality.mp4` is generated with segments
 of deliberately different image quality (dark, motion-blurred, vivid, sharp, washed
 out) so the frame picker can be tested against footage whose answer is known.
@@ -311,6 +311,14 @@ out) so the frame picker can be tested against footage whose answer is known.
   rectangle rather than a separated subject.
   Two gates (region coverage, and bounding-box fill) reject a bad mask from
   either source and fall back rather than shipping a mangled subject.
+- **Never feather a matte before compositing it.** The semi-transparent band
+  lands exactly where the subject's original background still shows through, so
+  that background gets blended into the new one as a dark fringe. Erode first,
+  then feather, so the soft edge sits inside the subject.
+- **Build an outline from a hard mask.** Dilating an already-feathered alpha
+  produces a washed-out glow, not a stroke.
+- **Cap how far a subject is upscaled.** A facecam inset stretched to fill half a
+  1280x720 frame is mush; a smaller sharp subject beats a huge soft one.
 - **Clips never overlap** and are always clamped to `[min-dur, max-dur]` and to the source,
   no matter what the model suggests.
 - **One bad clip doesn't sink the batch** — failures are isolated, reported in `clips.json`
