@@ -1,0 +1,22 @@
+# Generated test footage (rebuild with scripts/make_fixtures.py)
+tests/data/*.mp4
+tests/data/*.wav
+tests/data/_tmp/
+
+# Render output
+out/
+*.ass
+*.srt
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.coverage
+tests/data/*.jpg
+tests/data/ground_truth.json
