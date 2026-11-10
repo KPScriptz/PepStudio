@@ -52,6 +52,24 @@ SPEECH = [
     (50.0, "slt", "That was absolutely insane. I cannot believe that worked."),
     (64.0, "rms", "No way. No way! Did you see that explosion?"),
 ]
+# Five segments of deliberately different image quality, so the thumbnail
+# frame picker can be tested against known-good and known-bad footage.
+QUALITY_SEGMENTS = [
+    ("dark",   "mandelbrot=size=1280x720:rate=30", "eq=brightness=-0.42:saturation=0.5"),
+    ("blurry", "mandelbrot=size=1280x720:rate=30:start_scale=2.0", "gblur=sigma=9"),
+    ("vivid",  "mandelbrot=size=1280x720:rate=30:start_scale=0.8", "eq=saturation=1.55:contrast=1.3"),
+    ("sharp",  "testsrc2=size=1280x720:rate=30", "eq=saturation=1.0"),
+    ("faded",  "mandelbrot=size=1280x720:rate=30", "eq=brightness=-0.30:contrast=0.35"),
+]
+QUALITY_SEG = 8.0
+QUALITY_SPEECH = [
+    (1.0, "slt", "Okay so I just got into the new Vice City map and this is already insane."),
+    (10.0, "awb", "Watch what happens when I take this supercar off the ramp."),
+    (17.5, "awb", "Oh my god. He just flew straight into the helicopter and it exploded."),
+    (26.0, "slt", "That was absolutely ridiculous. I have never seen physics do that before."),
+]
+QUALITY_EXPLOSIONS = [19.4, 21.0]
+
 TALKING_SCRIPT = (
     "Okay so here is the thing nobody tells you about collecting. "
     "The single most valuable card in this entire box is worth more than my car. "
@@ -206,6 +224,48 @@ def build_talking(outdir: str, tmp: str, face: str) -> str:
     return out
 
 
+def build_quality(outdir: str, tmp: str) -> str:
+    """Gameplay-style footage whose frame quality varies by segment."""
+    import random
+
+    parts = []
+    for i, (_name, src, filt) in enumerate(QUALITY_SEGMENTS):
+        part = os.path.join(tmp, f"q{i}.mp4")
+        run([
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", src, "-t", str(QUALITY_SEG), "-vf", filt,
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-pix_fmt", "yuv420p", part,
+        ])
+        parts.append(part)
+
+    listing = os.path.join(tmp, "quality.txt")
+    with open(listing, "w", encoding="utf-8") as fh:
+        for part in parts:
+            fh.write(f"file '{os.path.abspath(part)}'\n")
+    silent = os.path.join(tmp, "quality_silent.mp4")
+    run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+         "-f", "concat", "-safe", "0", "-i", listing, "-c", "copy", silent])
+
+    rng = random.Random(3)
+    total = int(QUALITY_SEG * len(QUALITY_SEGMENTS) * SR)
+    audio = [rng.uniform(-0.012, 0.012) for _ in range(total)]
+    for i, (at, voice, text) in enumerate(QUALITY_SPEECH):
+        wav = os.path.join(tmp, f"q_sp{i}.wav")
+        flite(text, voice, wav)
+        mix(audio, read_wav(wav), at, gain=0.6)
+    for i, at in enumerate(QUALITY_EXPLOSIONS):
+        mix(audio, explosion(seed=i + 11), at, gain=0.95)
+    wav_path = os.path.join(tmp, "quality.wav")
+    write_wav(wav_path, audio)
+
+    out = os.path.join(outdir, "quality.mp4")
+    run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+         "-i", silent, "-i", wav_path, "-c:v", "copy", "-c:a", "aac",
+         "-b:a", "128k", "-shortest", out])
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("outdir", nargs="?", default="tests/data")
@@ -225,13 +285,25 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             print(f"note: could not fetch a face image ({exc})", file=sys.stderr)
 
-    made = {"gameplay": build_gameplay(outdir, tmp)}
+    made = {
+        "gameplay": build_gameplay(outdir, tmp),
+        "quality": build_quality(outdir, tmp),
+    }
     if os.path.exists(face):
         made["talking"] = build_talking(outdir, tmp, face)
     else:
         print("note: no face image, skipping talking.mp4", file=sys.stderr)
 
     truth = {
+        "quality": {
+            "segment_seconds": QUALITY_SEG,
+            "segments": [
+                {"name": name, "start": i * QUALITY_SEG, "end": (i + 1) * QUALITY_SEG}
+                for i, (name, _s, _f) in enumerate(QUALITY_SEGMENTS)
+            ],
+            "good": ["vivid", "sharp"],
+            "bad": ["dark", "blurry", "faded"],
+        },
         "gameplay": {
             "duration": GAMEPLAY_DURATION,
             "explosions": EXPLOSIONS,

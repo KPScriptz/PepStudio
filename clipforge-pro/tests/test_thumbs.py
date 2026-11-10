@@ -9,6 +9,8 @@ import pytest
 
 cv2 = pytest.importorskip("cv2")
 
+from conftest import needs_quality
+
 from cfp.config import ThumbStyle
 from cfp.thumbs import (
     ASPECTS, Candidate, apply_scrim, build_thumb_ass, colorfulness, compose,
@@ -110,13 +112,31 @@ def _cand(t, score):
     return Candidate(time=t, frame=None, score=score)
 
 
-def test_diverse_picks_respect_the_minimum_gap():
-    cands = [_cand(i * 0.1, 1.0 - i * 0.01) for i in range(60)]
+def test_the_minimum_gap_is_honoured_when_quality_allows():
+    """Equal-quality candidates: nothing competes with spacing, so the gap
+    must hold exactly."""
+    cands = [_cand(i * 0.1, 0.9) for i in range(60)]
     picked = pick_diverse(cands, 3, min_gap=2.0)
     times = sorted(c.time for c in picked)
     assert len(picked) == 3
     for a, b in zip(times, times[1:]):
         assert b - a >= 2.0
+
+
+def test_quality_outranks_spacing():
+    """Regression: a 6.7s gap on footage whose good frames sat in one stretch
+    forced the third pick into a motion-blurred segment scoring 0.62 against
+    a 1.00 best. The gap must give way, not the quality bar."""
+    good = [_cand(16.0 + i * 0.5, 0.95) for i in range(20)]   # one good stretch
+    bad = [_cand(2.0 + i * 0.5, 0.40) for i in range(10)]     # far away, poor
+    picked = pick_diverse(good + bad, 3, min_gap=8.0)
+    assert len(picked) == 3
+    assert all(c.score > 0.9 for c in picked), [c.score for c in picked]
+
+
+def test_weak_frames_are_accepted_only_when_nothing_better_exists():
+    weak = [_cand(i * 2.0, 0.3) for i in range(5)]
+    assert len(pick_diverse(weak, 3, min_gap=1.0)) == 3
 
 
 def test_selection_returns_the_requested_count_even_when_crowded():
@@ -243,3 +263,61 @@ def test_fit_falls_back_without_a_measurement(style, tmp_path, monkeypatch):
 
     monkeypatch.setattr(mod, "measure_text", lambda *a, **k: (0, 0))
     assert mod.fit_font_size(["SOME TEXT"], style, 1080, 1920, str(tmp_path)) > 16
+
+
+# ------------------- against footage of known quality ---------------------- #
+
+def _frame_at(path: str, t: float):
+    import subprocess
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as d:
+        out = os.path.join(d, "f.png")
+        subprocess.run(
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{t:.2f}",
+             "-i", path, "-frames:v", "1", out], check=True,
+        )
+        return cv2.imread(out)
+
+
+@needs_quality
+def test_bad_frames_score_below_good_ones(quality_path, quality_truth):
+    """Dark, motion-blurred and washed-out segments must lose to clean ones.
+
+    A frame grabbed at a fixed timestamp has no idea which of these it is
+    landing on; this is the whole reason the picker exists.
+    """
+    scores = {}
+    for seg in quality_truth["segments"]:
+        mid = (seg["start"] + seg["end"]) / 2.0
+        frame = _frame_at(quality_path, mid)
+        assert frame is not None
+        scores[seg["name"]] = score_frame(frame, None, gaming=True)[0]
+
+    worst_good = min(scores[n] for n in quality_truth["good"])
+    best_bad = max(scores[n] for n in quality_truth["bad"])
+    assert worst_good > best_bad, scores
+    assert scores["dark"] < worst_good
+    assert scores["blurry"] < worst_good
+
+
+@needs_quality
+def test_the_picker_only_keeps_frames_from_good_segments(quality_path, quality_truth, tmp_path):
+    from cfp.thumbs import make_thumbnails
+
+    good = {s["name"] for s in quality_truth["segments"]} & set(quality_truth["good"])
+    ranges = [
+        (s["start"], s["end"]) for s in quality_truth["segments"] if s["name"] in good
+    ]
+
+    shots = make_thumbnails(
+        quality_path, start=0.0, end=40.0, out_dir=str(tmp_path),
+        basename="q", text="ABSOLUTELY RIDICULOUS", style=ThumbStyle(),
+        workdir=str(tmp_path), count=3, wide=False, clean=False, gaming=True,
+    )
+    assert shots
+    for shot in shots:
+        assert any(lo <= shot.frame_time <= hi for lo, hi in ranges), (
+            f"{shot.label} came from a low-quality segment at {shot.frame_time:.1f}s"
+        )
+        assert os.path.exists(shot.path)

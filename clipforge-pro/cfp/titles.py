@@ -376,6 +376,12 @@ def score_title(text: str) -> tuple[int, dict]:
     if length > MAX_TITLE:
         parts["overflow_penalty"] = -15.0
 
+    # A title cut off mid-phrase reads as sloppy in a feed. This mostly
+    # matters as a tie-break: the clean rewrite of a quote and its truncated
+    # original otherwise score identically, and the truncated one won.
+    if raw.endswith("\u2026"):
+        parts["truncated_penalty"] = -5.0
+
     total = int(round(max(0.0, min(100.0, sum(parts.values())))))
     return total, {k: round(v, 2) for k, v in parts.items()}
 

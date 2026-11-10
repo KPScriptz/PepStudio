@@ -111,7 +111,9 @@ motion blur, or a cut to black. ClipForge samples across the clip and scores eve
 candidate on **sharpness** (variance of the Laplacian, which is what catches motion
 blur), **exposure** (crushed blacks, blown highlights, flat grey), **contrast**,
 **colourfulness** (Hasler–Süsstrunk), and **face size and placement**. The best few
-frames become thumbnails, spaced apart in time so the options actually differ.
+frames become thumbnails, spaced apart in time so the options actually differ —
+but **quality outranks spacing**: when a clip's good frames sit in one stretch, the
+gap gives way rather than reaching into a blurry segment for the third variant.
 
 Frames are taken from the **source**, not the rendered clip, so a thumbnail never
 has burned-in captions in it and can be composed independently of the clip's crop.
@@ -247,8 +249,10 @@ pytest -m "not slow"
 pytest
 ```
 
-207 tests. The fast suite runs in ~25 s and skips cleanly if the footage is absent;
-`-m slow` adds the real end-to-end renders.
+212 tests. The fast suite runs in ~25 s and skips cleanly if the footage is absent;
+`-m slow` adds the real end-to-end renders. `quality.mp4` is generated with segments
+of deliberately different image quality (dark, motion-blurred, vivid, sharp, washed
+out) so the frame picker can be tested against footage whose answer is known.
 
 ---
 

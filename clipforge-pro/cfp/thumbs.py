@@ -34,6 +34,7 @@ ASPECTS = {"9:16": (1080, 1920), "16:9": (1280, 720), "1:1": (1080, 1080)}
 SAMPLES_PER_SEC = 3.0
 MAX_SAMPLES = 48
 EDGE_TRIM = 0.08          # ignore the first/last 8%: transitions and fades
+QUALITY_FLOOR = 0.75      # a variant must score at least this much of the best
 
 
 @dataclass
@@ -216,22 +217,50 @@ def _detect_box(detector, frame):
     return None
 
 
-def pick_diverse(candidates: list[Candidate], count: int, *, min_gap: float = 0.0) -> list[Candidate]:
-    """Highest scoring frames, spaced out so variants don't look identical."""
-    chosen: list[Candidate] = []
-    for cand in sorted(candidates, key=lambda c: -c.score):
-        if len(chosen) >= count:
-            break
-        if any(abs(cand.time - c.time) < min_gap for c in chosen):
-            continue
-        chosen.append(cand)
-    # Relax the spacing rather than return fewer than asked for.
-    if len(chosen) < count:
-        for cand in sorted(candidates, key=lambda c: -c.score):
-            if len(chosen) >= count:
+def pick_diverse(
+    candidates: list[Candidate], count: int, *,
+    min_gap: float = 0.0, floor: float = QUALITY_FLOOR,
+) -> list[Candidate]:
+    """Highest scoring frames, spaced out so variants don't look identical.
+
+    **Quality outranks spacing.** Honouring the gap first is the obvious
+    implementation and it ships blurry thumbnails: on footage whose good
+    frames sit in one stretch, the third pick gets pushed out of that stretch
+    and into a motion-blurred segment scoring 0.62 against a 1.00 best. So a
+    candidate must clear a fraction of the best score to be eligible at all,
+    and when the gap cannot be met we shrink the gap rather than reach for a
+    worse frame.
+    """
+    if not candidates:
+        return []
+    ranked = sorted(candidates, key=lambda c: -c.score)
+    best = ranked[0].score
+    threshold = best * floor
+
+    def gather(gap: float, limit: float) -> list[Candidate]:
+        out: list[Candidate] = []
+        for cand in ranked:
+            if len(out) >= count:
                 break
-            if cand not in chosen:
-                chosen.append(cand)
+            if cand.score < limit:
+                continue
+            if any(abs(cand.time - c.time) < gap for c in out):
+                continue
+            out.append(cand)
+        return out
+
+    chosen = gather(min_gap, threshold)
+
+    # Short? Relax the SPACING first -- a near-duplicate of a good frame
+    # still beats a sharp-looking crop of a bad one.
+    gap = min_gap
+    while len(chosen) < count and gap > 0.05:
+        gap /= 2.0
+        chosen = gather(gap, threshold)
+
+    # Only once spacing is exhausted do we accept weaker frames.
+    if len(chosen) < count:
+        chosen = gather(0.0, 0.0)
     return chosen
 
 

@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 GAMEPLAY = os.path.join(DATA, "gameplay.mp4")
 TALKING = os.path.join(DATA, "talking.mp4")
+QUALITY = os.path.join(DATA, "quality.mp4")
 TRUTH = os.path.join(DATA, "ground_truth.json")
 
 needs_fixtures = pytest.mark.skipif(
@@ -33,6 +34,23 @@ needs_talking = pytest.mark.skipif(
 def ground_truth() -> dict:
     with open(TRUTH, "r", encoding="utf-8") as fh:
         return json.load(fh)["gameplay"]
+
+
+needs_quality = pytest.mark.skipif(
+    not (os.path.exists(QUALITY) and os.path.exists(TRUTH)),
+    reason="quality.mp4 missing; run `python scripts/make_fixtures.py tests/data`",
+)
+
+
+@pytest.fixture(scope="session")
+def quality_truth() -> dict:
+    with open(TRUTH, "r", encoding="utf-8") as fh:
+        return json.load(fh)["quality"]
+
+
+@pytest.fixture(scope="session")
+def quality_path() -> str:
+    return QUALITY
 
 
 @pytest.fixture(scope="session")

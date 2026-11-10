@@ -99,6 +99,14 @@ def test_overlong_titles_lose_points():
     assert score_title("x" * 120)[0] < score_title("A Clear Specific Title")[0]
 
 
+def test_a_truncated_title_loses_to_its_clean_rewrite():
+    """Regression: three variants tied at 64 and the ellipsis-truncated one
+    won the tie purely on insertion order."""
+    clean = score_title("Watch What Happened When I Take This Super Car")[0]
+    cut = score_title("Watch what happened when I take this super car off\u2026")[0]
+    assert cut < clean
+
+
 def test_empty_title_scores_zero():
     assert score_title("")[0] == 0
 
