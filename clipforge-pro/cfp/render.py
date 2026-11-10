@@ -150,6 +150,7 @@ def render_clip(
                 count=settings.thumbs, wide=settings.thumb_wide,
                 clean=settings.thumb_clean, with_text=settings.thumb_text,
                 detector=detector, gaming=gaming,
+                cache_dir=settings.cache_dir,
             )
         except Exception as exc:  # noqa: BLE001 - never fail a clip over a thumbnail
             log.warning("thumbnail generation failed for clip %d: %s", pick.index, exc)

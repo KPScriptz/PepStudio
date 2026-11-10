@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+import threading
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -35,6 +36,12 @@ SAMPLES_PER_SEC = 3.0
 MAX_SAMPLES = 48
 EDGE_TRIM = 0.08          # ignore the first/last 8%: transitions and fades
 QUALITY_FLOOR = 0.75      # a variant must score at least this much of the best
+
+ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+PPSEG_URL = (
+    "https://media.githubusercontent.com/media/opencv/opencv_zoo/main/"
+    "models/human_segmentation_pphumanseg/human_segmentation_pphumanseg_2023mar.onnx"
+)
 
 
 @dataclass
@@ -296,6 +303,7 @@ class Composed:
 
     image: object
     center: tuple[float, float]
+    scale: float = 1.0
 
 
 def compose(frame, face, aspect: str = "9:16", bias: float = 0.0) -> Composed:
@@ -338,7 +346,7 @@ def compose(frame, face, aspect: str = "9:16", bias: float = 0.0) -> Composed:
         min(max(0.0, centre[0]), float(tw)),
         min(max(0.0, centre[1]), float(th)),
     )
-    return Composed(image=out, center=centre)
+    return Composed(image=out, center=centre, scale=tw / max(1, cw))
 
 
 def tone_curve(s_curve: float, contrast: float) -> np.ndarray:
@@ -428,7 +436,76 @@ def spotlight(img, centre, style: ThumbStyle):
     return np.clip(mix * darken[:, :, None], 0, 255).astype(np.uint8)
 
 
-def cutout(frame, face, style: ThumbStyle):
+_SEG_NET = None
+_SEG_LOCK = threading.Lock()
+
+
+def pphumanseg_path(cache_dir: str | None = None, *, download: bool = True) -> str | None:
+    """Find the PPHumanSeg ONNX, fetching it into the cache if need be."""
+    env = os.environ.get("CFP_SEG_MODEL")
+    candidates = [env] if env else []
+    candidates.append(os.path.join(ASSETS, "pphumanseg.onnx"))
+    if cache_dir:
+        candidates.append(os.path.join(cache_dir, "pphumanseg.onnx"))
+    for path in candidates:
+        if path and os.path.isfile(path) and os.path.getsize(path) > 100000:
+            return path
+    if not (download and cache_dir):
+        return None
+    try:
+        import urllib.request
+
+        os.makedirs(cache_dir, exist_ok=True)
+        target = os.path.join(cache_dir, "pphumanseg.onnx")
+        tmp = target + ".part"
+        log.info("downloading the person-segmentation model (one time)")
+        urllib.request.urlretrieve(PPSEG_URL, tmp)   # noqa: S310 - fixed URL
+        if os.path.getsize(tmp) < 100000:
+            os.remove(tmp)
+            return None
+        os.replace(tmp, target)
+        return target
+    except Exception as exc:  # noqa: BLE001 - segmentation is optional
+        log.warning("could not download the segmentation model: %s", exc)
+        return None
+
+
+def segment_person(region, cache_dir: str | None = None):
+    """Person alpha for ``region`` via PPHumanSeg, or None.
+
+    GrabCut needs no model but is unreliable: on a tight facecam crop it
+    returns its seed rectangle nearly unchanged. This runs a real
+    segmentation network instead. ``onnxruntime`` is already a transitive
+    dependency and the model is small, so this costs one download, not a new
+    package.
+    """
+    global _SEG_NET
+    import cv2
+
+    model = pphumanseg_path(cache_dir)
+    if not model:
+        return None
+    try:
+        with _SEG_LOCK:          # cv2.dnn.Net is not thread safe
+            if _SEG_NET is None:
+                _SEG_NET = cv2.dnn.readNet(model)
+            blob = cv2.dnn.blobFromImage(
+                region, 1 / 127.5, (192, 192), (127.5, 127.5, 127.5), swapRB=True
+            )
+            _SEG_NET.setInput(blob)
+            out = _SEG_NET.forward()
+    except Exception as exc:  # noqa: BLE001 - fall back to GrabCut
+        log.warning("segmentation model failed (%s); falling back to GrabCut", exc)
+        return None
+
+    maps = out[0]
+    fg = maps[1] if maps.shape[0] >= 2 else maps[0]
+    alpha = np.clip(fg * 255.0, 0, 255).astype(np.uint8)
+    return cv2.resize(alpha, (region.shape[1], region.shape[0]),
+                      interpolation=cv2.INTER_LINEAR)
+
+
+def cutout(frame, face, style: ThumbStyle, cache_dir: str | None = None):
     """Separate the subject from the background with GrabCut.
 
     No segmentation model, so no extra dependency and nothing to download.
@@ -463,6 +540,16 @@ def cutout(frame, face, style: ThumbStyle):
     rh, rw = region.shape[:2]
     # Coordinates relative to the crop.
     cfx, cfy = fx - rx0, fy - ry0
+
+    # Try a real segmentation model first; GrabCut is the no-model fallback.
+    local = segment_person(region, cache_dir)
+    if local is not None:
+        local = cv2.morphologyEx(local, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+        alpha = np.zeros((h, w), np.uint8)
+        alpha[ry0:ry1, rx0:rx1] = local
+        verdict = _accept_cutout(local, "segmentation")
+        if verdict:
+            return cv2.GaussianBlur(alpha, (0, 0), 2.0)
 
     mask = np.full((rh, rw), cv2.GC_PR_BGD, np.uint8)
 
@@ -500,25 +587,36 @@ def cutout(frame, face, style: ThumbStyle):
     # region, is not a cutout -- better to fall back than ship a mangled
     # subject. Coverage is measured against the REGION, not the frame, or a
     # facecam inset always looks like a failure.
+    if not _accept_cutout(local, "grabcut"):
+        return None
+    return cv2.GaussianBlur(alpha, (0, 0), 2.0)
+
+
+def _accept_cutout(local, source: str) -> bool:
+    """Is this mask actually a separated subject?
+
+    Two gates. Coverage is measured against the REGION, not the frame, or a
+    facecam inset always looks like a failure. Bounding-box fill catches the
+    GrabCut failure mode where it returns its seed region essentially
+    unchanged -- a filled rectangle composited with a stroke reads as a
+    pasted photo, not a cut-out subject.
+    """
     coverage = float(local.mean()) / 255.0
     if not (0.12 <= coverage <= 0.88):
-        log.info("cutout rejected: %.0f%% coverage", coverage * 100)
-        return None
-
-    # Rectangularity gate. GrabCut sometimes returns the seed region almost
-    # unchanged -- every pixel of the bounding box marked foreground. That is
-    # not a cut-out subject, it is a pasted rectangle, and compositing it with
-    # a stroke makes it look like a mistake rather than a design.
+        log.info("%s rejected: %.0f%% coverage", source, coverage * 100)
+        return False
     ys, xs = np.where(local > 127)
     if ys.size == 0:
-        return None
+        return False
     bbox = (ys.max() - ys.min() + 1) * (xs.max() - xs.min() + 1)
     fill = float(ys.size) / max(1.0, float(bbox))
     if fill > 0.90:
-        log.info("cutout rejected: %.0f%% rectangular (no subject separated)", fill * 100)
-        return None
-    log.info("cutout: %.0f%% of region, %.0f%% bbox fill", coverage * 100, fill * 100)
-    return cv2.GaussianBlur(alpha, (0, 0), 2.0)
+        log.info("%s rejected: %.0f%% rectangular (no subject separated)",
+                 source, fill * 100)
+        return False
+    log.info("%s cutout: %.0f%% of region, %.0f%% bbox fill",
+             source, coverage * 100, fill * 100)
+    return True
 
 
 def place_cutout(canvas, frame, alpha, style: ThumbStyle):
@@ -565,6 +663,26 @@ def place_cutout(canvas, frame, alpha, style: ThumbStyle):
     region = canvas[cy0:cy1, cx0:cx1].astype(np.float32)
     canvas[cy0:cy1, cx0:cx1] = (patch * pa + region * (1 - pa)).astype(np.uint8)
     return canvas
+
+
+def suppress_region(img, centre, radius: float):
+    """Blur away a duplicate of the subject.
+
+    A playthrough frame contains the creator's own facecam, so compositing a
+    cut-out of them beside it shows the same person twice. Blurring the inset
+    turns it back into background instead of a second subject.
+    """
+    import cv2
+
+    h, w = img.shape[:2]
+    cx, cy = centre
+    radius = max(8.0, float(radius))
+    soft = cv2.GaussianBlur(img, (0, 0), max(4.0, radius * 0.22))
+    yy, xx = np.mgrid[0:h, 0:w]
+    d = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2) / radius
+    m = np.clip(1.0 - d, 0.0, 1.0) ** 0.6
+    out = img.astype(np.float32) * (1 - m[:, :, None]) + soft.astype(np.float32) * m[:, :, None]
+    return np.clip(out * (1.0 - 0.28 * m[:, :, None]), 0, 255).astype(np.uint8)
 
 
 def darken_panel(img, style: ThumbStyle):
@@ -834,6 +952,7 @@ def make_thumbnails(
     with_text: bool = True,
     detector=None,
     gaming: bool = False,
+    cache_dir: str | None = None,
 ) -> list[Thumbnail]:
     """Produce the thumbnail set for one clip."""
     import cv2
@@ -872,13 +991,18 @@ def make_thumbnails(
         """Creator cut out beside the action. False if no usable cutout."""
         if subject_cand is None:
             return False
-        alpha = cutout(subject_cand.frame, subject_cand.face, style)
+        alpha = cutout(subject_cand.frame, subject_cand.face, style, cache_dir)
         if alpha is None:
             return False
 
         comp = compose(action.frame, action.face, "16:9")
         img = grade(comp.image, style)
         img = sharpen_subject(img, style.sharpen)
+        if action.face is not None:
+            fw, fh = float(action.face[2]), float(action.face[3])
+            img = suppress_region(
+                img, comp.center, max(fw, fh) * comp.scale * 2.6
+            )
         img = darken_panel(img, style)
         img = place_cutout(img, subject_cand.frame, alpha, style)
 

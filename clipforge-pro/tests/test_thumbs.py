@@ -411,3 +411,45 @@ def test_a_tiny_face_is_not_cut_out(style):
     from cfp.thumbs import cutout
 
     assert cutout(_noise(400, 400), (10.0, 10.0, 8.0, 8.0), style) is None
+
+
+# ------------------------ person segmentation ------------------------------ #
+
+def test_the_segmentation_model_is_bundled():
+    from cfp.thumbs import pphumanseg_path
+
+    path = pphumanseg_path(None, download=False)
+    assert path and os.path.getsize(path) > 100000
+
+
+def test_segmentation_separates_a_person_shaped_region():
+    """The model is what makes the cut-out layout usable: GrabCut returns a
+    filled rectangle on a tight facecam crop."""
+    from cfp.thumbs import segment_person
+
+    region = _noise(360, 280, seed=11)
+    alpha = segment_person(region)
+    assert alpha is not None
+    assert alpha.shape == region.shape[:2]
+    assert alpha.dtype == np.uint8
+
+
+def test_segmentation_degrades_when_no_model_is_available(monkeypatch):
+    import cfp.thumbs as mod
+
+    monkeypatch.setattr(mod, "pphumanseg_path", lambda *a, **k: None)
+    assert mod.segment_person(_noise(200, 200)) is None
+
+
+def test_suppressing_a_region_blurs_it_without_touching_the_rest():
+    """A playthrough frame holds the creator's own facecam, so a cut-out of
+    them beside it would show the same person twice."""
+    from cfp.thumbs import suppress_region
+
+    img = _noise(400, 600, seed=12)
+    out = suppress_region(img, (480.0, 200.0), 90.0)
+    near = float(np.abs(out[180:220, 460:500].astype(int)
+                        - img[180:220, 460:500].astype(int)).mean())
+    far = float(np.abs(out[180:220, 20:60].astype(int)
+                       - img[180:220, 20:60].astype(int)).mean())
+    assert near > far * 3
